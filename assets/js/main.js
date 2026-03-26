@@ -84,7 +84,7 @@ function initGlobalModals() {
 /**
  * Show a global alert
  */
-function showAlert(message, title = 'Notice') {
+function showAlert(message, title = window.LANG_NOTICE || 'Notice') {
     if (!globalAlertModal) initGlobalModals();
     
     document.getElementById('globalAlertTitle').innerText = title;
@@ -100,7 +100,7 @@ function showAlert(message, title = 'Notice') {
 /**
  * Show a global confirmation
  */
-function showConfirm(message, onConfirm, title = 'Confirm') {
+function showConfirm(message, onConfirm, title = window.LANG_CONFIRM || 'Confirm') {
     if (!globalConfirmModal) initGlobalModals();
     
     document.getElementById('globalConfirmTitle').innerText = title;
@@ -128,7 +128,7 @@ function showConfirm(message, onConfirm, title = 'Confirm') {
 /**
  * Open universal preview modal with an iframe
  */
-function openUniversalPreview(url, title = 'Preview') {
+function openUniversalPreview(url, title = window.LANG_PREVIEW || 'Preview') {
     if (!globalPreviewModal) initGlobalModals();
     
     activePreviewUrl = url;

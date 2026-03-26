@@ -82,13 +82,17 @@ if ($page == 'reports.php') {
             }
         });
     });
+    <script>
+    window.LANG_NOTICE = '<?php echo __("notice_title"); ?>';
+    window.LANG_CONFIRM = '<?php echo __("confirm_title"); ?>';
+    window.LANG_PREVIEW = '<?php echo __("preview_btn"); ?>';
     </script>
 </head>
 <body>
 
 <div id="sidebar">
     <div class="p-4 text-center">
-        <h4>Repair CRM</h4>
+        <h4><?php echo htmlspecialchars(get_setting('company_name', 'Repair CRM')); ?></h4>
     </div>
     <nav class="nav flex-column">
         <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'index.php' ? 'active' : ''; ?>" href="index.php"><i class="fas fa-home me-2"></i> <?php echo __('dashboard'); ?></a>

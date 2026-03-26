@@ -244,7 +244,7 @@ $customers = $stmt->fetchAll();
                                 <tr>
                                     <th><?php echo __('item_name'); ?></th>
                                     <th style="width: 100px;"><?php echo __('quantity'); ?></th>
-                                    <th style="width: 80px;">Unit</th>
+                                    <th style="width: 80px;"><?php echo __('unit_label'); ?></th>
                                     <th style="width: 150px;"><?php echo __('price_no_vat'); ?></th>
                                     <th style="width: 100px;"><?php echo __('vat_rate'); ?></th>
                                     <th style="width: 50px;"></th>
@@ -264,7 +264,7 @@ $customers = $stmt->fetchAll();
                         <div class="col-md-4">
                             <div class="card bg-dark bg-opacity-25 p-3 border-secondary">
                                 <div class="d-flex justify-content-between mb-2">
-                                    <span>Subtotal:</span>
+                                    <span><?php echo __('subtotal'); ?>:</span>
                                     <span id="subtotal_val">0.00 Kč</span>
                                 </div>
                                 <div class="d-flex justify-content-between mb-2">
@@ -273,7 +273,7 @@ $customers = $stmt->fetchAll();
                                 </div>
                                 <hr>
                                 <div class="d-flex justify-content-between fw-bold fs-5">
-                                    <span>Total:</span>
+                                    <span><?php echo __('total_amount'); ?>:</span>
                                     <span id="total_val">0.00 Kč</span>
                                 </div>
                             </div>

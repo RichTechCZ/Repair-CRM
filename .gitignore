@@ -1,6 +1,15 @@
 # Environment & secrets
 .env
 
+# Database backups & data
+backup_db/
+uploads/
+temp/
+facktura/
+
+# AI memory files
+memory/
+
 # PHP debug/test files
 debug_check.php
 debug_reports.php

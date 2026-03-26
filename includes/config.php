@@ -62,7 +62,7 @@ try {
     }
 } catch (PDOException $e) {
     error_log("DB Connection Error: " . $e->getMessage());
-    $db_error = "Database connection failed. Please contact administrator.";
+    die(sprintf(__('db_error'), ''));
 }
 
 // ── Telegram token ────────────────────────────────────────────────────────────

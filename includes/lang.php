@@ -1320,15 +1320,16 @@ $lang_data = [
 
 function __($key, $override_lang = null) {
     global $lang_data, $pdo;
+    $lang = 'ru';
     if ($override_lang) {
         $lang = $override_lang;
+    } elseif (isset($_GET['lang']) && in_array(strtolower($_GET['lang']), ['ru', 'cs'])) {
+        $lang = strtolower($_GET['lang']);
     } elseif (isset($_SESSION['lang'])) {
         $lang = $_SESSION['lang'];
     } elseif (isset($pdo) && function_exists('get_setting')) {
         // Only call get_setting() when both $pdo and functions.php are available
         $lang = get_setting('language', 'ru');
-    } else {
-        $lang = 'ru';
     }
     return $lang_data[$lang][$key] ?? $key;
 }
