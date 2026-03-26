@@ -1,0 +1,21 @@
+# Environment & secrets
+.env
+
+# PHP debug/test files
+debug_check.php
+debug_reports.php
+test.php
+temp_sync_data.json
+
+# Composer
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
