@@ -2,7 +2,7 @@
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
 
-if (!isset($_SESSION['user_id'])) die("Unauthorized access");
+if (!isset($_SESSION['user_id'])) die(__("unauthorized"));
 if (!isset($_GET['id']) && !isset($_GET['order_id'])) die("ID zakázky není zadáno");
 
 $id = $_GET['id'] ?? $_GET['order_id'];
@@ -13,16 +13,16 @@ $stmt = $pdo->prepare("SELECT o.*, c.first_name, c.last_name, c.phone, c.address
 $stmt->execute([$id]);
 $order = $stmt->fetch();
 
-if (!$order) die("Zakázka nenalezena");
+if (!$order) die(__("print_not_found"));
 
 // Fetch items (parts) used
 $stmt = $pdo->prepare("SELECT oi.*, i.part_name FROM order_items oi JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
 $stmt->execute([$id]);
 $items = $stmt->fetchAll();
 
-$target_lang = 'cs';
+$target_lang = $_GET['lang'] ?? 'cs';
 function _l($key) {
-    return __($key, 'cs');
+    global $target_lang; return __($key, $target_lang);
 }
 ?>
 <!DOCTYPE html>

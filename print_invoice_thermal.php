@@ -2,8 +2,8 @@
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
 
-if (!isset($_SESSION['user_id'])) die("Unauthorized access");
-if (!isset($_GET['id'])) die("ID faktury není zadáno");
+if (!isset($_SESSION['user_id'])) die(__("unauthorized"));
+if (!isset($_GET['id'])) die("<?php echo __('missing_id'); ?>");
 
 $id = (int)$_GET['id'];
 $stmt = $pdo->prepare("SELECT i.*, c.first_name, c.last_name, c.phone, c.address, c.company, c.ico, c.dic
@@ -13,7 +13,7 @@ $stmt = $pdo->prepare("SELECT i.*, c.first_name, c.last_name, c.phone, c.address
 $stmt->execute([$id]);
 $invoice = $stmt->fetch();
 
-if (!$invoice) die("Faktura nenalezena");
+if (!$invoice) die("<?php echo __('print_not_found'); ?>");
 
 // Fetch invoice items
 $stmt = $pdo->prepare("SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY id ASC");
@@ -33,7 +33,7 @@ $payment_method = $payment_methods[$invoice['payment_method']] ?? $invoice['paym
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>Účtenka <?php echo $invoice['invoice_number']; ?></title>
+    <title><?php echo __('print_title_receipt'); ?> <?php echo $invoice['invoice_number']; ?></title>
     <style>
         body { 
             font-family: Arial, Helvetica, sans-serif; 
@@ -81,8 +81,8 @@ $payment_method = $payment_methods[$invoice['payment_method']] ?? $invoice['paym
 <body>
 
 <div class="no-print" style="text-align: center; margin: 20px;">
-    <button onclick="window.print()" style="padding: 10px 20px; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 4px;">Tisk účtenky</button>
-    <a href="accounting.php" style="padding: 10px 20px; text-decoration: none; background: #6c757d; color: white; border-radius: 4px; margin-left: 10px;">Zpět</a>
+    <button onclick="window.print()" style="padding: 10px 20px; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 4px;"><?php echo __('print_btn'); ?></button>
+    <a href="accounting.php" style="padding: 10px 20px; text-decoration: none; background: #6c757d; color: white; border-radius: 4px; margin-left: 10px;"><?php echo __('back'); ?></a>
 </div>
 
 <div class="receipt">

@@ -6,7 +6,7 @@ require_once 'includes/functions.php';
 $is_admin_check = (($_SESSION['role'] ?? '') == 'admin') || (hasPermission('admin_access'));
 
 if (isset($_POST['set_lang']) && $is_admin_check) {
-    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die('CSRF token invalid'); }
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
     $_SESSION['lang'] = $_POST['lang'];
     set_setting('language', $_POST['lang']);
     header("Location: settings.php?tab=system");
@@ -14,7 +14,7 @@ if (isset($_POST['set_lang']) && $is_admin_check) {
 }
 
 if (isset($_POST['update_company']) && $is_admin_check) {
-    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die('CSRF token invalid'); }
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
     set_setting('company_name', $_POST['company_name']);
     set_setting('company_address', $_POST['company_address']);
     set_setting('company_phone', $_POST['company_phone']);
@@ -24,7 +24,7 @@ if (isset($_POST['update_company']) && $is_admin_check) {
 }
 
 if (isset($_POST['update_integrations']) && $is_admin_check) {
-    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die('CSRF token invalid'); }
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
     set_setting('tg_bot_token', trim($_POST['tg_bot_token']));
     set_setting('ai_provider', $_POST['ai_provider']);
     set_setting('ai_api_key', trim($_POST['ai_api_key']));
@@ -46,7 +46,7 @@ if (isset($_POST['update_integrations']) && $is_admin_check) {
 }
 
 if (isset($_POST['add_tech']) && $is_admin_check) {
-    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die('CSRF token invalid'); }
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
     $name = $_POST['tech_name'];
     $email = $_POST['tech_email'] ?? '';
     $phone = $_POST['tech_phone'] ?? '';
@@ -70,7 +70,7 @@ if (isset($_POST['add_tech']) && $is_admin_check) {
 }
 
 if (isset($_POST['edit_tech'])) {
-    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die('CSRF token invalid'); }
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
     $id = $_POST['tech_id'];
     
     // Security check: technicians can only edit themselves
@@ -138,14 +138,14 @@ if (isset($_POST['delete_tech']) && $is_admin_check) {
 }
 
 if (isset($_POST['save_permissions']) && $is_admin_check) {
-    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die('CSRF token invalid'); }
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
     setTechPermissions($_POST['tech_id'], $_POST['permissions'] ?? []);
     header("Location: settings.php?tab=staff&perms_updated=1");
     exit;
 }
 
 if (isset($_POST['change_admin_password']) && hasPermission('manage_passwords')) {
-    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die('CSRF token invalid'); }
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
     if (strlen($_POST['new_password']) >= 8) {
         $hashed = password_hash($_POST['new_password'], PASSWORD_DEFAULT);
         $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
@@ -163,14 +163,14 @@ if (isset($_POST['change_admin_password']) && hasPermission('manage_passwords'))
 }
 
 if (isset($_POST['clear_logs']) && $is_admin_check) {
-    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die('CSRF token invalid'); }
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
     try { $pdo->query("DELETE FROM system_errors"); } catch (Exception $e) {}
     header("Location: settings.php?tab=system&logs_cleared=1");
     exit;
 }
 
 if (isset($_POST['update_system_settings']) && $is_admin_check) {
-    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die('CSRF token invalid'); }
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
     $templates = trim($_POST['order_templates'] ?? '');
     $note_templates = trim($_POST['order_note_templates'] ?? '');
     $sla_new = max(0, (int)($_POST['sla_new_hours'] ?? 24));
@@ -189,7 +189,7 @@ $active_tab = $_GET['tab'] ?? ($is_admin_user ? 'company' : 'staff');
 
 // Security for technicians
 if (!$is_admin_user) {
-    if ($active_tab == 'company' || $active_tab == 'integrations' || $active_tab == 'system' || $active_tab == 'admins') {
+    if ($active_tab == 'company' || $active_tab == 'integrations' || $active_tab == 'system' || $active_tab == 'admins' || $active_tab == 'updates') {
         $active_tab = 'staff';
     }
 }
@@ -223,6 +223,9 @@ require_once 'includes/header.php';
         </li>
         <li class="nav-item">
             <a class="nav-link <?php echo $active_tab == 'admins' ? 'active' : 'text-white-75'; ?>" href="?tab=admins"><i class="fas fa-user-shield me-2"></i><?php echo __('admin_tab'); ?></a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link <?php echo $active_tab == 'updates' ? 'active' : 'text-white-75'; ?>" href="?tab=updates" id="updatesNavLink"><i class="fas fa-cloud-download-alt me-2"></i><?php echo __('updates_tab'); ?> <span id="updateBadgeNav" class="badge bg-warning text-dark ms-1" style="display:none;">!</span></a>
         </li>
         <?php endif; ?>
     </ul>
@@ -475,6 +478,77 @@ require_once 'includes/header.php';
             </div>
         </div>
         <?php endif; ?>
+
+        <!-- UPDATES TAB -->
+        <?php if ($is_admin_user): ?>
+        <div class="tab-pane fade <?php echo $active_tab == 'updates' ? 'show active' : ''; ?>">
+            <div class="row g-4">
+                <!-- Left: Version & Update -->
+                <div class="col-md-6">
+                    <div class="glass-panel p-4 mb-4 border-secondary">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="rounded-circle bg-primary bg-opacity-25 p-3 me-3">
+                                <i class="fas fa-code-branch fa-lg text-primary"></i>
+                            </div>
+                            <div>
+                                <h5 class="mb-1 text-white"><?php echo __('updates_title'); ?></h5>
+                                <div class="text-white-75 small"><?php echo __('update_server_hint'); ?></div>
+                            </div>
+                        </div>
+
+                        <?php
+                        $versionFile = __DIR__ . '/../version.json';
+                        $localVer = file_exists($versionFile) ? json_decode(file_get_contents($versionFile), true) : null;
+                        ?>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-6">
+                                <div class="glass-panel p-3 text-center border-secondary">
+                                    <div class="text-white-75 small mb-1"><?php echo __('current_version'); ?></div>
+                                    <div class="h4 text-white mb-0" id="localVersion"><?php echo htmlspecialchars($localVer['version'] ?? '?.?.?'); ?></div>
+                                    <div class="small text-muted"><?php echo __('build'); ?>: <?php echo (int)($localVer['build'] ?? 0); ?></div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="glass-panel p-3 text-center border-secondary" id="remoteVersionPanel">
+                                    <div class="text-white-75 small mb-1"><?php echo __('latest_version'); ?></div>
+                                    <div class="h4 text-muted mb-0" id="remoteVersion">—</div>
+                                    <div class="small text-muted" id="remoteReleaseDate"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Status area -->
+                        <div id="updateStatusArea" class="mb-4" style="display:none;"></div>
+
+                        <!-- Action buttons -->
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button type="button" class="btn btn-primary" id="btnCheckUpdates" onclick="checkForUpdates(true)">
+                                <i class="fas fa-sync-alt me-2"></i><?php echo __('check_updates'); ?>
+                            </button>
+                            <button type="button" class="btn btn-success" id="btnInstallUpdate" style="display:none;" onclick="installUpdate()">
+                                <i class="fas fa-cloud-download-alt me-2"></i><?php echo __('install_update'); ?>
+                            </button>
+                        </div>
+
+                        <div class="alert alert-warning border-0 bg-warning bg-opacity-10 mt-3 mb-0 small">
+                            <i class="fas fa-exclamation-triangle me-2 text-warning"></i><?php echo __('update_warning'); ?>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Changelog -->
+                <div class="col-md-6">
+                    <div class="glass-panel p-4 border-secondary">
+                        <h5 class="mb-3 text-white"><i class="fas fa-list-ul me-2 text-info"></i><?php echo __('changelog_title'); ?></h5>
+                        <div id="changelogArea" class="overflow-auto" style="max-height: 480px;">
+                            <div class="text-muted small"><?php echo __('no_changelog'); ?></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -631,6 +705,196 @@ function runBackup() {
     });
 }
 </script>
+
+<?php if ($is_admin_user): ?>
+<script>
+const UPDATE_TRANSLATIONS = {
+    check_updates:     '<?php echo __('check_updates'); ?>',
+    checking_updates:  '<?php echo __('checking_updates'); ?>',
+    install_update:    '<?php echo __('install_update'); ?>',
+    installing_update: '<?php echo __('installing_update'); ?>',
+    update_available:  '<?php echo __('update_available'); ?>',
+    update_available_desc: '<?php echo __('update_available_desc'); ?>',
+    up_to_date:        '<?php echo __('up_to_date'); ?>',
+    up_to_date_desc:   '<?php echo __('up_to_date_desc'); ?>',
+    update_success:    '<?php echo __('update_success'); ?>',
+    update_error:      '<?php echo __('update_error'); ?>',
+    no_changelog:      '<?php echo __('no_changelog'); ?>',
+    last_check:        '<?php echo __('last_check'); ?>',
+    minutes_ago:       '<?php echo __('minutes_ago'); ?>',
+    migrations_ran:    '<?php echo __('migrations_ran'); ?>',
+    release_date:      '<?php echo __('release_date'); ?>',
+    build:             '<?php echo __('build'); ?>'
+};
+
+function checkForUpdates(force = false) {
+    const btn = document.getElementById('btnCheckUpdates');
+    const statusArea = document.getElementById('updateStatusArea');
+    
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>' + UPDATE_TRANSLATIONS.checking_updates;
+    statusArea.style.display = 'none';
+
+    const url = 'api/check_updates.php' + (force ? '?force=1' : '');
+    
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>' + UPDATE_TRANSLATIONS.check_updates;
+            
+            if (!data.success) {
+                statusArea.style.display = 'block';
+                statusArea.innerHTML = `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 small mb-0">
+                    <i class="fas fa-exclamation-circle me-2"></i>${data.message || UPDATE_TRANSLATIONS.update_error}
+                </div>`;
+                return;
+            }
+
+            // Update remote version display
+            const rv = document.getElementById('remoteVersion');
+            rv.textContent = data.remote_version;
+            rv.className = data.has_update ? 'h4 text-success mb-0' : 'h4 text-white mb-0';
+            
+            const rd = document.getElementById('remoteReleaseDate');
+            if (data.release_date) {
+                rd.textContent = UPDATE_TRANSLATIONS.release_date + ': ' + data.release_date;
+            }
+
+            // Status message
+            statusArea.style.display = 'block';
+            if (data.has_update) {
+                statusArea.innerHTML = `<div class="alert alert-info border-0 bg-info bg-opacity-10 small mb-0">
+                    <i class="fas fa-arrow-circle-up me-2 text-info"></i>
+                    <strong>${UPDATE_TRANSLATIONS.update_available}</strong> v${data.local_version} → v${data.remote_version}
+                    <div class="mt-1 text-white-75">${UPDATE_TRANSLATIONS.update_available_desc}</div>
+                </div>`;
+                document.getElementById('btnInstallUpdate').style.display = 'inline-block';
+                // Show badge
+                const badge = document.getElementById('updateBadgeNav');
+                if (badge) badge.style.display = 'inline';
+            } else {
+                statusArea.innerHTML = `<div class="alert alert-success border-0 bg-success bg-opacity-10 small mb-0">
+                    <i class="fas fa-check-circle me-2 text-success"></i>
+                    <strong>${UPDATE_TRANSLATIONS.up_to_date}</strong> (v${data.local_version})
+                    <div class="mt-1 text-white-75">${UPDATE_TRANSLATIONS.up_to_date_desc}</div>
+                </div>`;
+                document.getElementById('btnInstallUpdate').style.display = 'none';
+            }
+
+            // Cache info
+            if (data.from_cache && data.cache_age) {
+                const mins = Math.round(data.cache_age / 60);
+                statusArea.innerHTML += `<div class="text-muted small mt-2"><i class="fas fa-clock me-1"></i>${UPDATE_TRANSLATIONS.last_check}: ${mins} ${UPDATE_TRANSLATIONS.minutes_ago}</div>`;
+            }
+
+            // Changelog
+            renderChangelog(data.changelog || []);
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>' + UPDATE_TRANSLATIONS.check_updates;
+            statusArea.style.display = 'block';
+            statusArea.innerHTML = `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 small mb-0">
+                <i class="fas fa-exclamation-circle me-2"></i>${err.message || UPDATE_TRANSLATIONS.update_error}
+            </div>`;
+        });
+}
+
+function renderChangelog(commits) {
+    const area = document.getElementById('changelogArea');
+    if (!commits || commits.length === 0) {
+        area.innerHTML = `<div class="text-muted small">${UPDATE_TRANSLATIONS.no_changelog}</div>`;
+        return;
+    }
+    let html = '';
+    commits.forEach(c => {
+        const date = c.date ? new Date(c.date).toLocaleString() : '';
+        const msg = (c.message || '').split('\n')[0]; // first line only
+        html += `<div class="d-flex align-items-start mb-2 pb-2 border-bottom border-secondary">
+            <code class="text-info me-2 flex-shrink-0" style="font-size:0.75rem;">${c.sha}</code>
+            <div class="flex-grow-1">
+                <div class="text-white small">${escapeHtml(msg)}</div>
+                <div class="text-muted" style="font-size:0.7rem;">${date} · ${escapeHtml(c.author || '')}</div>
+            </div>
+        </div>`;
+    });
+    area.innerHTML = html;
+}
+
+function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+
+function installUpdate() {
+    if (!confirm('<?php echo __('update_warning'); ?>  \n\nContinue?')) return;
+    
+    const btn = document.getElementById('btnInstallUpdate');
+    const statusArea = document.getElementById('updateStatusArea');
+    
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>' + UPDATE_TRANSLATIONS.installing_update;
+
+    const csrf = $('meta[name="csrf-token"]').attr('content') || '<?php echo generateCsrfToken(); ?>';
+    
+    fetch('api/run_update.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'csrf_token=' + encodeURIComponent(csrf)
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-cloud-download-alt me-2"></i>' + UPDATE_TRANSLATIONS.install_update;
+        
+        statusArea.style.display = 'block';
+        if (data.success) {
+            let migrationsHtml = '';
+            if (data.migrations && data.migrations.length > 0) {
+                migrationsHtml = `<div class="mt-2"><strong>${UPDATE_TRANSLATIONS.migrations_ran}:</strong><ul class="mb-0">`;
+                data.migrations.forEach(m => {
+                    migrationsHtml += `<li>${escapeHtml(m.file || '')} — ${m.status}</li>`;
+                });
+                migrationsHtml += '</ul></div>';
+            }
+            statusArea.innerHTML = `<div class="alert alert-success border-0 bg-success bg-opacity-10 small mb-0">
+                <i class="fas fa-check-circle me-2 text-success"></i>
+                <strong>${UPDATE_TRANSLATIONS.update_success}</strong>
+                <div class="mt-1">v${data.previous_version} → v${data.new_version}</div>
+                ${migrationsHtml}
+                <div class="mt-2"><a href="settings.php?tab=updates" class="btn btn-sm btn-outline-light"><i class="fas fa-redo me-1"></i> Reload</a></div>
+            </div>`;
+            document.getElementById('btnInstallUpdate').style.display = 'none';
+            const badge = document.getElementById('updateBadgeNav');
+            if (badge) badge.style.display = 'none';
+            // Update local version display
+            document.getElementById('localVersion').textContent = data.new_version;
+        } else {
+            statusArea.innerHTML = `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 small mb-0">
+                <i class="fas fa-exclamation-circle me-2"></i>
+                <strong>${UPDATE_TRANSLATIONS.update_error}</strong>
+                <div class="mt-1">${escapeHtml(data.message || '')}</div>
+                ${data.output ? '<pre class="mt-2 mb-0 text-white-75 small">' + escapeHtml(data.output) + '</pre>' : ''}
+                ${data.hint ? '<div class="mt-2 text-info"><i class="fas fa-lightbulb me-1"></i>' + escapeHtml(data.hint) + '</div>' : ''}
+            </div>`;
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-cloud-download-alt me-2"></i>' + UPDATE_TRANSLATIONS.install_update;
+        statusArea.style.display = 'block';
+        statusArea.innerHTML = `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 small mb-0">
+            <i class="fas fa-exclamation-circle me-2"></i>${err.message || UPDATE_TRANSLATIONS.update_error}
+        </div>`;
+    });
+}
+
+// Auto-check on page load (use cache, no force)
+document.addEventListener('DOMContentLoaded', () => checkForUpdates(false));
+</script>
+<?php endif; ?>
 
 <?php require_once 'includes/footer.php'; ?>
 

@@ -2,8 +2,8 @@
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
 
-if (!isset($_SESSION['user_id'])) die("Unauthorized access");
-if (!isset($_GET['id'])) die("ID faktury není zadáno");
+if (!isset($_SESSION['user_id'])) die(__("unauthorized"));
+if (!isset($_GET['id'])) die("<?php echo __('missing_id'); ?>");
 
 $id = (int)$_GET['id'];
 $stmt = $pdo->prepare("SELECT i.*, c.first_name, c.last_name, c.phone, c.address, c.company, c.ico, c.dic, o.device_brand, o.device_model, o.serial_number 
@@ -14,7 +14,7 @@ $stmt = $pdo->prepare("SELECT i.*, c.first_name, c.last_name, c.phone, c.address
 $stmt->execute([$id]);
 $invoice = $stmt->fetch();
 
-if (!$invoice) die("Faktura nenalezena");
+if (!$invoice) die("<?php echo __('print_not_found'); ?>");
 
 // Fetch invoice items
 $stmt = $pdo->prepare("SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY id ASC");
@@ -27,7 +27,7 @@ $is_vat_payer = $invoice['is_vat_payer'];
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>Faktura <?php echo $invoice['invoice_number']; ?></title>
+    <title><?php echo __('print_title_invoice'); ?> <?php echo $invoice['invoice_number']; ?></title>
     <style>
         body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 11px; line-height: 1.4; color: #000; margin: 0; padding: 0; background-color: #f5f5f5; }
         .page { width: 210mm; min-height: 297mm; padding: 15mm; margin: 10mm auto; background: white; border: 1px solid #ddd; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.1); position: relative; }
@@ -74,8 +74,8 @@ $is_vat_payer = $invoice['is_vat_payer'];
 <body>
 
 <div class="no-print" style="text-align: center; margin: 20px;">
-    <button onclick="window.print()" style="padding: 10px 20px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px;">Tisk faktury</button>
-    <a href="accounting.php" style="padding: 10px 20px; text-decoration: none; background: #6c757d; color: white; border-radius: 4px; margin-left: 10px;">Zpět</a>
+    <button onclick="window.print()" style="padding: 10px 20px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px;"><?php echo __('print_btn'); ?></button>
+    <a href="accounting.php" style="padding: 10px 20px; text-decoration: none; background: #6c757d; color: white; border-radius: 4px; margin-left: 10px;"><?php echo __('back'); ?></a>
 </div>
 
 <div class="page">
@@ -182,14 +182,14 @@ $is_vat_payer = $invoice['is_vat_payer'];
         <thead>
             <tr>
                 <th style="width: <?php echo $is_vat_payer ? '40%' : '70%'; ?>">Položka</th>
-                <th class="text-right">Množství</th>
-                <th class="text-right">Jedn. cena</th>
+                <th class="text-right"><?php echo __('table_quantity'); ?></th>
+                <th class="text-right"><?php echo __('table_price'); ?></th>
                 <?php if ($is_vat_payer): ?>
                     <th class="text-right">DPH %</th>
                     <th class="text-right">Základ</th>
                     <th class="text-right">DPH</th>
                 <?php endif; ?>
-                <th class="text-right">Celkem</th>
+                <th class="text-right"><?php echo __('table_total'); ?></th>
             </tr>
         </thead>
         <tbody>
@@ -227,10 +227,10 @@ $is_vat_payer = $invoice['is_vat_payer'];
         <table class="vat-summary-table">
             <thead>
                 <tr>
-                    <th>Sazba DPH</th>
+                    <th><?php echo __('table_vat_rate'); ?></th>
                     <th class="text-right">Základ</th>
                     <th class="text-right">DPH</th>
-                    <th class="text-right">Celkem</th>
+                    <th class="text-right"><?php echo __('table_total'); ?></th>
                 </tr>
             </thead>
             <tbody>
@@ -263,7 +263,7 @@ $is_vat_payer = $invoice['is_vat_payer'];
         <?php if ($invoice['notes']): ?>
             <p><strong>Poznámka:</strong> <?php echo nl2br(htmlspecialchars($invoice['notes'])); ?></p>
         <?php endif; ?>
-        <p>Faktura slouží zároveň jako dodací a záruční list. Převzetím zboží/služby souhlasíte s platebními podmínkami.</p>
+        <p><?php echo __('print_title_invoice'); ?> slouží zároveň jako dodací a záruční list. Převzetím zboží/služby souhlasíte s platebními podmínkami.</p>
     </div>
 
     <div class="signatures">

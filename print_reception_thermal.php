@@ -5,7 +5,7 @@ require_once 'includes/functions.php';
 if (!isset($_GET['id']) && !isset($_GET['order_id'])) die("ID zakázky není zadáno");
 
 $id = $_GET['id'] ?? $_GET['order_id'];
-$target_lang = 'cs';
+$target_lang = $_GET['lang'] ?? 'cs';
 
 // Helper for local translations
 function _l($key) {

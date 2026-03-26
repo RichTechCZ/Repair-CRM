@@ -12,7 +12,7 @@ $stmt = $pdo->prepare("SELECT o.*, c.first_name, c.last_name, c.phone, c.address
 $stmt->execute([$id]);
 $order = $stmt->fetch();
 
-if (!$order) die("Zakázka nenalezena");
+if (!$order) die(__("print_not_found"));
 
 // Fetch items (parts) used
 $stmt = $pdo->prepare("SELECT oi.*, i.part_name FROM order_items oi JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
@@ -21,14 +21,14 @@ $items = $stmt->fetchAll();
 
 $currency = get_setting('currency', 'Kč');
 
-$target_lang = 'cs';
-function _l($key) { return __($key, 'cs'); }
+$target_lang = $_GET['lang'] ?? 'cs';
+function _l($key) { global $target_lang; return __($key, $target_lang); }
 ?>
 <!DOCTYPE html>
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>Účtenka #<?php echo $order['id']; ?></title>
+    <title><?php echo __('print_title_receipt'); ?> #<?php echo $order['id']; ?></title>
     <style>
         body { 
             font-family: Arial, Helvetica, sans-serif; 
@@ -136,7 +136,7 @@ function _l($key) { return __($key, 'cs'); }
 </div>
 
 <div class="no-print text-center" style="margin-top: 20px; padding-bottom: 50px;">
-    <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px;">Tisk účtenky</button>
+    <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px;"><?php echo __('print_btn'); ?></button>
 </div>
 
 <div class="footer text-center">

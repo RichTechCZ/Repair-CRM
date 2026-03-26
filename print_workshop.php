@@ -13,15 +13,15 @@ $stmt = $pdo->prepare("SELECT o.*, c.first_name, c.last_name, c.phone, t.name as
 $stmt->execute([$id]);
 $order = $stmt->fetch();
 
-if (!$order) die("Zakázka nenalezena");
+if (!$order) die(__("print_not_found"));
 
 // Fetch parts linked to this order
 $stmt = $pdo->prepare("SELECT oi.*, i.part_name FROM order_items oi JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
 $stmt->execute([$id]);
 $order_items = $stmt->fetchAll();
 
-$target_lang = 'cs';
-function _l($key) { return __($key, 'cs'); }
+$target_lang = $_GET['lang'] ?? 'cs';
+function _l($key) { global $target_lang; return __($key, $target_lang); }
 ?>
 <!DOCTYPE html>
 <html lang="cs">
