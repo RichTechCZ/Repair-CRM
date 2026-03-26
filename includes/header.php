@@ -82,6 +82,7 @@ if ($page == 'reports.php') {
             }
         });
     });
+    </script>
     <script>
     window.LANG_NOTICE = '<?php echo __("notice_title"); ?>';
     window.LANG_CONFIRM = '<?php echo __("confirm_title"); ?>';

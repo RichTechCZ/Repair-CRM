@@ -554,18 +554,23 @@ document.addEventListener('DOMContentLoaded', function() {
                                                     <div class="mb-3">
                                                         <label class="form-label"><?php echo __('company_name'); ?></label>
                                                         <input type="text" name="company_name" id="inline_ares_name" class="form-control">
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label class="form-label"><?php echo __('dic'); ?></label>
+                                                        <input type="text" name="dic" id="inline_ares_dic" class="form-control" placeholder="CZ12345678">
+                                                    </div>
                                                 </div>
                                                 <div class="row g-3">
                                                     <div class="col-md-6">
-                                                        <label class="form-label"><?php echo __('client'); ?> (<?php echo __('name_col'); ?>)</label>
+                                                        <label class="form-label"><?php echo __('client'); ?> (<?php echo __('name_col'); ?>) <span class="text-danger">*</span></label>
                                                         <input type="text" name="first_name" id="inline_first_name" class="form-control">
                                                     </div>
                                                     <div class="col-md-6">
-                                                        <label class="form-label"><?php echo __('client'); ?> (<?php echo __('last_name_label'); ?>)</label>
+                                                        <label class="form-label"><?php echo __('client'); ?> (<?php echo __('last_name_label'); ?>) <span class="text-danger">*</span></label>
                                                         <input type="text" name="last_name" id="inline_last_name" class="form-control">
                                                     </div>
                                                     <div class="col-12">
-                                                        <label class="form-label"><?php echo __('phone'); ?></label>
+                                                        <label class="form-label"><?php echo __('phone'); ?> <span class="text-danger">*</span></label>
                                                         <input type="tel" name="phone" id="inline_phone" class="form-control">
                                                     </div>
                                                     <div class="col-12">
