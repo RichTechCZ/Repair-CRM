@@ -1,38 +1,38 @@
 # Repair CRM
 
-CRM-система для сервисного центра по ремонту электроники.
+CRM system for electronics repair service centers.
 
-## Функции
+## Features
 
-- Управление заказами на ремонт
-- База клиентов
-- Учёт запчастей (склад)
-- Выставление счетов-фактур
-- Ролевая модель (администратор, инженер)
-- Telegram-интеграция для уведомлений
-- AI-интеграция для анализа
-- Мультиязычность (русский, чешский)
-- Экспорт в бухгалтерскую систему Pohoda
+- Repair order management
+- Customer database
+- Inventory tracking (spare parts)
+- Invoice generation
+- Role-based access (admin, engineer)
+- Telegram integration for notifications
+- AI integration for analysis
+- Multi-language support (Czech, Russian)
+- Export to Pohoda accounting system
 
-## Требования
+## Requirements
 
-- PHP 8.0 или выше
+- PHP 8.0 or higher
 - MySQL 5.7+ / MariaDB 10.3+
-- Apache с mod_rewrite (или Nginx)
-- Расширения PHP: pdo, pdo_mysql, mbstring, json, curl, gd
+- Apache with mod_rewrite (or Nginx)
+- PHP extensions: pdo, pdo_mysql, mbstring, json, curl, gd
 
-## Установка
+## Installation
 
-### 1. Клонирование репозитория
+### 1. Clone repository
 
 ```bash
 git clone https://github.com/RichTechCZ/Repair-CRM.git
 cd Repair-CRM
 ```
 
-### 2. Настройка базы данных
+### 2. Database setup
 
-Создайте базу данных MySQL:
+Create MySQL database:
 
 ```sql
 CREATE DATABASE repair_crm CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -41,15 +41,15 @@ GRANT ALL PRIVILEGES ON repair_crm.* TO 'crm_user'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
-### 3. Настройка окружения
+### 3. Environment configuration
 
-Скопируйте файл конфигурации:
+Copy configuration file:
 
 ```bash
 cp .env.example .env
 ```
 
-Отредактируйте `.env`:
+Edit `.env`:
 
 ```env
 DB_HOST=localhost
@@ -57,32 +57,32 @@ DB_NAME=repair_crm
 DB_USER=crm_user
 DB_PASS=your_secure_password
 
-# Telegram Bot (опционально)
+# Telegram Bot (optional)
 TG_BOT_TOKEN=
 
-# AI Integration (опционально)
+# AI Integration (optional)
 AI_API_KEY=
 AI_MODEL=google/gemini-2.0-flash-001
 AI_PROVIDER=openrouter
 ```
 
-### 4. Запуск миграций
+### 4. Run migrations
 
-Откройте в браузере:
+Open in browser:
 ```
 https://your-domain.com/run_migrations.php
 ```
 
-Или через командную строку:
+Or via command line:
 ```bash
 php run_migrations.php
 ```
 
-### 5. Настройка веб-сервера
+### 5. Web server configuration
 
 #### Apache
 
-Убедитесь что включён `mod_rewrite` и разрешены `.htaccess`:
+Make sure `mod_rewrite` is enabled and `.htaccess` is allowed:
 
 ```apache
 <VirtualHost *:80>
@@ -115,7 +115,7 @@ server {
         include fastcgi_params;
     }
 
-    # Запрет доступа к служебным файлам
+    # Deny access to sensitive files
     location ~ /\.(env|git) {
         deny all;
     }
@@ -126,70 +126,70 @@ server {
 }
 ```
 
-### 6. Права доступа
+### 6. File permissions
 
 ```bash
 chmod 755 uploads/
 chmod 755 temp/
 ```
 
-### 7. Первый вход
+### 7. First login
 
 - URL: `https://your-domain.com/login.php`
-- Логин: `admin`
-- Пароль: `admin`
+- Username: `admin`
+- Password: `admin`
 
-**ВАЖНО:** Смените пароль сразу после первого входа!
+**IMPORTANT:** Change password immediately after first login!
 
-## Структура проекта
+## Project structure
 
 ```
 Repair-CRM/
 ├── api/                    # API endpoints
 ├── assets/
-│   ├── css/               # Стили
+│   ├── css/               # Styles
 │   └── js/                # JavaScript
 ├── includes/
-│   ├── config.php         # Конфигурация БД и сессий
-│   ├── env_loader.php     # Загрузчик .env
-│   ├── functions.php      # Вспомогательные функции
-│   ├── header.php         # Шапка
-│   ├── footer.php         # Подвал
-│   └── lang.php           # Переводы
-├── migrations/            # SQL миграции
-├── models/                # Модели данных
-├── uploads/               # Загруженные файлы (создаётся автоматически)
-├── .env.example           # Шаблон конфигурации
-├── .gitignore             # Исключения Git
-├── index.php              # Главная (дашборд)
-├── login.php              # Авторизация
-├── orders.php             # Заказы
-├── customers.php          # Клиенты
-├── inventory.php          # Склад
-├── invoices.php           # Счета
-├── reports.php            # Отчёты
-├── settings.php           # Настройки
-└── run_migrations.php     # Запуск миграций
+│   ├── config.php         # Database and session configuration
+│   ├── env_loader.php     # .env loader
+│   ├── functions.php      # Helper functions
+│   ├── header.php         # Header template
+│   ├── footer.php         # Footer template
+│   └── lang.php           # Translations
+├── migrations/            # SQL migrations
+├── models/                # Data models
+├── uploads/               # Uploaded files (created automatically)
+├── .env.example           # Configuration template
+├── .gitignore             # Git exclusions
+├── index.php              # Dashboard
+├── login.php              # Authentication
+├── orders.php             # Orders
+├── customers.php          # Customers
+├── inventory.php          # Inventory
+├── invoices.php           # Invoices
+├── reports.php            # Reports
+├── settings.php           # Settings
+└── run_migrations.php     # Migration runner
 ```
 
-## Безопасность
+## Security
 
-- `.env` файл с паролями **не попадает** в репозиторий
-- Все пароли хешируются через `password_hash()`
-- CSRF-защита на всех формах
-- XSS-защита через экранирование вывода
-- Rate limiting на попытки входа
+- `.env` file with passwords is **excluded** from repository
+- All passwords are hashed with `password_hash()`
+- CSRF protection on all forms
+- XSS protection via output escaping
+- Rate limiting on login attempts
 - HTTP Security Headers
 
-## Обновления
+## Updates
 
-При обновлении системы:
+When updating the system:
 
 ```bash
 git pull origin main
 php run_migrations.php
 ```
 
-## Лицензия
+## License
 
-Copyright (c) 2026 Rich Technologies s.r.o. Все права защищены.
+Copyright (c) 2026 Rich Technologies s.r.o. All rights reserved.
