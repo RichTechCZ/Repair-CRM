@@ -748,7 +748,25 @@ function checkForUpdates(force = false) {
     const url = 'api/check_updates.php' + (force ? '?force=1' : '');
     
     fetch(url)
-        .then(r => r.json())
+        .then(async r => {
+            const text = await r.text();
+            let data = null;
+            try {
+                data = text ? JSON.parse(text) : null;
+            } catch (e) {
+                throw new Error(text || `HTTP ${r.status}`);
+            }
+
+            if (!r.ok && data && data.message) {
+                throw new Error(data.message);
+            }
+
+            if (!r.ok) {
+                throw new Error(`HTTP ${r.status}`);
+            }
+
+            return data;
+        })
         .then(data => {
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>' + UPDATE_TRANSLATIONS.check_updates;
