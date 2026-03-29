@@ -261,3 +261,19 @@ function openPreviewInNewTab() {
         window.open(activePreviewUrl, '_blank');
     }
 }
+
+/**
+ * Trigger a file download using a temporary anchor.
+ */
+function triggerDownload(url) {
+    if (!url) return;
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = '';
+    link.target = '_blank';
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}

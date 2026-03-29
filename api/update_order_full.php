@@ -94,7 +94,7 @@ try {
     $is_finishing = in_array($new_status, $finishing_statuses, true);
 
     if ($current['status'] === 'Collected' && $new_status !== 'Collected') {
-        throw new Exception('Cannot change status after Collected');
+        throw new Exception(__('status_change_after_collected_forbidden'));
     }
 
     if ($current['status'] !== $new_status) {

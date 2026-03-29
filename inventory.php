@@ -62,9 +62,9 @@ $inventory_stats = $pdo->query("SELECT COUNT(*) as total, SUM(CASE WHEN quantity
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newPartModal">
             <i class="fas fa-plus me-2"></i> <?php echo __('add_part'); ?>
         </button>
-        <a href="api/parse_mobilnidily.php" class="btn btn-outline-success" data-confirm="<?php echo __('parse_confirm'); ?>">
+        <button type="button" class="btn btn-outline-success" onclick="runCatalogUpdate()">
             <i class="fas fa-sync me-2"></i> <?php echo __('update_catalog'); ?>
-        </a>
+        </button>
     </div>
 </div>
 
@@ -262,6 +262,23 @@ function deletePart(id) {
                 showAlert('<?php echo __('error_prefix'); ?>' + res.message);
             }
         });
+    });
+}
+
+function runCatalogUpdate() {
+    showConfirm('<?php echo __('parse_confirm'); ?>', function() {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = 'api/parse_mobilnidily.php';
+
+        const csrf = document.createElement('input');
+        csrf.type = 'hidden';
+        csrf.name = 'csrf_token';
+        csrf.value = '<?php echo $_SESSION['csrf_token'] ?? ''; ?>';
+
+        form.appendChild(csrf);
+        document.body.appendChild(form);
+        form.submit();
     });
 }
 </script>

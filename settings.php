@@ -279,14 +279,23 @@ require_once 'includes/header.php';
                             <h6 class="small fw-bold mb-2 text-white"><?php echo __('webhook_status'); ?></h6>
                             <?php 
                             $current_token = get_setting('tg_bot_token');
-                            if (!empty($current_token)) {
+                            if (!empty($current_token) && $active_tab === 'integrations') {
                                 $api_url = "https://api.telegram.org/bot" . $current_token . "/getWebhookInfo";
-                                $ch = curl_init(); curl_setopt($ch, CURLOPT_URL, $api_url); curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true); $webhook_info = curl_exec($ch); curl_close($ch);
+                                $ch = curl_init();
+                                curl_setopt($ch, CURLOPT_URL, $api_url);
+                                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+                                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                                curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+                                $webhook_info = curl_exec($ch);
+                                curl_close($ch);
                                 $info = json_decode($webhook_info, true);
                                 if ($info && $info['ok']) {
                                     $url = $info['result']['url'] ?: __('not_set');
                                     echo '<div class="small text-break text-white-75"><strong>URL:</strong> ' . htmlspecialchars($url) . '</div>';
                                 } else { echo '<div class="small text-danger">'.__('token_invalid').'</div>'; }
+                            } elseif (!empty($current_token)) {
+                                echo '<div class="small text-muted">' . __('open_integrations_to_refresh_webhook') . '</div>';
                             } else { echo '<div class="small text-muted">'.__('token_not_set').'</div>'; }
                             ?>
                         </div>
@@ -497,7 +506,7 @@ require_once 'includes/header.php';
                         </div>
 
                         <?php
-                        $versionFile = __DIR__ . '/../version.json';
+                        $versionFile = __DIR__ . '/version.json';
                         $localVer = file_exists($versionFile) ? json_decode(file_get_contents($versionFile), true) : null;
                         ?>
 

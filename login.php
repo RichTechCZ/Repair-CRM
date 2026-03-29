@@ -44,9 +44,14 @@ if (isset($_POST['login'])) {
 
         if (isset($pdo)) {
             // 1. Try Admin (users table)
-            $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
-            $stmt->execute([$username]);
-            $user = $stmt->fetch();
+            try {
+                $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
+                $stmt->execute([$username]);
+                $user = $stmt->fetch();
+            } catch (Throwable $e) {
+                $user = false;
+                error_log("login.php users query failed: " . $e->getMessage());
+            }
 
             if ($user && password_verify($password, $user['password'])) {
                 session_regenerate_id(true); // Session Fixation protection
@@ -62,9 +67,14 @@ if (isset($_POST['login'])) {
             }
 
             // 2. Try Technician (technicians table)
-            $stmt = $pdo->prepare("SELECT * FROM technicians WHERE username = ? AND is_active = 1");
-            $stmt->execute([$username]);
-            $tech = $stmt->fetch();
+            try {
+                $stmt = $pdo->prepare("SELECT * FROM technicians WHERE username = ? AND is_active = 1");
+                $stmt->execute([$username]);
+                $tech = $stmt->fetch();
+            } catch (Throwable $e) {
+                $tech = false;
+                error_log("login.php technicians query failed: " . $e->getMessage());
+            }
 
             if ($tech && password_verify($password, $tech['password'])) {
                 session_regenerate_id(true);

@@ -84,7 +84,16 @@ switch ($action) {
         break;
 
     case 'export_pohoda':
-        $id = (int)$_GET['id'];
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            echo json_encode(['success' => false, 'error' => 'Method not allowed']);
+            break;
+        }
+        $id = (int)($_POST['id'] ?? 0);
+        if ($id <= 0) {
+            echo json_encode(['success' => false, 'error' => 'Invalid invoice ID']);
+            break;
+        }
         // Implementation for Pohoda XML
         require_once 'export_utils.php';
         $exporter = new AccountingExporter($pdo);
@@ -93,7 +102,16 @@ switch ($action) {
         break;
 
     case 'export_s3money':
-        $id = (int)$_GET['id'];
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            echo json_encode(['success' => false, 'error' => 'Method not allowed']);
+            break;
+        }
+        $id = (int)($_POST['id'] ?? 0);
+        if ($id <= 0) {
+            echo json_encode(['success' => false, 'error' => 'Invalid invoice ID']);
+            break;
+        }
         // Implementation for S3 Money CSV
         require_once 'export_utils.php';
         $exporter = new AccountingExporter($pdo);

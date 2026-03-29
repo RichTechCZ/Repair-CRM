@@ -11,8 +11,9 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$customer_id = $_GET['customer_id'] ?? null;
-if (!$customer_id) {
+$customer_id = filter_input(INPUT_GET, 'customer_id', FILTER_VALIDATE_INT);
+if (!$customer_id || $customer_id <= 0) {
+    http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'No customer ID']);
     exit;
 }

@@ -641,18 +641,30 @@ function toggleCustomerOverride() {
 }
 
 function exportPohoda(id) {
-    fetch('accounting_actions.php?action=export_pohoda&id=' + id)
+    const formData = new FormData();
+    formData.append('action', 'export_pohoda');
+    formData.append('id', id);
+    formData.append('csrf_token', '<?php echo $_SESSION['csrf_token'] ?? ''; ?>');
+
+    fetch('accounting_actions.php', { method: 'POST', body: formData })
     .then(r => r.json())
     .then(res => {
         if (res.success) triggerDownload('temp/exports/' + res.file);
+        else showAlert(res.error || 'Export failed');
     });
 }
 
 function exportS3(id) {
-    fetch('accounting_actions.php?action=export_s3money&id=' + id)
+    const formData = new FormData();
+    formData.append('action', 'export_s3money');
+    formData.append('id', id);
+    formData.append('csrf_token', '<?php echo $_SESSION['csrf_token'] ?? ''; ?>');
+
+    fetch('accounting_actions.php', { method: 'POST', body: formData })
     .then(r => r.json())
     .then(res => {
         if (res.success) triggerDownload('temp/exports/' + res.file);
+        else showAlert(res.error || 'Export failed');
     });
 }
 </script>

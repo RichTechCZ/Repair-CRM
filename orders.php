@@ -875,6 +875,9 @@ $(document).ready(function() {
                             <div class="col-12 col-sm-6 col-md-3">
                                 <label class="form-label"><?php echo __('status'); ?></label>
                                 <select name="status" class="form-select">
+                                    ${o.status === 'Collected'
+                                        ? `<option value="Collected" selected><?php echo __('collected'); ?></option>`
+                                        : `
                                     <option value="New" ${o.status=='New' ? 'selected':''}><?php echo __('new'); ?></option>
                                     <option value="Pending Approval" ${o.status=='Pending Approval' ? 'selected':''}><?php echo __('pending_approval'); ?></option>
                                     <option value="In Progress" ${o.status=='In Progress' ? 'selected':''}><?php echo __('in_progress'); ?></option>
@@ -882,6 +885,7 @@ $(document).ready(function() {
                                     <option value="Completed" ${o.status=='Completed' ? 'selected':''}><?php echo __('completed'); ?></option>
                                     <option value="Collected" ${o.status=='Collected' ? 'selected':''}><?php echo __('collected'); ?></option>
                                     <option value="Cancelled" ${o.status=='Cancelled' ? 'selected':''}><?php echo __('cancelled'); ?></option>
+                                        `}
                                 </select>
                             </div>
                             <div class="col-12 col-sm-6 col-md-3">

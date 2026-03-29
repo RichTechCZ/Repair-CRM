@@ -121,8 +121,9 @@ if (isset($pdo)) {
                                 <?php 
                                 $count = $order_counts[$customer['id']] ?? 0;
                                 ?>
-                                <button class="btn btn-sm <?php echo $count > 0 ? 'btn-primary' : 'btn-outline-secondary'; ?> rounded-pill px-3" 
-                                        onclick="showCustomerOrders(<?php echo $customer['id']; ?>, '<?php echo htmlspecialchars($customer['first_name'] . ' ' . $customer['last_name']); ?>')"
+                                <button class="btn btn-sm <?php echo $count > 0 ? 'btn-primary' : 'btn-outline-secondary'; ?> rounded-pill px-3"
+                                        data-customer-name="<?php echo htmlspecialchars(trim(($customer['first_name'] ?? '') . ' ' . ($customer['last_name'] ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'); ?>"
+                                        onclick="showCustomerOrders(<?php echo (int)$customer['id']; ?>, this.dataset.customerName)"
                                         <?php echo $count == 0 ? 'disabled' : ''; ?>>
                                     <?php echo $count; ?>
                                 </button>
@@ -216,15 +217,20 @@ function showCustomerOrders(id, name) {
     var myModal = new bootstrap.Modal(document.getElementById('customerOrdersModal'));
     myModal.show();
 
-    $.get('api/get_customer_orders.php', {customer_id: id}, function(res) {
-        if(res.success) {
+    $.ajax({
+        url: 'api/get_customer_orders.php',
+        method: 'GET',
+        dataType: 'json',
+        data: { customer_id: id }
+    }).done(function(res) {
+        if (res && res.success) {
             var html = '';
-            if(res.orders.length === 0) {
+            if (!Array.isArray(res.orders) || res.orders.length === 0) {
                 html = '<tr><td colspan="5" class="text-center py-4"><?php echo __('orders_not_found'); ?></td></tr>';
             } else {
                 function escapeHtml(text) {
-                    if (text == null) return \'\';
-                    return $(\'<div>\').text(text).html();
+                    if (text == null) return '';
+                    return $('<div>').text(text).html();
                 }
                 res.orders.forEach(function(o) {
                     html += '<tr>';
@@ -237,7 +243,14 @@ function showCustomerOrders(id, name) {
                 });
             }
             $('#customerOrdersList').html(html);
+        } else {
+            const msg = (res && res.message) ? res.message : '<?php echo __('error_loading_data'); ?>';
+            $('#customerOrdersList').html('<tr><td colspan="5" class="text-center py-4 text-danger">' + $('<div>').text(msg).html() + '</td></tr>');
         }
+    }).fail(function(xhr) {
+        const msg = (xhr && xhr.responseText) ? xhr.responseText : '<?php echo __('network_error'); ?>';
+        $('#customerOrdersList').html('<tr><td colspan="5" class="text-center py-4 text-danger"><?php echo __('error_loading_data'); ?></td></tr>');
+        showAlert($('<div>').text(msg).html());
     });
 }
 </script>

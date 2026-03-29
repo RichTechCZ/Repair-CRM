@@ -166,13 +166,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <div class="col-md-4">
                     <label class="form-label"><i class="fas fa-tasks me-2 text-warning"></i><?php echo __('status'); ?></label>
                     <select name="status" class="form-select">
-                        <option value="New" <?php if($order['status']=='New') echo 'selected'; ?>><?php echo __('new'); ?></option>
-                        <option value="Pending Approval" <?php if($order['status']=='Pending Approval') echo 'selected'; ?>><?php echo __('pending_approval'); ?></option>
-                        <option value="In Progress" <?php if($order['status']=='In Progress') echo 'selected'; ?>><?php echo __('in_progress'); ?></option>
-                        <option value="Waiting for Parts" <?php if($order['status']=='Waiting for Parts') echo 'selected'; ?>><?php echo __('waiting_parts'); ?></option>
-                        <option value="Completed" <?php if($order['status']=='Completed') echo 'selected'; ?>><?php echo __('completed'); ?></option>
-                        <option value="Collected" <?php if($order['status']=='Collected') echo 'selected'; ?>><?php echo __('collected'); ?></option>
-                        <option value="Cancelled" <?php if($order['status']=='Cancelled') echo 'selected'; ?>><?php echo __('cancelled'); ?></option>
+                        <?php if (($order['status'] ?? '') === 'Collected'): ?>
+                            <option value="Collected" selected><?php echo __('collected'); ?></option>
+                        <?php else: ?>
+                            <option value="New" <?php if($order['status']=='New') echo 'selected'; ?>><?php echo __('new'); ?></option>
+                            <option value="Pending Approval" <?php if($order['status']=='Pending Approval') echo 'selected'; ?>><?php echo __('pending_approval'); ?></option>
+                            <option value="In Progress" <?php if($order['status']=='In Progress') echo 'selected'; ?>><?php echo __('in_progress'); ?></option>
+                            <option value="Waiting for Parts" <?php if($order['status']=='Waiting for Parts') echo 'selected'; ?>><?php echo __('waiting_parts'); ?></option>
+                            <option value="Completed" <?php if($order['status']=='Completed') echo 'selected'; ?>><?php echo __('completed'); ?></option>
+                            <option value="Collected" <?php if($order['status']=='Collected') echo 'selected'; ?>><?php echo __('collected'); ?></option>
+                            <option value="Cancelled" <?php if($order['status']=='Cancelled') echo 'selected'; ?>><?php echo __('cancelled'); ?></option>
+                        <?php endif; ?>
                     </select>
                 </div>
                 <div class="col-md-4">

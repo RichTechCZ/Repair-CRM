@@ -6,6 +6,16 @@ if (!isset($_SESSION['user_id']) || !hasPermission('admin_access')) {
     die(__('unauthorized'));
 }
 
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    die('Method not allowed');
+}
+
+if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    http_response_code(403);
+    die(__('csrf_token_invalid'));
+}
+
 set_time_limit(300); // 5 minutes
 
 $base_url = "https://www.mobilnidily.cz";

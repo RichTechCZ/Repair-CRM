@@ -10,9 +10,21 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$order_id = $_REQUEST['order_id'] ?? null;
-$inventory_id = $_REQUEST['inventory_id'] ?? null;
-$qty = $_REQUEST['quantity'] ?? 1;
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['success' => false, 'message' => 'Method not allowed']);
+    exit;
+}
+
+if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => __('csrf_token_invalid')]);
+    exit;
+}
+
+$order_id = $_POST['order_id'] ?? null;
+$inventory_id = $_POST['inventory_id'] ?? null;
+$qty = $_POST['quantity'] ?? 1;
 
 if (!$order_id || !$inventory_id) {
     echo json_encode(['success' => false, 'message' => __('missing_data')]);

@@ -50,7 +50,7 @@ try {
     $current_final = $order_data['final_cost'];
 
     if ($current_status === 'Collected' && $new_status !== 'Collected') {
-        throw new Exception('Cannot change status after Collected');
+        throw new Exception(__('status_change_after_collected_forbidden'));
     }
 
     $finishing_statuses = ['Completed', 'Collected'];
