@@ -890,11 +890,23 @@ function installUpdate() {
                 });
                 migrationsHtml += '</ul></div>';
             }
+            let updateMetaHtml = '';
+            if (data.method) {
+                updateMetaHtml += `<div class="mt-2 small text-white-75">Method: ${escapeHtml(data.method)}</div>`;
+            }
+            if (data.summary && Array.isArray(data.summary.warnings) && data.summary.warnings.length > 0) {
+                updateMetaHtml += `<div class="mt-2"><strong>Warnings:</strong><ul class="mb-0">`;
+                data.summary.warnings.forEach(w => {
+                    updateMetaHtml += `<li>${escapeHtml(w || '')}</li>`;
+                });
+                updateMetaHtml += '</ul></div>';
+            }
             statusArea.innerHTML = `<div class="alert alert-success border-0 bg-success bg-opacity-10 small mb-0">
                 <i class="fas fa-check-circle me-2 text-success"></i>
                 <strong>${UPDATE_TRANSLATIONS.update_success}</strong>
                 <div class="mt-1">v${data.previous_version} → v${data.new_version}</div>
                 ${migrationsHtml}
+                ${updateMetaHtml}
                 <div class="mt-2"><a href="settings.php?tab=updates" class="btn btn-sm btn-outline-light"><i class="fas fa-redo me-1"></i> Reload</a></div>
             </div>`;
             document.getElementById('btnInstallUpdate').style.display = 'none';
