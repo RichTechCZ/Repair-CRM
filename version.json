@@ -1,7 +1,7 @@
 {
-    "version": "1.0.0",
-    "build": 1,
-    "release_date": "2026-03-26",
+    "version": "1.0.1",
+    "build": 2,
+    "release_date": "2026-03-29",
     "channel": "stable",
     "github_repo": "RichTechCZ/Repair-CRM",
     "github_branch": "main"

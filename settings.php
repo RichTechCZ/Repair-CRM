@@ -522,6 +522,7 @@ require_once 'includes/header.php';
                                 <div class="glass-panel p-3 text-center border-secondary" id="remoteVersionPanel">
                                     <div class="text-white-75 small mb-1"><?php echo __('latest_version'); ?></div>
                                     <div class="h4 text-muted mb-0" id="remoteVersion">—</div>
+                                    <div class="small text-muted" id="remoteBuild"><?php echo __('build'); ?>: —</div>
                                     <div class="small text-muted" id="remoteReleaseDate"></div>
                                 </div>
                             </div>
@@ -764,18 +765,31 @@ function checkForUpdates(force = false) {
             const rv = document.getElementById('remoteVersion');
             rv.textContent = data.remote_version;
             rv.className = data.has_update ? 'h4 text-success mb-0' : 'h4 text-white mb-0';
+
+            const rb = document.getElementById('remoteBuild');
+            if (rb) {
+                const remoteBuild = (typeof data.remote_build !== 'undefined' && data.remote_build !== null && data.remote_build !== '')
+                    ? data.remote_build
+                    : '—';
+                rb.textContent = '<?php echo __('build'); ?>: ' + remoteBuild;
+            }
             
             const rd = document.getElementById('remoteReleaseDate');
             if (data.release_date) {
                 rd.textContent = UPDATE_TRANSLATIONS.release_date + ': ' + data.release_date;
+            } else {
+                rd.textContent = '';
             }
+
+            const localLabel = formatUpdateLabel(data.local_version, data.local_build, data.local_commit);
+            const remoteLabel = formatUpdateLabel(data.remote_version, data.remote_build, data.remote_commit);
 
             // Status message
             statusArea.style.display = 'block';
             if (data.has_update) {
                 statusArea.innerHTML = `<div class="alert alert-info border-0 bg-info bg-opacity-10 small mb-0">
                     <i class="fas fa-arrow-circle-up me-2 text-info"></i>
-                    <strong>${UPDATE_TRANSLATIONS.update_available}</strong> v${data.local_version} → v${data.remote_version}
+                    <strong>${UPDATE_TRANSLATIONS.update_available}</strong> ${localLabel} → ${remoteLabel}
                     <div class="mt-1 text-white-75">${UPDATE_TRANSLATIONS.update_available_desc}</div>
                 </div>`;
                 document.getElementById('btnInstallUpdate').style.display = 'inline-block';
@@ -785,7 +799,7 @@ function checkForUpdates(force = false) {
             } else {
                 statusArea.innerHTML = `<div class="alert alert-success border-0 bg-success bg-opacity-10 small mb-0">
                     <i class="fas fa-check-circle me-2 text-success"></i>
-                    <strong>${UPDATE_TRANSLATIONS.up_to_date}</strong> (v${data.local_version})
+                    <strong>${UPDATE_TRANSLATIONS.up_to_date}</strong> (${localLabel})
                     <div class="mt-1 text-white-75">${UPDATE_TRANSLATIONS.up_to_date_desc}</div>
                 </div>`;
                 document.getElementById('btnInstallUpdate').style.display = 'none';
@@ -808,6 +822,14 @@ function checkForUpdates(force = false) {
                 <i class="fas fa-exclamation-circle me-2"></i>${err.message || UPDATE_TRANSLATIONS.update_error}
             </div>`;
         });
+}
+
+function formatUpdateLabel(version, build, commit) {
+    const parts = [];
+    if (version) parts.push(`v${version}`);
+    if (build !== undefined && build !== null && build !== '') parts.push(`build ${build}`);
+    if (commit) parts.push(`#${commit}`);
+    return parts.join(' · ');
 }
 
 function renderChangelog(commits) {
