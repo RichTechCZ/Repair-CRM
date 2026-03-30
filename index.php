@@ -127,7 +127,7 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
 
 <div class="row">
     <div class="col-md-8">
-        <div class="card glass-card border-0">
+        <div class="card glass-card border-0 dashboard-orders-card">
             <div class="card-header bg-transparent border-bottom-0 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">
                     <?php 
@@ -144,17 +144,17 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                     <a href="orders.php" class="btn btn-sm btn-primary"><?php echo __('all_orders'); ?></a>
                 <?php endif; ?>
             </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
+            <div class="card-body p-0">
+                <div class="table-responsive dashboard-orders-table-wrap">
+                    <table class="table table-hover align-middle mb-0 dashboard-orders-table">
+                        <thead class="bg-transparent sticky-top" style="z-index: 10;">
                             <tr>
-                                <th>ID</th>
+                                <th class="ps-4">ID</th>
                                 <th><?php echo __('client'); ?></th>
                                 <th><?php echo __('device_model'); ?></th>
                                 <th><?php echo __('problem'); ?></th>
                                 <th><?php echo __('status'); ?></th>
-                                <th><?php echo __('amount'); ?></th>
+                                <th class="text-end pe-4"><?php echo __('amount'); ?></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -222,31 +222,36 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                                 $has_media = isset($has_media_ids[$r['id']]);
                             ?>
                             <tr <?php if($r['priority'] == 'High') echo 'class="table-danger"'; ?>>
-                                <td>
+                                <td class="ps-4">
                                     <a href="view_order.php?id=<?php echo $r['id']; ?>" class="fw-bold text-decoration-none">#<?php echo $r['id']; ?></a>
                                     <?php if($has_media): ?>
                                         <i class="fas fa-camera text-info ms-1" title="<?php echo __('has_media'); ?>"></i>
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <strong><?php echo htmlspecialchars($r['first_name'].' '.$r['last_name']); ?></strong><br>
-                                    <small class="text-white-75"><?php echo htmlspecialchars($r['phone']); ?></small>
+                                    <div class="fw-semibold"><?php echo htmlspecialchars($r['first_name'].' '.$r['last_name']); ?></div>
+                                    <div class="small text-white-75"><?php echo htmlspecialchars($r['phone']); ?></div>
                                 </td>
                                 <td>
-                                    <?php echo $icon; ?> <strong><?php echo htmlspecialchars($r['device_brand']); ?></strong><br>
-                                    <small class="text-white-75"><?php echo htmlspecialchars($r['device_model']); ?></small>
+                                    <div class="fw-medium text-primary"><?php echo $icon; ?> <?php echo htmlspecialchars($r['device_brand']); ?></div>
+                                    <div class="small text-white-75"><?php echo htmlspecialchars($r['device_model']); ?></div>
                                 </td>
                                 <td>
-                                    <small><?php echo htmlspecialchars(mb_strimwidth($r['problem_description'], 0, 40, "...")); ?></small><br>
-                                    <span class="badge bg-transparent border border-secondary text-white-75"><i class="fas fa-user-cog me-1"></i><?php echo htmlspecialchars($r['tech_name'] ?? '---'); ?></span>
+                                    <div class="small problem-snippet"><?php echo htmlspecialchars(mb_strimwidth($r['problem_description'], 0, 56, "...")); ?></div>
+                                    <span class="badge bg-transparent border border-secondary text-white-75 mt-2"><i class="fas fa-user-cog me-1"></i><?php echo htmlspecialchars($r['tech_name'] ?? '---'); ?></span>
                                 </td>
                                 <td><?php echo getStatusBadge($r['status']); ?></td>
-                                <td><strong><?php echo formatMoney($r['final_cost'] ?? $r['estimated_cost']); ?></strong></td>
+                                <td class="text-end pe-4"><strong><?php echo formatMoney($r['final_cost'] ?? $r['estimated_cost']); ?></strong></td>
                             </tr>
                             <?php endforeach; 
                             
                             if (!$found): ?>
-                                <tr><td colspan="7" class="text-center text-white-75 py-4"><?php echo __('not_found'); ?></td></tr>
+                                <tr>
+                                    <td colspan="6" class="text-center py-5 text-white-75">
+                                        <i class="fas fa-folder-open fa-2x mb-3 d-block opacity-25"></i>
+                                        <?php echo __('not_found'); ?>
+                                    </td>
+                                </tr>
                             <?php endif; ?>
                         </tbody>
                     </table>

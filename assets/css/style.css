@@ -116,6 +116,40 @@ body.modal-open {
 }
 .table-danger td { border-color: #5c1b1b !important; }
 
+.dashboard-orders-card .card-body {
+    padding: 0;
+}
+
+.dashboard-orders-table-wrap {
+    max-height: 700px;
+    overflow-y: auto;
+}
+
+.dashboard-orders-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: rgba(18, 24, 31, 0.96);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.dashboard-orders-table td {
+    vertical-align: middle;
+}
+
+.dashboard-orders-table .problem-snippet {
+    max-width: 240px;
+    line-height: 1.45;
+    white-space: normal;
+}
+
+@media (max-width: 991.98px) {
+    .dashboard-orders-table .problem-snippet {
+        max-width: 180px;
+    }
+}
+
 /* Custom text class to replace low contrast text-white-50 */
 .text-white-75 {
     color: rgba(255, 255, 255, 0.75) !important;
