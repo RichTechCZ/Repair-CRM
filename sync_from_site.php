@@ -1,22 +1,33 @@
 <?php
 require_once 'includes/config.php';
 
-$sync_token = getenv('SYNC_TOKEN') ?: 'DEFAULT_SECURE_TOKEN_REPLACE_ME';
-if (php_sapi_name() !== 'cli' && (!isset($_GET['token']) || $_GET['token'] !== $sync_token)) {
-    http_response_code(403);
-    echo "Forbidden\n";
+$sync_token = trim((string)(getenv('SYNC_TOKEN') ?: ''));
+if ($sync_token === '') {
+    http_response_code(503);
+    echo "SYNC_TOKEN is not configured\n";
     exit;
 }
 
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', php_sapi_name() === 'cli' ? '1' : '0');
+
+if (php_sapi_name() !== 'cli') {
+    $provided_token = isset($_GET['token']) ? (string)$_GET['token'] : '';
+    if ($provided_token === '' || !hash_equals($sync_token, $provided_token)) {
+        http_response_code(403);
+        echo "Forbidden\n";
+        exit;
+    }
+}
 
 
 if (!isset($pdo)) {
     die("PDO not initialized. Check config.php\n");
 }
 
-echo "Working directory: " . getcwd() . "\n";
+if (php_sapi_name() === 'cli') {
+    echo "Working directory: " . getcwd() . "\n";
+}
 
 function sync_orders($data) {
     global $pdo;
