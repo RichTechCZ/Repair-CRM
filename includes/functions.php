@@ -217,7 +217,7 @@ function sendTelegramNotification($chatId, $message) {
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 10);
     $response = curl_exec($ch);
-    curl_close($ch);
+    unset($ch);
     
     if ($response === false) return false;
     

@@ -39,7 +39,7 @@ if (isset($_POST['update_integrations']) && $is_admin_check) {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
         curl_exec($ch);
-        curl_close($ch);
+        unset($ch);
     }
     header("Location: settings.php?tab=integrations&updated=1");
     exit;
@@ -288,7 +288,7 @@ require_once 'includes/header.php';
                                 curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
                                 curl_setopt($ch, CURLOPT_TIMEOUT, 8);
                                 $webhook_info = curl_exec($ch);
-                                curl_close($ch);
+                                unset($ch);
                                 $info = json_decode($webhook_info, true);
                                 if ($info && $info['ok']) {
                                     $url = $info['result']['url'] ?: __('not_set');

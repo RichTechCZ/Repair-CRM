@@ -129,7 +129,7 @@ function fetchToFile(string $url, string $targetFile, array $headers = [], int $
     $ok = curl_exec($ch);
     $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $error = curl_error($ch);
-    curl_close($ch);
+    unset($ch);
     fclose($handle);
 
     if (!$ok || $httpCode < 200 || $httpCode >= 300) {

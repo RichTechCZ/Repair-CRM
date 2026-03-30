@@ -74,7 +74,7 @@ function fetchRemoteUrl(string $url, array $headers = [], int $timeout = 15): ar
     $response = curl_exec($ch);
     $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curlError = curl_error($ch);
-    curl_close($ch);
+    unset($ch);
 
     return [$response, $httpCode, $curlError];
 }
