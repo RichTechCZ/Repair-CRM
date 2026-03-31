@@ -1099,6 +1099,7 @@ function deleteOrder(id) {
         <div class="modal-content glass-card border-secondary text-white">
             <form id="editOrderFullForm">
                 <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
+                <input type="hidden" name="csrf_token" value="<?php echo e(generateCsrfToken()); ?>">
                 <div class="modal-header border-secondary">
                     <h5 class="modal-title"><?php echo __('edit_order_title'); ?> #<?php echo $order['id']; ?></h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>

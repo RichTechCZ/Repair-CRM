@@ -110,11 +110,83 @@ body.modal-open {
 .table td {
     border-color: rgba(255,255,255,0.05);
 }
-.table-danger {
-    background-color: #4a1515 !important;
-    color: #ffcccc !important;
+.table-danger,
+.priority-high-row {
+    --priority-row-bg: rgba(255, 255, 255, 0.055);
+    --priority-row-bg-hover: rgba(255, 255, 255, 0.095);
+    --priority-row-border: rgba(255, 196, 162, 0.14);
+    color: #eef4fb !important;
 }
-.table-danger td { border-color: #5c1b1b !important; }
+
+.table-danger > th,
+.table-danger > td,
+.priority-high-row > th,
+.priority-high-row > td {
+    color: inherit !important;
+    background-color: var(--priority-row-bg) !important;
+    background-image: none !important;
+    border-color: var(--priority-row-border) !important;
+}
+
+.table-danger > td:first-child,
+.priority-high-row > td:first-child {
+    box-shadow: inset 4px 0 0 #ff9968, inset 1px 0 0 rgba(255, 239, 229, 0.18);
+}
+
+.table tbody tr.table-danger:hover > td,
+.table tbody tr.priority-high-row:hover > td {
+    background-color: var(--priority-row-bg-hover) !important;
+    background-image: none !important;
+}
+
+.priority-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+    padding: 0.28rem 0.72rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 173, 122, 0.28);
+    background: rgba(255, 128, 74, 0.12);
+    box-shadow: 0 8px 18px rgba(255, 120, 72, 0.10);
+    color: #ffd9c5;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    width: fit-content;
+}
+
+.priority-chip i {
+    color: #ffb07b;
+    font-size: 0.72rem;
+}
+
+.priority-chip-animated {
+    animation: priorityChipShake 2.8s ease-in-out infinite;
+    transform-origin: center;
+}
+
+@keyframes priorityChipShake {
+    0%, 100% {
+        transform: translateX(0) rotate(0deg);
+    }
+    6% {
+        transform: translateX(-1px) rotate(-1deg);
+    }
+    12% {
+        transform: translateX(1.5px) rotate(1deg);
+    }
+    18% {
+        transform: translateX(-1.5px) rotate(-0.8deg);
+    }
+    24% {
+        transform: translateX(1px) rotate(0.6deg);
+    }
+    30% {
+        transform: translateX(0) rotate(0deg);
+    }
+}
 
 .dashboard-orders-card .card-body {
     padding: 0;

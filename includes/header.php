@@ -70,16 +70,38 @@ if ($page == 'reports.php') {
     // Automatically attach CSRF token to every jQuery AJAX POST request
     $(function() {
         var csrfToken = $('meta[name="csrf-token"]').attr('content');
-        $.ajaxSetup({
-            beforeSend: function(xhr, settings) {
-                if (settings.type === 'POST' || settings.type === 'post') {
-                    if (typeof settings.data === 'string') {
-                        settings.data += '&csrf_token=' + encodeURIComponent(csrfToken);
-                    } else if (settings.data instanceof FormData) {
-                        settings.data.append('csrf_token', csrfToken);
-                    }
-                }
+        $.ajaxPrefilter(function(options, originalOptions) {
+            var method = String(options.type || options.method || 'GET').toUpperCase();
+            var data = originalOptions.data !== undefined ? originalOptions.data : options.data;
+
+            if (method !== 'POST' || !csrfToken) {
+                return;
             }
+
+            if (data instanceof FormData) {
+                if (!data.has('csrf_token')) {
+                    data.append('csrf_token', csrfToken);
+                }
+                options.data = data;
+                return;
+            }
+
+            if ($.isPlainObject(data)) {
+                if (!Object.prototype.hasOwnProperty.call(data, 'csrf_token')) {
+                    data.csrf_token = csrfToken;
+                }
+                options.data = data;
+                return;
+            }
+
+            if (typeof data === 'string') {
+                if (!/(^|&)csrf_token=/.test(data)) {
+                    options.data = data ? (data + '&csrf_token=' + encodeURIComponent(csrfToken)) : ('csrf_token=' + encodeURIComponent(csrfToken));
+                }
+                return;
+            }
+
+            options.data = 'csrf_token=' + encodeURIComponent(csrfToken);
         });
     });
     </script>

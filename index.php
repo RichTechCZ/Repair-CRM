@@ -221,11 +221,17 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
 
                                 $has_media = isset($has_media_ids[$r['id']]);
                             ?>
-                            <tr <?php if($r['priority'] == 'High') echo 'class="table-danger"'; ?>>
+                            <tr <?php if($r['priority'] == 'High') echo 'class="priority-high-row"'; ?>>
                                 <td class="ps-4">
                                     <a href="view_order.php?id=<?php echo $r['id']; ?>" class="fw-bold text-decoration-none">#<?php echo $r['id']; ?></a>
                                     <?php if($has_media): ?>
                                         <i class="fas fa-camera text-info ms-1" title="<?php echo __('has_media'); ?>"></i>
+                                    <?php endif; ?>
+                                    <?php if($r['priority'] == 'High'): ?>
+                                        <div class="priority-chip priority-chip-animated">
+                                            <i class="fas fa-bolt"></i>
+                                            <span><?php echo __('high'); ?></span>
+                                        </div>
                                     <?php endif; ?>
                                 </td>
                                 <td>

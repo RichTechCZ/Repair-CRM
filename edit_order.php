@@ -24,94 +24,98 @@ $success = false;
 $error = false;
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $customer_id = $_POST['customer_id'];
-    $technician_id = $_POST['technician_id'];
-    $device_type = $_POST['device_type'];
-    $order_type = $_POST['order_type'];
-    $device_brand = $_POST['device_brand'];
-    $device_model = $_POST['device_model'];
-    $serial_number = $_POST['serial_number'];
-    $serial_number_2 = $_POST['serial_number_2'];
-    $problem_description = $_POST['problem_description'];
-    $technician_notes = $_POST['technician_notes'];
-    $estimated_cost = $_POST['estimated_cost'];
-    $status = $_POST['status'];
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        $error = __('csrf_token_invalid');
+    } else {
+        $customer_id = $_POST['customer_id'];
+        $technician_id = $_POST['technician_id'];
+        $device_type = $_POST['device_type'];
+        $order_type = $_POST['order_type'];
+        $device_brand = $_POST['device_brand'];
+        $device_model = $_POST['device_model'];
+        $serial_number = $_POST['serial_number'];
+        $serial_number_2 = $_POST['serial_number_2'];
+        $problem_description = $_POST['problem_description'];
+        $technician_notes = $_POST['technician_notes'];
+        $estimated_cost = $_POST['estimated_cost'];
+        $status = $_POST['status'];
 
-    try {
-        // First get current status to see if it changed to Collected
-        $stmt_curr = $pdo->prepare("SELECT status, shipping_date FROM orders WHERE id = ?");
-        $stmt_curr->execute([$id]);
-        $current_order = $stmt_curr->fetch();
-        
-        $shipping_date_sql = "";
-        if ($status === 'Collected' && !$current_order['shipping_date']) {
-            $shipping_date_sql = ", shipping_date = NOW()";
-        }
-
-        $update = $pdo->prepare("UPDATE orders SET 
-            customer_id = ?, 
-            technician_id = ?,
-            device_type = ?, 
-            order_type = ?,
-            device_brand = ?,
-            device_model = ?, 
-            serial_number = ?, 
-            serial_number_2 = ?, 
-            problem_description = ?, 
-            technician_notes = ?, 
-            estimated_cost = ?, 
-            status = ? 
-            $shipping_date_sql
-            WHERE id = ?");
-        $update->execute([
-            $customer_id, 
-            $technician_id,
-            $device_type, 
-            $order_type,
-            $device_brand,
-            $device_model, 
-            $serial_number, 
-            $serial_number_2,
-            $problem_description, 
-            $technician_notes, 
-            $estimated_cost, 
-            $status, 
-            $id
-        ]);
-
-        // Handle File Uploads during Edit
-        if (isset($_FILES['files'])) {
-            $files = $_FILES['files'];
-            $upload_dir = 'uploads/';
-            if (!is_dir($upload_dir)) {
-                mkdir($upload_dir, 0777, true);
+        try {
+            // First get current status to see if it changed to Collected
+            $stmt_curr = $pdo->prepare("SELECT status, shipping_date FROM orders WHERE id = ?");
+            $stmt_curr->execute([$id]);
+            $current_order = $stmt_curr->fetch();
+            
+            $shipping_date_sql = "";
+            if ($status === 'Collected' && !$current_order['shipping_date']) {
+                $shipping_date_sql = ", shipping_date = NOW()";
             }
-            $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'video/mp4', 'video/quicktime', 'video/x-msvideo'];
 
-                    foreach ($files['name'] as $key => $name) {
-                        if ($files['error'][$key] == 0) {
-                            $type = $files['type'][$key];
-                            if (in_array($type, $allowed_types)) {
-                                $ext = pathinfo($name, PATHINFO_EXTENSION);
-                                $new_name = uniqid('order_' . $id . '_') . '.' . $ext;
-                                $path = $upload_dir . $new_name;
-                                
-                                if (move_uploaded_file($files['tmp_name'][$key], $path)) {
-                                    $db_path = 'uploads/' . $new_name;
-                                    $stmt_file = $pdo->prepare("INSERT INTO order_attachments (order_id, file_path, file_type, file_name) VALUES (?, ?, ?, ?)");
-                                    $stmt_file->execute([$id, $db_path, $type, $name]);
+            $update = $pdo->prepare("UPDATE orders SET 
+                customer_id = ?, 
+                technician_id = ?,
+                device_type = ?, 
+                order_type = ?,
+                device_brand = ?,
+                device_model = ?, 
+                serial_number = ?, 
+                serial_number_2 = ?, 
+                problem_description = ?, 
+                technician_notes = ?, 
+                estimated_cost = ?, 
+                status = ? 
+                $shipping_date_sql
+                WHERE id = ?");
+            $update->execute([
+                $customer_id, 
+                $technician_id,
+                $device_type, 
+                $order_type,
+                $device_brand,
+                $device_model, 
+                $serial_number, 
+                $serial_number_2,
+                $problem_description, 
+                $technician_notes, 
+                $estimated_cost, 
+                $status, 
+                $id
+            ]);
+
+            // Handle File Uploads during Edit
+            if (isset($_FILES['files'])) {
+                $files = $_FILES['files'];
+                $upload_dir = 'uploads/';
+                if (!is_dir($upload_dir)) {
+                    mkdir($upload_dir, 0777, true);
+                }
+                $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'video/mp4', 'video/quicktime', 'video/x-msvideo'];
+
+                        foreach ($files['name'] as $key => $name) {
+                            if ($files['error'][$key] == 0) {
+                                $type = $files['type'][$key];
+                                if (in_array($type, $allowed_types)) {
+                                    $ext = pathinfo($name, PATHINFO_EXTENSION);
+                                    $new_name = uniqid('order_' . $id . '_') . '.' . $ext;
+                                    $path = $upload_dir . $new_name;
+                                    
+                                    if (move_uploaded_file($files['tmp_name'][$key], $path)) {
+                                        $db_path = 'uploads/' . $new_name;
+                                        $stmt_file = $pdo->prepare("INSERT INTO order_attachments (order_id, file_path, file_type, file_name) VALUES (?, ?, ?, ?)");
+                                        $stmt_file->execute([$id, $db_path, $type, $name]);
+                                    }
                                 }
                             }
                         }
-                    }
-        }
+            }
 
-        $success = __('order_updated_success');
-        // Refresh order data
-        $stmt->execute([$id]);
-        $order = $stmt->fetch();
-    } catch (Exception $e) {
-        $error = __('update_error') . $e->getMessage();
+            $success = __('order_updated_success');
+            // Refresh order data
+            $stmt->execute([$id]);
+            $order = $stmt->fetch();
+        } catch (Exception $e) {
+            $error = __('update_error') . $e->getMessage();
+        }
     }
 }
 ?>
@@ -139,6 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <div class="card">
     <div class="card-body">
         <form method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="<?php echo e(generateCsrfToken()); ?>">
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label"><i class="fas fa-user me-2 text-primary"></i><?php echo __('client'); ?></label>
@@ -286,7 +291,10 @@ $(document).ready(function() {
 
 function deleteOrder(id) {
     showConfirm('<?php echo __('confirm_delete_order_full'); ?>', function() {
-        $.post('api/delete_order.php', {id: id}, function(res) {
+        $.post('api/delete_order.php', {
+            id: id,
+            csrf_token: $('meta[name="csrf-token"]').attr('content')
+        }, function(res) {
             if (res.success) {
                 showAlert('<?php echo __('order_deleted'); ?>');
                 window.location.href = 'orders.php';
@@ -299,7 +307,10 @@ function deleteOrder(id) {
 
 function deleteMedia(id) {
     showConfirm('<?php echo __('confirm_delete_file'); ?>', function() {
-        $.post('api/delete_media.php', {id: id}, function(res) {
+        $.post('api/delete_media.php', {
+            id: id,
+            csrf_token: $('meta[name="csrf-token"]').attr('content')
+        }, function(res) {
             if (res.success) {
                 $('#media-item-' + id).fadeOut();
             } else {

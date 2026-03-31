@@ -265,13 +265,19 @@ if (isset($pdo)) {
                             $client_phone = $order['phone'] ?? '';
                             $phone_clean  = preg_replace('/[^0-9+]/', '', $client_phone);
                         ?>
-                        <tr>
+                        <tr <?php echo (($order['priority'] ?? '') === 'High') ? 'class="priority-high-row"' : ''; ?>>
                             <td class="ps-4">
                                 <a href="view_order.php?id=<?php echo (int)$order['id']; ?>" class="fw-bold text-decoration-none">#<?php echo (int)$order['id']; ?></a>
                                 <?php if($has_media): ?>
                                     <i class="fas fa-camera text-info ms-1" title="<?php echo __('media_files'); ?>"></i>
                                 <?php endif; ?>
                                 <div class="small text-white-75"><?php echo date('d.m.Y', strtotime($order['created_at'])); ?></div>
+                                <?php if (($order['priority'] ?? '') === 'High'): ?>
+                                    <div class="priority-chip priority-chip-animated">
+                                        <i class="fas fa-bolt"></i>
+                                        <span><?php echo __('high'); ?></span>
+                                    </div>
+                                <?php endif; ?>
                             </td>
                             <td>
                                 <div><?php echo e($order['first_name'] . ' ' . $order['last_name']); ?></div>
@@ -851,6 +857,7 @@ $(document).ready(function() {
                 let html = `
                     <form id="quickOrderForm">
                         <input type="hidden" name="order_id" value="${(+o.id) || 0}">
+                        <input type="hidden" name="csrf_token" value="<?php echo e(generateCsrfToken()); ?>">
                         <div class="row g-3">
                             <div class="col-md-4">
                                 <label class="form-label text-white-75 small mb-1"><?php echo __('client_and_date'); ?></label>
