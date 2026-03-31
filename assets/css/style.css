@@ -130,7 +130,21 @@ body.modal-open {
 
 .table-danger > td:first-child,
 .priority-high-row > td:first-child {
-    box-shadow: inset 4px 0 0 #ff9968, inset 1px 0 0 rgba(255, 239, 229, 0.18);
+    position: relative;
+}
+
+.table-danger > td:first-child::before,
+.priority-high-row > td:first-child::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 10%;
+    bottom: 10%;
+    width: 4px;
+    border-radius: 0 4px 4px 0;
+    background: #ff9968;
+    box-shadow: 1px 0 0 rgba(255, 239, 229, 0.18);
+    pointer-events: none;
 }
 
 .table tbody tr.table-danger:hover > td,

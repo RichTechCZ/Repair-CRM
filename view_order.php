@@ -6,7 +6,7 @@ require_once 'includes/header.php';
 $id = $_GET['id'] ?? $_GET['order_id'] ?? null;
 if (!$id) die(__('order_id_missing'));
 
-$stmt = $pdo->prepare("SELECT o.*, c.first_name, c.last_name, c.phone, t.name as tech_name 
+$stmt = $pdo->prepare("SELECT o.*, c.first_name, c.last_name, c.phone, c.company, t.name as tech_name 
                        FROM orders o 
                        JOIN customers c ON o.customer_id = c.id 
                        LEFT JOIN technicians t ON o.technician_id = t.id
@@ -28,9 +28,6 @@ $order_items = $stmt->fetchAll();
 
 // Fetch all available parts for the dropdown (limit 500 max to prevent HTML crash)
 $inventory = $pdo->query("SELECT id, part_name, quantity, sale_price FROM inventory ORDER BY part_name ASC LIMIT 500")->fetchAll();
-
-// Fetch all customers for edit modal (limit 500 max to prevent HTML crash)
-$customers_list = $pdo->query("SELECT id, first_name, last_name, phone FROM customers ORDER BY last_name ASC LIMIT 500")->fetchAll();
 
 // Fetch active technicians for edit modal
 $techs = getActiveTechnicians();
@@ -835,20 +832,25 @@ $(document).ready(function() {
             url: 'api/upload_media.php',
             type: 'POST',
             data: formData,
+            dataType: 'json',
             processData: false,
             contentType: false,
             success: function(res) {
                 $('#uploadProgress').addClass('d-none');
-                if (res.success) {
+                if (res && res.success) {
                     showAlert('<?php echo __('files_uploaded'); ?>' + res.count);
                     location.reload();
                 } else {
-                    showAlert('<?php echo __('error'); ?>: ' + res.message);
+                    const message = (res && res.message) ? res.message : '<?php echo __('upload_error'); ?>';
+                    showAlert('<?php echo __('error'); ?>: ' + message);
                 }
             },
-            error: function() {
+            error: function(xhr) {
                 $('#uploadProgress').addClass('d-none');
-                showAlert('<?php echo __('upload_error'); ?>');
+                const message = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message
+                    : '<?php echo __('upload_error'); ?>';
+                showAlert(message);
             }
         });
     });
@@ -875,8 +877,22 @@ $(document).ready(function() {
     });
 
     // Initialize Select2 in modal
-    $('.select2-modal').select2({
+    $('.select2-modal-customer').select2({
         dropdownParent: $('#editOrderFullModal'),
+        placeholder: "<?php echo __('search_client_placeholder'); ?>",
+        minimumInputLength: 0,
+        ajax: {
+            url: 'api/search_customers.php',
+            dataType: 'json',
+            delay: 250,
+            data: function(params) {
+                return { q: params.term || '', page: params.page || 1 };
+            },
+            processResults: function(data, params) {
+                params.page = params.page || 1;
+                return { results: data.results, pagination: { more: !!(data.pagination && data.pagination.more) } };
+            }
+        },
         width: '100%'
     });
 
@@ -921,23 +937,53 @@ function testTechTG(id) {
 }
 
 function deleteMedia(id) {
+    const mediaNode = $('#media-item-' + id);
+    const requestData = {
+        id: id,
+        csrf_token: '<?php echo $_SESSION['csrf_token'] ?? ''; ?>'
+    };
+
+    const performDelete = function() {
+        $.ajax({
+            url: 'api/delete_media.php',
+            type: 'POST',
+            dataType: 'json',
+            data: requestData,
+            success: function(res) {
+                if (res && res.success) {
+                    mediaNode.fadeOut(180, function() {
+                        $(this).remove();
+                    });
+                } else {
+                    const message = (res && res.message) ? res.message : '<?php echo __('error'); ?>';
+                    if (typeof showAlert === 'function') {
+                        showAlert('<?php echo __('error'); ?>: ' + message);
+                    } else {
+                        alert('Error: ' + message);
+                    }
+                }
+            },
+            error: function(xhr) {
+                const message = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message
+                    : '<?php echo __('error'); ?>';
+                if (typeof showAlert === 'function') {
+                    showAlert('<?php echo __('error'); ?>: ' + message);
+                } else {
+                    alert('Error: ' + message);
+                }
+            }
+        });
+    };
+
     if (typeof showConfirm !== 'function') {
         if (confirm('<?php echo __('confirm_delete_file'); ?>')) {
-            $.post('api/delete_media.php', {id: id, csrf_token: '<?php echo $_SESSION['csrf_token'] ?? ''; ?>'}, function(res) {
-                if (res.success) $('#media-item-' + id).fadeOut();
-                else alert('Error: ' + res.message);
-            });
+            performDelete();
         }
         return;
     }
     showConfirm('<?php echo __('confirm_delete_file'); ?>', function() {
-        $.post('api/delete_media.php', {id: id, csrf_token: '<?php echo $_SESSION['csrf_token'] ?? ''; ?>'}, function(res) {
-            if (res.success) {
-                $('#media-item-' + id).fadeOut();
-            } else {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
-            }
-        });
+        performDelete();
     });
 }
 
@@ -1108,12 +1154,18 @@ function deleteOrder(id) {
                     <div class="row g-3">
                         <div class="col-md-12">
                             <label class="form-label"><?php echo __('client'); ?></label>
-                            <select name="customer_id" class="form-select select2-modal">
-                                <?php foreach($customers_list as $cl): ?>
-                                    <option value="<?php echo $cl['id']; ?>" <?php echo ($cl['id'] == $order['customer_id']) ? 'selected' : ''; ?>>
-                                        <?php echo htmlspecialchars($cl['last_name'] . ' ' . $cl['first_name'] . ' (' . $cl['phone'] . ')'); ?>
-                                    </option>
-                                <?php endforeach; ?>
+                            <select name="customer_id" class="form-select select2-modal-customer">
+                                <?php
+                                $current_customer_name = trim(($order['last_name'] ?? '') . ' ' . ($order['first_name'] ?? ''));
+                                $current_customer_company = trim($order['company'] ?? '');
+                                if ($current_customer_company !== '') {
+                                    $current_customer_name = $current_customer_company . ($current_customer_name !== '' ? ' (' . $current_customer_name . ')' : '');
+                                }
+                                $current_customer_label = $current_customer_name . (!empty($order['phone']) ? ' (' . $order['phone'] . ')' : '');
+                                ?>
+                                <option value="<?php echo (int)$order['customer_id']; ?>" selected>
+                                    <?php echo htmlspecialchars($current_customer_label); ?>
+                                </option>
                             </select>
                         </div>
                         <div class="col-md-4">

@@ -17,8 +17,10 @@ if ($_SESSION['role'] == 'technician' && !hasPermission('edit_orders') && $order
     die(__('no_edit_permission'));
 }
 
-// Fetch customers for the dropdown
-$customers = $pdo->query("SELECT id, first_name, last_name FROM customers ORDER BY last_name ASC")->fetchAll();
+// Fetch current customer for the remote customer selector
+$customer_stmt = $pdo->prepare("SELECT id, first_name, last_name, phone, company FROM customers WHERE id = ?");
+$customer_stmt->execute([$order['customer_id']]);
+$current_customer = $customer_stmt->fetch();
 
 $success = false;
 $error = false;
@@ -147,12 +149,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label"><i class="fas fa-user me-2 text-primary"></i><?php echo __('client'); ?></label>
-                    <select name="customer_id" class="form-select" required>
-                        <?php foreach ($customers as $c): ?>
-                            <option value="<?php echo $c['id']; ?>" <?php echo ($c['id'] == $order['customer_id']) ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($c['last_name'] . ' ' . $c['first_name']); ?>
-                            </option>
-                        <?php endforeach; ?>
+                    <select name="customer_id" class="form-select select2-customer-remote" required>
+                        <?php
+                        $edit_customer_name = trim(($current_customer['last_name'] ?? '') . ' ' . ($current_customer['first_name'] ?? ''));
+                        $edit_customer_company = trim($current_customer['company'] ?? '');
+                        if ($edit_customer_company !== '') {
+                            $edit_customer_name = $edit_customer_company . ($edit_customer_name !== '' ? ' (' . $edit_customer_name . ')' : '');
+                        }
+                        $edit_customer_label = $edit_customer_name . (!empty($current_customer['phone']) ? ' (' . $current_customer['phone'] . ')' : '');
+                        ?>
+                        <option value="<?php echo (int)$order['customer_id']; ?>" selected>
+                            <?php echo htmlspecialchars($edit_customer_label); ?>
+                        </option>
                     </select>
                 </div>
                 <div class="col-md-4">
@@ -282,6 +290,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
 <script>
 $(document).ready(function() {
+    $('.select2-customer-remote').select2({
+        placeholder: "<?php echo __('search_client_placeholder'); ?>",
+        minimumInputLength: 0,
+        ajax: {
+            url: 'api/search_customers.php',
+            dataType: 'json',
+            delay: 250,
+            data: function(params) {
+                return { q: params.term || '', page: params.page || 1 };
+            },
+            processResults: function(data, params) {
+                params.page = params.page || 1;
+                return { results: data.results, pagination: { more: !!(data.pagination && data.pagination.more) } };
+            }
+        },
+        width: '100%'
+    });
+
     $('.select2-brand').select2({
         placeholder: "<?php echo __('brand_placeholder'); ?>",
         tags: true,
@@ -306,15 +332,33 @@ function deleteOrder(id) {
 }
 
 function deleteMedia(id) {
+    const mediaNode = $('#media-item-' + id);
+    const requestData = {
+        id: id,
+        csrf_token: $('meta[name="csrf-token"]').attr('content')
+    };
+
     showConfirm('<?php echo __('confirm_delete_file'); ?>', function() {
-        $.post('api/delete_media.php', {
-            id: id,
-            csrf_token: $('meta[name="csrf-token"]').attr('content')
-        }, function(res) {
-            if (res.success) {
-                $('#media-item-' + id).fadeOut();
-            } else {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
+        $.ajax({
+            url: 'api/delete_media.php',
+            type: 'POST',
+            dataType: 'json',
+            data: requestData,
+            success: function(res) {
+                if (res && res.success) {
+                    mediaNode.fadeOut(180, function() {
+                        $(this).remove();
+                    });
+                } else {
+                    const message = (res && res.message) ? res.message : '<?php echo __('error'); ?>';
+                    showAlert('<?php echo __('error'); ?>: ' + message);
+                }
+            },
+            error: function(xhr) {
+                const message = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message
+                    : '<?php echo __('error'); ?>';
+                showAlert('<?php echo __('error'); ?>: ' + message);
             }
         });
     });

@@ -148,6 +148,142 @@ function formatMoney($amount) {
     return number_format($amount, 2, '.', ' ') . ' ' . $currency;
 }
 
+function normalizeSearchQuery(string $search): string {
+    $normalized = preg_replace('/\s+/u', ' ', trim($search));
+    return is_string($normalized) ? $normalized : trim($search);
+}
+
+function buildOrderSearchQueryParts(string $search, string $orderAlias = 'o', string $customerAlias = 'c', string $techAlias = 't'): array {
+    $search = normalizeSearchQuery($search);
+    $parts = [
+        'search' => $search,
+        'where_clauses' => [],
+        'where_params' => [],
+        'score_sql' => '0',
+        'score_params' => [],
+        'exact_id' => 0,
+    ];
+
+    if ($search === '') {
+        return $parts;
+    }
+
+    $raw_tokens = preg_split('/[\s,;]+/u', $search) ?: [];
+    $tokens = array_values(array_unique(array_filter(array_map('trim', $raw_tokens), static function ($token) {
+        return $token !== '';
+    })));
+    $tokens = array_slice($tokens, 0, 6);
+
+    $full_name_expr = "TRIM(CONCAT_WS(' ', COALESCE({$customerAlias}.first_name, ''), COALESCE({$customerAlias}.last_name, '')))";
+    $reverse_name_expr = "TRIM(CONCAT_WS(' ', COALESCE({$customerAlias}.last_name, ''), COALESCE({$customerAlias}.first_name, '')))";
+    $brand_model_expr = "TRIM(CONCAT_WS(' ', COALESCE({$orderAlias}.device_brand, ''), COALESCE({$orderAlias}.device_model, '')))";
+    $company_expr = "COALESCE({$customerAlias}.company, '')";
+    $phone_expr = "COALESCE({$customerAlias}.phone, '')";
+    $phone_digits_expr = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE($phone_expr, ' ', ''), '+', ''), '-', ''), '(', ''), ')', ''), '.', '')";
+    $tech_name_expr = "COALESCE({$techAlias}.name, '')";
+
+    $searchable_fields = [
+        ['expr' => "CAST({$orderAlias}.id AS CHAR)", 'mode' => 'id'],
+        ['expr' => $company_expr, 'mode' => 'text'],
+        ['expr' => "COALESCE({$customerAlias}.first_name, '')", 'mode' => 'text'],
+        ['expr' => "COALESCE({$customerAlias}.last_name, '')", 'mode' => 'text'],
+        ['expr' => $full_name_expr, 'mode' => 'text'],
+        ['expr' => $reverse_name_expr, 'mode' => 'text'],
+        ['expr' => $phone_expr, 'mode' => 'text'],
+        ['expr' => $phone_digits_expr, 'mode' => 'digits'],
+        ['expr' => "COALESCE({$orderAlias}.device_brand, '')", 'mode' => 'text'],
+        ['expr' => "COALESCE({$orderAlias}.device_model, '')", 'mode' => 'text'],
+        ['expr' => $brand_model_expr, 'mode' => 'text'],
+        ['expr' => "COALESCE({$orderAlias}.problem_description, '')", 'mode' => 'text'],
+        ['expr' => "COALESCE({$orderAlias}.serial_number, '')", 'mode' => 'text'],
+        ['expr' => "COALESCE({$orderAlias}.serial_number_2, '')", 'mode' => 'text'],
+        ['expr' => "COALESCE({$orderAlias}.pin_code, '')", 'mode' => 'text'],
+        ['expr' => "COALESCE({$orderAlias}.status, '')", 'mode' => 'text'],
+        ['expr' => $tech_name_expr, 'mode' => 'text'],
+    ];
+
+    foreach ($tokens as $token) {
+        $token_like = '%' . $token . '%';
+        $digit_token = preg_replace('/\D+/', '', $token);
+        $digit_like = $digit_token !== '' ? '%' . $digit_token . '%' : $token_like;
+        $token_clause_parts = [];
+
+        foreach ($searchable_fields as $field) {
+            $token_clause_parts[] = $field['expr'] . ' LIKE ?';
+            if ($field['mode'] === 'digits') {
+                $parts['where_params'][] = $digit_like;
+            } elseif ($field['mode'] === 'id') {
+                $parts['where_params'][] = preg_match('/^#?\d+$/u', $token) ? ('%' . ltrim($token, '#') . '%') : $token_like;
+            } else {
+                $parts['where_params'][] = $token_like;
+            }
+        }
+
+        $parts['where_clauses'][] = '(' . implode(' OR ', $token_clause_parts) . ')';
+    }
+
+    if (preg_match('/^\s*#?\s*(\d+)\s*$/u', $search, $matches)) {
+        $parts['exact_id'] = (int)$matches[1];
+    }
+
+    $search_like = '%' . $search . '%';
+    $search_digits = preg_replace('/\D+/', '', $search);
+    $score_parts = [];
+
+    if ($parts['exact_id'] > 0) {
+        $score_parts[] = "CASE WHEN {$orderAlias}.id = ? THEN 1400 ELSE 0 END";
+        $parts['score_params'][] = $parts['exact_id'];
+    }
+
+    $phrase_scores = [
+        [$full_name_expr, $search_like, 320],
+        [$reverse_name_expr, $search_like, 320],
+        [$company_expr, $search_like, 300],
+        [$brand_model_expr, $search_like, 280],
+        ["COALESCE({$orderAlias}.device_model, '')", $search_like, 240],
+        ["COALESCE({$orderAlias}.device_brand, '')", $search_like, 190],
+        ["COALESCE({$orderAlias}.serial_number, '')", $search_like, 430],
+        ["COALESCE({$orderAlias}.serial_number_2, '')", $search_like, 410],
+        ["COALESCE({$orderAlias}.pin_code, '')", $search_like, 260],
+        ["COALESCE({$orderAlias}.problem_description, '')", $search_like, 120],
+        ["COALESCE({$orderAlias}.status, '')", $search_like, 130],
+        [$tech_name_expr, $search_like, 120],
+    ];
+
+    foreach ($phrase_scores as [$expr, $value, $weight]) {
+        $score_parts[] = "CASE WHEN {$expr} LIKE ? THEN {$weight} ELSE 0 END";
+        $parts['score_params'][] = $value;
+    }
+
+    if ($search_digits !== '' && strlen($search_digits) >= 4) {
+        $score_parts[] = "CASE WHEN {$phone_digits_expr} LIKE ? THEN 260 ELSE 0 END";
+        $parts['score_params'][] = '%' . $search_digits . '%';
+    }
+
+    foreach ($tokens as $token) {
+        $token_like = '%' . $token . '%';
+        $digit_token = preg_replace('/\D+/', '', $token);
+
+        $score_parts[] = "CASE WHEN {$full_name_expr} LIKE ? OR {$reverse_name_expr} LIKE ? OR {$company_expr} LIKE ? THEN 70 ELSE 0 END";
+        array_push($parts['score_params'], $token_like, $token_like, $token_like);
+
+        $score_parts[] = "CASE WHEN {$brand_model_expr} LIKE ? OR COALESCE({$orderAlias}.device_brand, '') LIKE ? OR COALESCE({$orderAlias}.device_model, '') LIKE ? THEN 58 ELSE 0 END";
+        array_push($parts['score_params'], $token_like, $token_like, $token_like);
+
+        $score_parts[] = "CASE WHEN COALESCE({$orderAlias}.problem_description, '') LIKE ? OR COALESCE({$orderAlias}.serial_number, '') LIKE ? OR COALESCE({$orderAlias}.serial_number_2, '') LIKE ? OR COALESCE({$orderAlias}.pin_code, '') LIKE ? OR COALESCE({$orderAlias}.status, '') LIKE ? OR {$tech_name_expr} LIKE ? THEN 24 ELSE 0 END";
+        array_push($parts['score_params'], $token_like, $token_like, $token_like, $token_like, $token_like, $token_like);
+
+        if ($digit_token !== '' && strlen($digit_token) >= 4) {
+            $score_parts[] = "CASE WHEN {$phone_digits_expr} LIKE ? THEN 48 ELSE 0 END";
+            $parts['score_params'][] = '%' . $digit_token . '%';
+        }
+    }
+
+    $parts['score_sql'] = $score_parts ? '(' . implode(' + ', $score_parts) . ')' : '0';
+
+    return $parts;
+}
+
 function get_setting($key, $default = '') {
     global $pdo;
     static $cache = [];

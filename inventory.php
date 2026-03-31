@@ -45,12 +45,36 @@ $stmt->execute($params);
 $inventory = $stmt->fetchAll();
 
 $inventory_stats = $pdo->query("SELECT COUNT(*) as total, SUM(CASE WHEN quantity <= min_stock THEN 1 ELSE 0 END) as low_stock FROM inventory")->fetch();
+$catalog_url = trim((string)get_setting('inventory_catalog_url', ''));
+$catalog_host = '';
+if ($catalog_url !== '') {
+    $catalog_host = (string)parse_url($catalog_url, PHP_URL_HOST);
+}
+
+$catalog_error_key = $_GET['catalog_error'] ?? '';
+$catalog_error_message = '';
+if ($catalog_error_key !== '') {
+    $catalog_error_map = [
+        'invalid_url' => __('catalog_error_invalid_url'),
+        'fetch_failed' => __('catalog_error_fetch_failed'),
+        'no_products' => __('catalog_error_no_products'),
+        'processing_failed' => __('catalog_error_processing_failed'),
+    ];
+    $catalog_error_message = $catalog_error_map[$catalog_error_key] ?? __('catalog_error_processing_failed');
+}
+
+$catalog_added = isset($_GET['catalog_added']) ? max(0, (int)$_GET['catalog_added']) : 0;
+$catalog_updated = isset($_GET['catalog_updated']) ? max(0, (int)$_GET['catalog_updated']) : 0;
+$catalog_import_success = isset($_GET['catalog_imported']);
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h2 class="mb-0"><?php echo __('inventory'); ?></h2>
         <small class="text-muted"><?php echo __('total_items'); ?>: <?php echo $total_count; ?></small>
+        <?php if ($catalog_host !== ''): ?>
+            <div class="small text-muted mt-1"><?php echo __('catalog_saved_source'); ?>: <?php echo htmlspecialchars($catalog_host); ?></div>
+        <?php endif; ?>
     </div>
     <div class="d-flex gap-2 align-items-center">
         <?php if($inventory_stats['low_stock'] > 0): ?>
@@ -62,11 +86,23 @@ $inventory_stats = $pdo->query("SELECT COUNT(*) as total, SUM(CASE WHEN quantity
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newPartModal">
             <i class="fas fa-plus me-2"></i> <?php echo __('add_part'); ?>
         </button>
-        <button type="button" class="btn btn-outline-success" onclick="runCatalogUpdate()">
+        <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#catalogUpdateModal">
             <i class="fas fa-sync me-2"></i> <?php echo __('update_catalog'); ?>
         </button>
     </div>
 </div>
+
+<?php if ($catalog_import_success): ?>
+    <div class="alert alert-success shadow-sm border-0">
+        <?php echo sprintf(__('catalog_update_success'), $catalog_added, $catalog_updated); ?>
+    </div>
+<?php endif; ?>
+
+<?php if ($catalog_error_message !== ''): ?>
+    <div class="alert alert-danger shadow-sm border-0">
+        <?php echo htmlspecialchars($catalog_error_message); ?>
+    </div>
+<?php endif; ?>
 
 <div class="collapse mb-4 <?php echo (!empty($search) || !empty($min_price) || !empty($max_price)) ? 'show' : ''; ?>" id="filterPanel">
     <div class="card card-body shadow-sm">
@@ -245,6 +281,41 @@ $inventory_stats = $pdo->query("SELECT COUNT(*) as total, SUM(CASE WHEN quantity
     </div>
 </div>
 
+<div class="modal fade" id="catalogUpdateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="catalogUpdateForm" action="api/parse_catalog.php" method="POST" onsubmit="return confirmCatalogUpdate(this);">
+                <?php echo csrfField(); ?>
+                <div class="modal-header">
+                    <h5 class="modal-title"><?php echo __('update_catalog'); ?></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo __('cancel'); ?>"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="catalogUrl" class="form-label"><?php echo __('catalog_url_label'); ?></label>
+                        <input
+                            type="url"
+                            id="catalogUrl"
+                            name="catalog_url"
+                            class="form-control"
+                            value="<?php echo htmlspecialchars($catalog_url); ?>"
+                            placeholder="<?php echo __('catalog_url_placeholder'); ?>"
+                            required
+                        >
+                        <div class="form-text"><?php echo __('catalog_url_help'); ?></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?php echo __('cancel'); ?></button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-sync me-2"></i><?php echo __('update_catalog'); ?>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 $(document).ready(function() {
     $('.select2-filter').select2({
@@ -265,21 +336,17 @@ function deletePart(id) {
     });
 }
 
-function runCatalogUpdate() {
+function confirmCatalogUpdate(form) {
+    const urlInput = form.querySelector('[name="catalog_url"]');
+    if (!urlInput || !urlInput.value.trim()) {
+        return false;
+    }
+
     showConfirm('<?php echo __('parse_confirm'); ?>', function() {
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = 'api/parse_mobilnidily.php';
-
-        const csrf = document.createElement('input');
-        csrf.type = 'hidden';
-        csrf.name = 'csrf_token';
-        csrf.value = '<?php echo $_SESSION['csrf_token'] ?? ''; ?>';
-
-        form.appendChild(csrf);
-        document.body.appendChild(form);
         form.submit();
     });
+
+    return false;
 }
 </script>
 

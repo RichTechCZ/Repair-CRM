@@ -83,14 +83,18 @@ if ($page == 'reports.php') {
                     data.append('csrf_token', csrfToken);
                 }
                 options.data = data;
+                options.processData = false;
+                options.contentType = false;
                 return;
             }
 
-            if ($.isPlainObject(data)) {
-                if (!Object.prototype.hasOwnProperty.call(data, 'csrf_token')) {
-                    data.csrf_token = csrfToken;
+            if (data && typeof data === 'object') {
+                var payload = $.extend(true, {}, data);
+                if (!Object.prototype.hasOwnProperty.call(payload, 'csrf_token')) {
+                    payload.csrf_token = csrfToken;
                 }
-                options.data = data;
+                options.data = $.param(payload);
+                options.processData = true;
                 return;
             }
 
@@ -154,7 +158,7 @@ if ($page == 'reports.php') {
             
             if ($current_page == 'orders.php') {
                 $search_action = 'orders.php';
-                $search_placeholder = __('orders') . ' (ID, ' . __('client') . ', ' . __('device_model') . '...)';
+                $search_placeholder = __('orders') . ' (#ID, ' . __('client') . ', ' . __('phone') . ', ' . __('device_model') . ', ' . __('serial') . '...)';
             } elseif ($current_page == 'customers.php') {
                 $search_action = 'customers.php';
                 $search_placeholder = __('customers') . ' (ID, ' . __('client') . ', ' . __('phone') . ', ' . __('ico') . '...)';

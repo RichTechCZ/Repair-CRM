@@ -9,7 +9,7 @@ Scope:
 
 Patched in this pass:
 - `api/add_order_item.php`: now requires `POST` and valid CSRF token
-- `api/parse_mobilnidily.php`: now requires `POST` and valid CSRF token
+- `api/parse_catalog.php`: now requires `POST` and valid CSRF token
 - `accounting_actions.php` export actions: now require `POST` and valid CSRF token
 
 Current status:
@@ -30,7 +30,7 @@ Endpoints reviewed as mutating:
 - `delete_media.php`
 - `delete_order_item.php`
 - `delete_order.php`
-- `parse_mobilnidily.php`
+- `parse_catalog.php`
 - `run_update.php`
 - `update_attachment_date.php`
 - `update_invoice.php`

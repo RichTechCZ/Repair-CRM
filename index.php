@@ -159,48 +159,42 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                         </thead>
                         <tbody>
                             <?php
-                            $search = $_GET['search'] ?? '';
+                            $search = normalizeSearchQuery($_GET['search'] ?? '');
+                            $search_parts = buildOrderSearchQueryParts($search, 'o', 'c', 't');
                             
                             // Permission check for technicians
-                            $tech_filter = "";
-                            if ($_SESSION['role'] == 'technician' && !hasPermission('view_all_orders')) {
-                                $tech_filter = " AND o.technician_id = " . (int)$_SESSION['tech_id'];
-                            }
-                            
-                            $where_clause = " WHERE (1=1)" . $tech_filter;
+                            $where_clauses = [];
                             $params = [];
+                            if ($_SESSION['role'] == 'technician' && !hasPermission('view_all_orders')) {
+                                $where_clauses[] = 'o.technician_id = ?';
+                                $params[] = (int)$_SESSION['tech_id'];
+                            }
 
-                            if ($search) {
-                                $search = trim($search);
-                                $exact_id_filter = is_numeric($search) ? " OR o.id = ?" : "";
-                                $where_clause .= " AND (o.id LIKE ? OR o.device_model LIKE ? OR c.first_name LIKE ? OR c.last_name LIKE ? OR o.problem_description LIKE ? OR o.serial_number LIKE ? OR o.serial_number_2 LIKE ?$exact_id_filter)";
-                                $searchTerm = "%$search%";
-                                array_push($params, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm);
-                                if (is_numeric($search)) {
-                                    $params[] = (int)$search;
-                                }
+                            if (!empty($search_parts['where_clauses'])) {
+                                $where_clauses = array_merge($where_clauses, $search_parts['where_clauses']);
+                                $params = array_merge($params, $search_parts['where_params']);
                             }
 
                             if ($filter_status) {
                                 if ($filter_status == 'Completed') {
-                                    $where_clause .= " AND o.status IN ('Completed', 'Collected')";
+                                    $where_clauses[] = "o.status IN ('Completed', 'Collected')";
                                 } else {
-                                    $where_clause .= " AND o.status = ?";
+                                    $where_clauses[] = 'o.status = ?';
                                     $params[] = $filter_status;
                                 }
                             }
 
-                            $search_id = ($search && is_numeric($search)) ? (int)$search : 0;
+                            $where_clause = $where_clauses ? (' WHERE ' . implode(' AND ', $where_clauses)) : '';
                             $sql = "SELECT o.*, c.first_name, c.last_name, c.phone, t.name as tech_name 
+                                           , " . $search_parts['score_sql'] . " AS search_relevance
                                     FROM orders o 
                                     JOIN customers c ON o.customer_id = c.id 
                                     LEFT JOIN technicians t ON o.technician_id = t.id" . 
                                     $where_clause . 
-                                    " ORDER BY (CASE WHEN o.id = ? THEN 1 ELSE 2 END), o.created_at DESC LIMIT 15";
+                                    " ORDER BY search_relevance DESC, o.created_at DESC LIMIT 15";
                             
                             $stmt = $pdo->prepare($sql);
-                            // Add search_id to params for the ORDER BY clause
-                            $exec_params = array_merge($params, [$search_id]);
+                            $exec_params = array_merge($search_parts['score_params'], $params);
                             $stmt->execute($exec_params);
                             
                             $orders_list = $stmt->fetchAll();

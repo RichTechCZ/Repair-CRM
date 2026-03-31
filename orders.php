@@ -17,7 +17,8 @@ $total_orders = 0;
 
 if (isset($pdo)) {
     try {
-        $search = trim($_GET['search'] ?? '');
+        $search = normalizeSearchQuery($_GET['search'] ?? '');
+        $search_parts = buildOrderSearchQueryParts($search, 'o', 'c', 't');
 
         $where_clauses = [];
         $sql_params    = []; // FIX #9: renamed from $params to avoid collision with pagination block
@@ -28,17 +29,9 @@ if (isset($pdo)) {
             $sql_params[]    = (int)($_SESSION['tech_id'] ?? 0);
         }
 
-        // FIX #1: exact ID match also via PDO parameter
-        if ($search !== '') {
-            $term = "%$search%";
-            if (is_numeric($search)) {
-                $where_clauses[] = '(o.id LIKE ? OR c.first_name LIKE ? OR c.last_name LIKE ? OR c.phone LIKE ? OR o.device_model LIKE ? OR o.problem_description LIKE ? OR o.serial_number LIKE ? OR o.serial_number_2 LIKE ? OR o.id = ?)';
-                for ($i = 0; $i < 8; $i++) $sql_params[] = $term;
-                $sql_params[] = (int)$search;
-            } else {
-                $where_clauses[] = '(o.id LIKE ? OR c.first_name LIKE ? OR c.last_name LIKE ? OR c.phone LIKE ? OR o.device_model LIKE ? OR o.problem_description LIKE ? OR o.serial_number LIKE ? OR o.serial_number_2 LIKE ?)';
-                for ($i = 0; $i < 8; $i++) $sql_params[] = $term;
-            }
+        if (!empty($search_parts['where_clauses'])) {
+            $where_clauses = array_merge($where_clauses, $search_parts['where_clauses']);
+            $sql_params = array_merge($sql_params, $search_parts['where_params']);
         }
 
         if ($filter_status === 'Completed') {
@@ -52,23 +45,22 @@ if (isset($pdo)) {
 
         // Count
         $count_stmt = $pdo->prepare(
-            'SELECT COUNT(*) FROM orders o JOIN customers c ON o.customer_id = c.id' . $where_sql
+            'SELECT COUNT(*) FROM orders o JOIN customers c ON o.customer_id = c.id LEFT JOIN technicians t ON o.technician_id = t.id' . $where_sql
         );
         $count_stmt->execute($sql_params);
         $total_orders = (int)$count_stmt->fetchColumn();
 
         // Fetch orders
-        $search_id      = is_numeric($search) ? (int)$search : 0;
-        $fetch_params   = $sql_params;
-        $fetch_params[] = $search_id;
+        $fetch_params = array_merge($search_parts['score_params'], $sql_params);
 
         $stmt = $pdo->prepare(
-            'SELECT o.*, c.first_name, c.last_name, c.phone, t.name as tech_name
+            'SELECT o.*, c.first_name, c.last_name, c.phone, t.name as tech_name, '
+            . $search_parts['score_sql'] . ' AS search_relevance
              FROM orders o
              JOIN customers c ON o.customer_id = c.id
              LEFT JOIN technicians t ON o.technician_id = t.id'
             . $where_sql
-            . ' ORDER BY (CASE WHEN o.id = ? THEN 1 ELSE 2 END), o.created_at DESC
+            . ' ORDER BY search_relevance DESC, o.created_at DESC
               LIMIT ' . (int)$limit . ' OFFSET ' . (int)$offset
         );
         $stmt->execute($fetch_params);
@@ -1423,23 +1415,53 @@ $(document).ready(function() {
 });
 
 function deleteMedia(id) {
+    const mediaNode = $('#media-item-' + id);
+    const requestData = {
+        id: id,
+        csrf_token: $('meta[name="csrf-token"]').attr('content')
+    };
+
+    const performDelete = function() {
+        $.ajax({
+            url: 'api/delete_media.php',
+            type: 'POST',
+            dataType: 'json',
+            data: requestData,
+            success: function(res) {
+                if (res && res.success) {
+                    mediaNode.fadeOut(180, function() {
+                        $(this).remove();
+                    });
+                } else {
+                    const message = (res && res.message) ? res.message : '<?php echo __('error'); ?>';
+                    if (typeof showAlert === 'function') {
+                        showAlert('<?php echo __('error'); ?>: ' + message);
+                    } else {
+                        alert('Error: ' + message);
+                    }
+                }
+            },
+            error: function(xhr) {
+                const message = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message
+                    : '<?php echo __('error'); ?>';
+                if (typeof showAlert === 'function') {
+                    showAlert('<?php echo __('error'); ?>: ' + message);
+                } else {
+                    alert('Error: ' + message);
+                }
+            }
+        });
+    };
+
     if (typeof showConfirm !== 'function') {
         if (confirm('<?php echo __('confirm_delete_file'); ?>')) {
-            $.post('api/delete_media.php', {id: id}, function(res) {
-                if (res.success) $('#media-item-' + id).fadeOut();
-                else alert('Error: ' + res.message);
-            });
+            performDelete();
         }
         return;
     }
     showConfirm('<?php echo __('confirm_delete_file'); ?>', function() {
-        $.post('api/delete_media.php', {id: id}, function(res) {
-            if (res.success) {
-                $('#media-item-' + id).fadeOut();
-            } else {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
-            }
-        });
+        performDelete();
     });
 }
 

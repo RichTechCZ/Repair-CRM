@@ -260,6 +260,7 @@ function showCustomerOrders(id, name) {
     <div class="modal-dialog">
         <div class="modal-content">
             <form action="api/add_customer.php" method="POST" id="newCustomerForm">
+                <?php echo csrfField(); ?>
                 <div class="modal-header">
                     <h5 class="modal-title"><?php echo __('add_customer'); ?></h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

@@ -46,7 +46,8 @@ Use an admin account unless a step says technician.
 - Add a new part
 - Edit an existing part
 - Delete a test part
-- Run catalog update and confirm confirmation dialog appears before submission
+- Open catalog update, enter a manual catalog URL, and confirm the confirmation dialog appears before submission
+- Confirm the last used catalog URL is prefilled on the next open
 
 ## Reports
 - Open `reports.php`
