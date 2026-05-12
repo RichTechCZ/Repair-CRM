@@ -41,28 +41,67 @@ define('DB_PASS', getenv('DB_PASS') ?: '');
 require_once __DIR__ . '/lang.php';
 
 try {
-    $pdo = new PDO(
-        "mysql:host=" . DB_HOST . ";charset=utf8mb4",
-        DB_USER,
-        DB_PASS,
-        [
-            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES   => false,
-        ]
-    );
+    $db_hosts = [DB_HOST];
+    if (strtolower(DB_HOST) === 'localhost') {
+        $db_hosts[] = '127.0.0.1';
+    }
 
-    $pdo->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    $pdo->exec("USE `" . DB_NAME . "`");
+    $last_db_exception = null;
+    foreach (array_unique($db_hosts) as $db_host) {
+        try {
+            $pdo = new PDO(
+                "mysql:host=" . $db_host . ";dbname=" . DB_NAME . ";charset=utf8mb4",
+                DB_USER,
+                DB_PASS,
+                [
+                    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES   => false,
+                ]
+            );
+            break;
+        } catch (PDOException $connectionException) {
+            $last_db_exception = $connectionException;
+        }
+    }
 
+    if (!isset($pdo)) {
+        throw $last_db_exception;
+    }
+} catch (PDOException $e) {
+    if ((int)$e->getCode() !== 1049) {
+        error_log("DB Connection Error: " . $e->getMessage());
+        die(sprintf(__('db_error'), ''));
+    }
+
+    $create_host = strtolower(DB_HOST) === 'localhost' ? '127.0.0.1' : DB_HOST;
+    try {
+        $pdo = new PDO(
+            "mysql:host=" . $create_host . ";charset=utf8mb4",
+            DB_USER,
+            DB_PASS,
+            [
+                PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES   => false,
+            ]
+        );
+        $pdo->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        $pdo->exec("USE `" . DB_NAME . "`");
+    } catch (PDOException $createException) {
+        error_log("DB Connection Error: " . $createException->getMessage());
+        die(sprintf(__('db_error'), ''));
+    }
+}
+
+try {
     // Update last seen for technicians
     if (isset($_SESSION['tech_id'])) {
         $upd_stmt = $pdo->prepare("UPDATE technicians SET last_seen = NOW() WHERE id = ?");
         $upd_stmt->execute([$_SESSION['tech_id']]);
     }
 } catch (PDOException $e) {
-    error_log("DB Connection Error: " . $e->getMessage());
-    die(sprintf(__('db_error'), ''));
+    error_log("DB Session Update Error: " . $e->getMessage());
 }
 
 // ── Telegram token ────────────────────────────────────────────────────────────
