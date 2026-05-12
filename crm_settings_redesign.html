@@ -1,0 +1,171 @@
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#0d7ff2",
+                        "background-light": "#f5f7f8",
+                        "background-dark": "#0a0f14",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: { "DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        .glass {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .glass-darker {
+            background: rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .liquid-bg {
+            background: linear-gradient(135deg, #0a0f14 0%, #111827 100%);
+            position: relative;
+            overflow: hidden;
+        }
+        .blob {
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            background: linear-gradient(180deg, rgba(13, 127, 242, 0.15) 0%, rgba(13, 127, 242, 0) 100%);
+            filter: blur(80px);
+            border-radius: 50%;
+            z-index: 0;
+        }
+    </style>
+</head>
+<body class="font-display bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased min-h-screen">
+<div class="liquid-bg min-h-screen flex items-center justify-center p-4 lg:p-8">
+<!-- Background Blobs -->
+<div class="blob -top-20 -left-20"></div>
+<div class="blob top-1/2 -right-20 opacity-50"></div>
+<div class="relative z-10 flex h-[850px] w-full max-w-[1200px] glass overflow-hidden rounded-xl shadow-2xl">
+<!-- Sidebar -->
+<aside class="w-72 glass-darker border-r border-white/10 flex flex-col p-6 shrink-0">
+<div class="flex items-center gap-3 mb-12 px-2">
+<div class="size-10 rounded-lg bg-gradient-to-br from-primary to-blue-400 flex items-center justify-center shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined text-white">water_drop</span>
+</div>
+<div class="flex flex-col">
+<h1 class="text-slate-100 text-lg font-bold leading-none tracking-tight">Liquid Glass</h1>
+<p class="text-slate-400 text-xs mt-1">CRM Settings</p>
+</div>
+</div>
+<nav class="flex flex-col gap-2 flex-1">
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary/20 text-primary border border-primary/20 transition-all" href="#">
+<span class="material-symbols-outlined text-[22px]">settings</span>
+<span class="text-sm font-semibold">General</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-white/5 hover:text-slate-200 transition-all" href="#">
+<span class="material-symbols-outlined text-[22px]">person</span>
+<span class="text-sm font-medium">Account</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-white/5 hover:text-slate-200 transition-all" href="#">
+<span class="material-symbols-outlined text-[22px]">notifications</span>
+<span class="text-sm font-medium">Notifications</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-white/5 hover:text-slate-200 transition-all" href="#">
+<span class="material-symbols-outlined text-[22px]">shield</span>
+<span class="text-sm font-medium">Security</span>
+</a>
+</nav>
+<div class="mt-auto pt-6 border-t border-white/5">
+<div class="flex items-center gap-3 px-2">
+<img alt="User Avatar" class="size-10 rounded-full object-cover border border-white/20" data-alt="Close up portrait of a smiling young professional man" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCGy1x6JZN59Xtozl423JQNmu0BSnxt7iad61anVPfSmSHPgQBz_VC4Rwwsyiqc7XVK-0A7jdCD18-iUoZjBfs0hWNmr0uhvySeXdxurb5qv9z9PdlrPQaO0Tt9baVz4GfEyDPtKj1c5-y2LWuCbjxqzJ3kutz5YOtQyocHM7rdEqMyzcooP31-qfuxyo3UV_d6GWiiXyG8B8MVhNlXamtZnrCmvSE4TNxVhQ1FryMKD-JYnVWCiMbye-FGD6RujC7TLzhr56hS0szZ"/>
+<div class="flex flex-col overflow-hidden">
+<p class="text-slate-100 text-sm font-semibold truncate">Alex River</p>
+<p class="text-slate-500 text-xs truncate">Admin Access</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="flex-1 flex flex-col overflow-y-auto bg-white/5">
+<header class="p-10 pb-0">
+<div class="flex flex-col gap-2">
+<h2 class="text-3xl lg:text-4xl font-extrabold text-slate-100 tracking-tight">General Settings</h2>
+<p class="text-slate-400 text-base max-w-lg">Update your organization's core details and customize your visual workspace preferences.</p>
+</div>
+</header>
+<div class="p-10 flex flex-col gap-8">
+<div class="glass p-8 rounded-xl flex flex-col gap-10">
+<!-- Form Section -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+<div class="flex flex-col gap-2">
+<label class="text-sm font-semibold text-slate-300 ml-1">Company Name</label>
+<div class="relative group">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors">corporate_fare</span>
+<input class="w-full pl-12 pr-4 py-4 bg-black/30 border border-white/10 rounded-xl text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all placeholder:text-slate-600" placeholder="Enter company name" type="text" value="Liquid Glass Inc."/>
+</div>
+</div>
+<div class="flex flex-col gap-2">
+<label class="text-sm font-semibold text-slate-300 ml-1">Email Address</label>
+<div class="relative group">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors">mail</span>
+<input class="w-full pl-12 pr-4 py-4 bg-black/30 border border-white/10 rounded-xl text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all placeholder:text-slate-600" placeholder="contact@liquidglass.com" type="email" value="admin@liquidglass.io"/>
+</div>
+</div>
+</div>
+<!-- Theme Toggle -->
+<div class="flex items-center justify-between p-6 rounded-xl bg-primary/5 border border-primary/10">
+<div class="flex gap-4 items-center">
+<div class="size-12 rounded-full bg-primary/20 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">dark_mode</span>
+</div>
+<div class="flex flex-col">
+<p class="text-slate-100 font-bold">Dark Mode</p>
+<p class="text-slate-400 text-sm">Experience the dashboard in a low-light interface</p>
+</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-14 h-7 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-primary shadow-lg shadow-primary/20"></div>
+</label>
+</div>
+<!-- Organization Branding (Extra Detail) -->
+<div class="flex flex-col gap-4">
+<p class="text-sm font-semibold text-slate-300 ml-1">Organization Logo</p>
+<div class="flex items-center gap-6">
+<div class="size-24 rounded-xl border-2 border-dashed border-white/10 flex flex-col items-center justify-center bg-white/5 hover:bg-white/10 transition-colors cursor-pointer group">
+<span class="material-symbols-outlined text-slate-500 group-hover:text-primary transition-colors">add_a_photo</span>
+</div>
+<div class="flex flex-col gap-1">
+<p class="text-slate-200 text-sm font-medium">Upload a new avatar</p>
+<p class="text-slate-500 text-xs">JPG, GIF or PNG. Max size of 800K</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer Actions -->
+<div class="flex items-center justify-end gap-4 pt-4">
+<button class="px-8 py-3 rounded-lg text-slate-400 font-semibold hover:text-slate-200 hover:bg-white/5 transition-all">
+                            Cancel
+                        </button>
+<button class="px-10 py-3 rounded-lg bg-gradient-to-r from-primary to-blue-400 text-white font-bold shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98] transition-all">
+                            Save Changes
+                        </button>
+</div>
+</div>
+</main>
+</div>
+</div>
+
+```</body></html>

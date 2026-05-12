@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Liquid Glass CRM Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#0d7ff2",
+                        "background-light": "#f5f7f8",
+                        "background-dark": "#0a0f14",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0f14;
+            overflow-x: hidden;
+        }
+        .glass-sidebar {
+            background: rgba(13, 127, 242, 0.03);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.02);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+        .liquid-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: radial-gradient(circle at 20% 30%, rgba(13, 127, 242, 0.15) 0%, transparent 40%),
+                        radial-gradient(circle at 80% 70%, rgba(13, 127, 242, 0.1) 0%, transparent 40%),
+                        radial-gradient(circle at 50% 50%, rgba(10, 15, 20, 1) 0%, rgba(10, 15, 20, 1) 100%);
+        }
+        .glow-blue {
+            box-shadow: 0 0 20px rgba(13, 127, 242, 0.2);
+        }
+    </style>
+</head>
+<body class="bg-background-dark text-slate-100 font-display min-h-screen">
+<div class="liquid-bg"></div>
+<div class="flex h-screen overflow-hidden">
+<!-- Side Navigation -->
+<aside class="w-72 glass-sidebar flex flex-col h-full shrink-0">
+<div class="p-8 flex items-center gap-3">
+<div class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center glow-blue">
+<span class="material-symbols-outlined text-white">blur_on</span>
+</div>
+<div>
+<h1 class="text-white text-lg font-bold leading-tight tracking-tight">Liquid Glass</h1>
+<p class="text-slate-400 text-xs">Management Suite</p>
+</div>
+</div>
+<nav class="flex-1 px-4 space-y-2">
+<div class="flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/20 text-primary border border-primary/20 cursor-pointer">
+<span class="material-symbols-outlined">shopping_bag</span>
+<span class="text-sm font-semibold tracking-wide">Orders</span>
+</div>
+<div class="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-white/5 hover:text-slate-100 transition-all cursor-pointer">
+<span class="material-symbols-outlined">add_circle</span>
+<span class="text-sm font-medium">Add Order</span>
+</div>
+<div class="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-white/5 hover:text-slate-100 transition-all cursor-pointer">
+<span class="material-symbols-outlined">analytics</span>
+<span class="text-sm font-medium">Analytics</span>
+</div>
+<div class="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-white/5 hover:text-slate-100 transition-all cursor-pointer">
+<span class="material-symbols-outlined">group</span>
+<span class="text-sm font-medium">Customers</span>
+</div>
+</nav>
+<div class="p-4 mt-auto">
+<div class="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-white/5 hover:text-slate-100 transition-all cursor-pointer">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-sm font-medium">Settings</span>
+</div>
+<div class="mt-4 p-4 rounded-xl bg-primary/10 border border-primary/20">
+<p class="text-xs text-slate-300 font-medium mb-2">Upgrade to Pro</p>
+<p class="text-[10px] text-slate-500 mb-3 leading-relaxed">Unlock advanced glassmorphic components and deeper analytics.</p>
+<button class="w-full py-2 bg-primary text-white text-xs font-bold rounded-lg glow-blue hover:brightness-110 transition-all">Go Premium</button>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col overflow-y-auto relative">
+<!-- Header -->
+<header class="flex items-center justify-between px-10 py-6 sticky top-0 z-10 backdrop-blur-md border-b border-white/5">
+<div class="flex items-center gap-8">
+<h2 class="text-white text-xl font-bold tracking-tight">Dashboard</h2>
+<div class="relative w-64">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
+<input class="w-full bg-white/5 border-none rounded-xl pl-10 pr-4 py-2 text-sm text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-primary/50" placeholder="Quick search..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-slate-300 hover:bg-white/10 transition-all">
+<span class="material-symbols-outlined text-[22px]">notifications</span>
+</button>
+<button class="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-slate-300 hover:bg-white/10 transition-all">
+<span class="material-symbols-outlined text-[22px]">mail</span>
+</button>
+<div class="h-8 w-[1px] bg-white/10 mx-2"></div>
+<div class="flex items-center gap-3">
+<div class="text-right">
+<p class="text-sm font-semibold text-white">Alex Rivera</p>
+<p class="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Admin</p>
+</div>
+<div class="w-10 h-10 rounded-full bg-cover bg-center border border-primary/30" data-alt="Professional user profile avatar portrait" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAn0_S81n8WVQdywkGk_IMPKZ8_7RtOjjtOtlcjQGoENEbGkfMI9pDDygs8ZQr6w_tB11N4nDP8B1F-hLTWNy7lCo7DJkwxu7X5Z3VZsOR2JD715Y-b4U0BNDKnVV1soVECCrh3oGNDUZjNJr8rpozF4G_tOcV7J7r_mFRWgV-pGXlszX9xcx6Gw5uHJDWNsYyxvzjg8b3Q-Hd-Lnkkx1jaof4f1IvdiaBXzL0yV-MwaEM3B7rtB0CY3s_ncsVqWfub2n0GhgSUngwz')"></div>
+</div>
+</div>
+</header>
+<!-- Content -->
+<div class="p-10 space-y-10">
+<!-- Stats Row -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="glass-card p-6 rounded-xl flex flex-col gap-1 relative overflow-hidden group">
+<div class="absolute -right-4 -top-4 w-24 h-24 bg-primary/10 rounded-full blur-2xl group-hover:bg-primary/20 transition-all"></div>
+<p class="text-slate-400 text-sm font-medium">Total Revenue</p>
+<div class="flex items-end justify-between mt-1">
+<h3 class="text-3xl font-bold text-white tracking-tight">$45,280.00</h3>
+<span class="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 text-xs font-bold">+12.5%</span>
+</div>
+<div class="mt-4 h-1 w-full bg-white/5 rounded-full overflow-hidden">
+<div class="h-full bg-primary glow-blue w-[75%]"></div>
+</div>
+</div>
+<div class="glass-card p-6 rounded-xl flex flex-col gap-1 relative overflow-hidden group">
+<div class="absolute -right-4 -top-4 w-24 h-24 bg-primary/10 rounded-full blur-2xl group-hover:bg-primary/20 transition-all"></div>
+<p class="text-slate-400 text-sm font-medium">New Orders</p>
+<div class="flex items-end justify-between mt-1">
+<h3 class="text-3xl font-bold text-white tracking-tight">1,284</h3>
+<span class="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 text-xs font-bold">+8.4%</span>
+</div>
+<div class="mt-4 h-1 w-full bg-white/5 rounded-full overflow-hidden">
+<div class="h-full bg-primary glow-blue w-[45%]"></div>
+</div>
+</div>
+<div class="glass-card p-6 rounded-xl flex flex-col gap-1 relative overflow-hidden group">
+<div class="absolute -right-4 -top-4 w-24 h-24 bg-rose-500/10 rounded-full blur-2xl group-hover:bg-rose-500/20 transition-all"></div>
+<p class="text-slate-400 text-sm font-medium">Pending Tasks</p>
+<div class="flex items-end justify-between mt-1">
+<h3 class="text-3xl font-bold text-white tracking-tight">42</h3>
+<span class="px-2 py-1 rounded-lg bg-rose-500/20 text-rose-400 text-xs font-bold">-2.1%</span>
+</div>
+<div class="mt-4 h-1 w-full bg-white/5 rounded-full overflow-hidden">
+<div class="h-full bg-rose-500 w-[60%]"></div>
+</div>
+</div>
+</div>
+<!-- Main Table Section -->
+<div class="glass-card rounded-2xl overflow-hidden">
+<div class="px-8 py-6 border-b border-white/5 flex items-center justify-between">
+<h3 class="text-white text-lg font-bold">Recent Orders</h3>
+<div class="flex gap-2">
+<button class="flex items-center gap-2 px-4 py-2 bg-white/5 text-slate-300 text-xs font-bold rounded-lg hover:bg-white/10 transition-all border border-white/5">
+<span class="material-symbols-outlined text-sm">filter_list</span> Filter
+                            </button>
+<button class="flex items-center gap-2 px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:brightness-110 transition-all glow-blue">
+<span class="material-symbols-outlined text-sm">download</span> Export
+                            </button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead>
+<tr class="bg-white/[0.02]">
+<th class="px-8 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Order ID</th>
+<th class="px-8 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Customer</th>
+<th class="px-8 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Amount</th>
+<th class="px-8 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Status</th>
+<th class="px-8 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-white/5">
+<tr class="hover:bg-white/[0.02] transition-colors group">
+<td class="px-8 py-5 text-sm font-semibold text-slate-200">#ORD-9421</td>
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary text-[10px] font-bold">JD</div>
+<span class="text-sm font-medium text-slate-300">Johnathan Doe</span>
+</div>
+</td>
+<td class="px-8 py-5 text-sm font-bold text-white">$1,250.00</td>
+<td class="px-8 py-5">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[11px] font-bold border border-emerald-500/20">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                            Completed
+                                        </span>
+</td>
+<td class="px-8 py-5 text-right">
+<div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-2 rounded-lg bg-white/5 text-slate-400 hover:text-primary transition-all">
+<span class="material-symbols-outlined text-lg">edit</span>
+</button>
+<button class="p-2 rounded-lg bg-white/5 text-slate-400 hover:text-rose-400 transition-all">
+<span class="material-symbols-outlined text-lg">delete</span>
+</button>
+</div>
+</td>
+</tr>
+<tr class="hover:bg-white/[0.02] transition-colors group">
+<td class="px-8 py-5 text-sm font-semibold text-slate-200">#ORD-9422</td>
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400 text-[10px] font-bold">AS</div>
+<span class="text-sm font-medium text-slate-300">Alice Simmons</span>
+</div>
+</td>
+<td class="px-8 py-5 text-sm font-bold text-white">$450.25</td>
+<td class="px-8 py-5">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 text-[11px] font-bold border border-amber-500/20">
+<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                                            Pending
+                                        </span>
+</td>
+<td class="px-8 py-5 text-right">
+<div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-2 rounded-lg bg-white/5 text-slate-400 hover:text-primary transition-all">
+<span class="material-symbols-outlined text-lg">edit</span>
+</button>
+<button class="p-2 rounded-lg bg-white/5 text-slate-400 hover:text-rose-400 transition-all">
+<span class="material-symbols-outlined text-lg">delete</span>
+</button>
+</div>
+</td>
+</tr>
+<tr class="hover:bg-white/[0.02] transition-colors group">
+<td class="px-8 py-5 text-sm font-semibold text-slate-200">#ORD-9423</td>
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary text-[10px] font-bold">MR</div>
+<span class="text-sm font-medium text-slate-300">Marcus Reed</span>
+</div>
+</td>
+<td class="px-8 py-5 text-sm font-bold text-white">$3,120.00</td>
+<td class="px-8 py-5">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-[11px] font-bold border border-primary/20">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                                            Shipped
+                                        </span>
+</td>
+<td class="px-8 py-5 text-right">
+<div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-2 rounded-lg bg-white/5 text-slate-400 hover:text-primary transition-all">
+<span class="material-symbols-outlined text-lg">edit</span>
+</button>
+<button class="p-2 rounded-lg bg-white/5 text-slate-400 hover:text-rose-400 transition-all">
+<span class="material-symbols-outlined text-lg">delete</span>
+</button>
+</div>
+</td>
+</tr>
+<tr class="hover:bg-white/[0.02] transition-colors group">
+<td class="px-8 py-5 text-sm font-semibold text-slate-200">#ORD-9424</td>
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center text-rose-400 text-[10px] font-bold">LW</div>
+<span class="text-sm font-medium text-slate-300">Lena White</span>
+</div>
+</td>
+<td class="px-8 py-5 text-sm font-bold text-white">$89.90</td>
+<td class="px-8 py-5">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 text-rose-400 text-[11px] font-bold border border-rose-500/20">
+<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                                            Cancelled
+                                        </span>
+</td>
+<td class="px-8 py-5 text-right">
+<div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-2 rounded-lg bg-white/5 text-slate-400 hover:text-primary transition-all">
+<span class="material-symbols-outlined text-lg">edit</span>
+</button>
+<button class="p-2 rounded-lg bg-white/5 text-slate-400 hover:text-rose-400 transition-all">
+<span class="material-symbols-outlined text-lg">delete</span>
+</button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="px-8 py-4 border-t border-white/5 flex items-center justify-between bg-white/[0.01]">
+<p class="text-xs text-slate-500 font-medium tracking-wide">Showing 1 to 4 of 124 results</p>
+<div class="flex gap-2">
+<button class="px-3 py-1.5 rounded-lg border border-white/5 text-slate-400 text-xs font-bold hover:bg-white/5 disabled:opacity-50" disabled="">Previous</button>
+<button class="px-3 py-1.5 rounded-lg border border-white/5 text-slate-300 text-xs font-bold bg-white/5">1</button>
+<button class="px-3 py-1.5 rounded-lg border border-white/5 text-slate-400 text-xs font-bold hover:bg-white/5">2</button>
+<button class="px-3 py-1.5 rounded-lg border border-white/5 text-slate-400 text-xs font-bold hover:bg-white/5">Next</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

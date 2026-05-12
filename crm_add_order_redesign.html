@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#0d7ff2",
+                        "background-light": "#f5f7f8",
+                        "background-dark": "#0a0f14",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "1rem",
+                        "xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+        .glass-morphism {
+            background: rgba(16, 25, 34, 0.6);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+        }
+        .liquid-bg {
+            background: radial-gradient(circle at 20% 30%, rgba(13, 127, 242, 0.15) 0%, transparent 40%),
+                        radial-gradient(circle at 80% 70%, rgba(13, 127, 242, 0.1) 0%, transparent 40%);
+        }
+        .glow-border:focus-within {
+            border-color: #0d7ff2;
+            box-shadow: 0 0 15px rgba(13, 127, 242, 0.3);
+        }
+    </style>
+</head>
+<body class="font-display bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen relative overflow-hidden flex items-center justify-center">
+<!-- Fluid Background Elements -->
+<div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 rounded-full blur-[120px]"></div>
+<div class="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-primary/10 rounded-full blur-[120px]"></div>
+<!-- Main Modal Container -->
+<div class="relative z-10 w-full max-w-2xl px-6 py-12">
+<div class="glass-morphism rounded-xl overflow-hidden p-8 md:p-12 border border-slate-700/50">
+<!-- Header section -->
+<div class="mb-10">
+<div class="flex items-center gap-3 mb-4">
+<div class="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-white">add_shopping_cart</span>
+</div>
+<h1 class="text-3xl font-black tracking-tight text-white">Add New Order</h1>
+</div>
+<p class="text-slate-400 text-lg leading-relaxed">Create a new record in the Liquid Glass CRM system with the customer and transaction details.</p>
+</div>
+<!-- Form -->
+<form class="space-y-6">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<!-- Customer Name -->
+<div class="col-span-full">
+<label class="block text-sm font-semibold text-slate-300 mb-2 ml-1">Customer Name</label>
+<div class="relative group">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary">person</span>
+<input class="w-full pl-12 pr-4 py-4 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-300" placeholder="Enter full name" type="text"/>
+</div>
+</div>
+<!-- Email Address -->
+<div class="col-span-1">
+<label class="block text-sm font-semibold text-slate-300 mb-2 ml-1">Email Address</label>
+<div class="relative group">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary">mail</span>
+<input class="w-full pl-12 pr-4 py-4 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-300" placeholder="customer@example.com" type="email"/>
+</div>
+</div>
+<!-- Order Value -->
+<div class="col-span-1">
+<label class="block text-sm font-semibold text-slate-300 mb-2 ml-1">Order Value</label>
+<div class="relative group">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary">payments</span>
+<input class="w-full pl-12 pr-4 py-4 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-300" placeholder="$0.00" type="text"/>
+</div>
+</div>
+<!-- Status Dropdown -->
+<div class="col-span-full">
+<label class="block text-sm font-semibold text-slate-300 mb-2 ml-1">Order Status</label>
+<div class="relative group">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary">sync</span>
+<select class="w-full pl-12 pr-10 py-4 bg-slate-900/50 border border-slate-700 rounded-xl text-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-300">
+<option disabled="" selected="" value="">Select Status</option>
+<option value="pending">Pending</option>
+<option value="processing">Processing</option>
+<option value="completed">Completed</option>
+<option value="on-hold">On Hold</option>
+</select>
+<span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex flex-col-reverse md:flex-row items-center justify-end gap-4 pt-8">
+<button class="w-full md:w-auto px-8 py-4 rounded-xl font-semibold text-slate-300 border border-slate-700 hover:bg-slate-800/50 hover:text-white transition-all duration-300" type="button">
+                        Cancel
+                    </button>
+<button class="w-full md:w-auto px-10 py-4 bg-primary rounded-xl font-bold text-white shadow-[0_0_20px_rgba(13,127,242,0.4)] hover:shadow-[0_0_30px_rgba(13,127,242,0.6)] hover:brightness-110 transition-all duration-300 flex items-center justify-center gap-2" type="submit">
+<span>Submit Order</span>
+<span class="material-symbols-outlined text-lg">rocket_launch</span>
+</button>
+</div>
+</form>
+</div>
+<!-- Footer Meta -->
+<div class="mt-8 text-center">
+<p class="text-slate-500 text-sm flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">lock</span>
+                Secure transaction processing by Liquid Glass Core
+            </p>
+</div>
+</div>
+<!-- Decorative Liquid Shapes (Visual only) -->
+<div class="fixed top-20 right-20 w-32 h-32 rounded-full bg-primary/20 blur-2xl pointer-events-none"></div>
+<div class="fixed bottom-20 left-20 w-48 h-48 rounded-full bg-primary/10 blur-3xl pointer-events-none"></div>
+</body></html>
