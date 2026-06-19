@@ -21,10 +21,17 @@ if ($_SESSION['role'] == 'technician' && !hasPermission('view_all_orders') && $o
     die(__('no_edit_permission'));
 }
 
-// Fetch parts linked to this order
-$stmt = $pdo->prepare("SELECT oi.*, COALESCE(oi.part_name, i.part_name) AS part_name FROM order_items oi LEFT JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
-$stmt->execute([$id]);
-$order_items = $stmt->fetchAll();
+// Fetch parts linked to this order. Fall back to the pre-migration schema until
+// order_items.part_name/source are added on production.
+try {
+    $stmt = $pdo->prepare("SELECT oi.*, COALESCE(oi.part_name, i.part_name) AS part_name FROM order_items oi LEFT JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
+    $stmt->execute([$id]);
+    $order_items = $stmt->fetchAll();
+} catch (PDOException $e) {
+    $stmt = $pdo->prepare("SELECT oi.*, i.part_name FROM order_items oi JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
+    $stmt->execute([$id]);
+    $order_items = $stmt->fetchAll();
+}
 
 // Fetch all available parts for the dropdown (limit 500 max to prevent HTML crash)
 $inventory = $pdo->query("SELECT id, part_name, quantity, sale_price FROM inventory ORDER BY part_name ASC LIMIT 500")->fetchAll();
