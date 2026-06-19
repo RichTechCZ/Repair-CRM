@@ -64,8 +64,9 @@ function sync_orders($data) {
             
             // 2. Status & Shipping Date
             if ($shipping_date) {
-                if ($local['status'] !== 'Issued') {
-                    $upd_fields[] = "status = 'Issued'";
+                $issued_status = getOrderStatusStorageValue('Issued');
+                if ($local['status'] !== $issued_status) {
+                    $upd_fields[] = "status = " . $pdo->quote($issued_status);
                     $needs_update = true;
                 }
                 // Only update shipping_date if it differs significantly

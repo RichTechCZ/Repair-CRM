@@ -38,6 +38,7 @@ if (!$customer_id || !$device_model) {
 
 try {
     $pdo->beginTransaction();
+    $initial_status = getDefaultOrderStatus();
 
     $stmt = $pdo->prepare(
         "INSERT INTO orders (customer_id, technician_id, device_type, order_type, device_brand, device_model,
@@ -47,12 +48,12 @@ try {
     $stmt->execute([
         $customer_id, $technician_id, $device_type, $order_type, $device_brand, $device_model,
         $problem_description, $technician_notes, $serial_number, $serial_number_2,
-        $pin_code, $appearance, $priority, $estimated_cost, $shipping_method, 'Accepted'
+        $pin_code, $appearance, $priority, $estimated_cost, $shipping_method, $initial_status
     ]);
     $order_id = (int)$pdo->lastInsertId();
 
     saveDeviceModelUsage($device_brand, $device_model);
-    logOrderStatusChange($order_id, '', 'Accepted');
+    logOrderStatusChange($order_id, '', $initial_status);
 
     // ── Secure file upload ────────────────────────────────────────────────────
     if (!empty($_FILES['files']['name'][0])) {

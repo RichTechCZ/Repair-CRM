@@ -30,17 +30,17 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
     $received = $stmt->fetchColumn();
 
     // In Progress
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status IN ('Diagnostics','In Repair') AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status IN ('Diagnostics','In Repair','In Progress','Waiting for Parts') AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
     $stmt->execute($params);
     $in_progress = $stmt->fetchColumn();
 
     // Ready/Issued (Done)
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status IN ('Ready', 'Issued') AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status IN ('Ready','Issued','Completed','Collected') AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
     $stmt->execute($params);
     $completed = $stmt->fetchColumn();
 
     // Cancelled / issued without repair
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status IN ('Issued Without Repair', 'Repair Cancelled') AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status IN ('Issued Without Repair','Repair Cancelled','Cancelled') AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
     $stmt->execute($params);
     $cancelled = $stmt->fetchColumn();
 
@@ -76,7 +76,7 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
              WHERE oi2.order_id = o.id) AS inventory_cost
         FROM orders o
         LEFT JOIN invoices inv ON inv.order_id = o.id AND inv.status = 'paid'
-        WHERE o.status = 'Issued'
+        WHERE o.status IN ('Issued','Collected')
           AND COALESCE(inv.payment_date, DATE(o.shipping_date)) BETWEEN ? AND ?
     " . $fin_tech_cond;
 
@@ -404,7 +404,7 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
                                 FROM orders o
                                 JOIN customers c ON o.customer_id = c.id
                                 LEFT JOIN invoices inv ON inv.order_id = o.id AND inv.status = 'paid'
-                                WHERE o.technician_id = ? AND o.status = 'Issued'
+                                WHERE o.technician_id = ? AND o.status IN ('Issued','Collected')
                                   AND COALESCE(inv.payment_date, DATE(o.shipping_date)) BETWEEN ? AND ?
                                 ORDER BY finance_date DESC
                             ");
@@ -564,6 +564,13 @@ function getStatusBadgeClass(status) {
         case 'Issued': return 'bg-info text-dark';
         case 'Issued Without Repair': return 'bg-dark';
         case 'Repair Cancelled': return 'bg-danger';
+        case 'New': return 'bg-primary';
+        case 'Pending Approval': return 'bg-warning text-dark';
+        case 'In Progress': return 'bg-warning';
+        case 'Waiting for Parts': return 'bg-warning';
+        case 'Completed': return 'bg-success';
+        case 'Collected': return 'bg-info text-dark';
+        case 'Cancelled': return 'bg-danger';
         default: return 'bg-secondary';
     }
 }
@@ -577,7 +584,14 @@ function getStatusLabel(status) {
         'Ready': '<?php echo getStatusLabel('Ready'); ?>',
         'Issued': '<?php echo getStatusLabel('Issued'); ?>',
         'Issued Without Repair': '<?php echo getStatusLabel('Issued Without Repair'); ?>',
-        'Repair Cancelled': '<?php echo getStatusLabel('Repair Cancelled'); ?>'
+        'Repair Cancelled': '<?php echo getStatusLabel('Repair Cancelled'); ?>',
+        'New': '<?php echo getStatusLabel('New'); ?>',
+        'Pending Approval': '<?php echo getStatusLabel('Pending Approval'); ?>',
+        'In Progress': '<?php echo getStatusLabel('In Progress'); ?>',
+        'Waiting for Parts': '<?php echo getStatusLabel('Waiting for Parts'); ?>',
+        'Completed': '<?php echo getStatusLabel('Completed'); ?>',
+        'Collected': '<?php echo getStatusLabel('Collected'); ?>',
+        'Cancelled': '<?php echo getStatusLabel('Cancelled'); ?>'
     };
     return labels[status] || status;
 }

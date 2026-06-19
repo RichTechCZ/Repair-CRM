@@ -35,13 +35,13 @@ switch ($type) {
         $where .= " AND o.created_at BETWEEN ? AND ?";
         break;
     case 'in_progress':
-        $where .= " AND o.status IN ('Diagnostics','In Repair') AND o.updated_at BETWEEN ? AND ?";
+        $where .= " AND o.status IN ('Diagnostics','In Repair','In Progress','Waiting for Parts') AND o.updated_at BETWEEN ? AND ?";
         break;
     case 'completed':
-        $where .= " AND o.status IN ('Ready', 'Issued') AND o.updated_at BETWEEN ? AND ?";
+        $where .= " AND o.status IN ('Ready','Issued','Completed','Collected') AND o.updated_at BETWEEN ? AND ?";
         break;
     case 'cancelled':
-        $where .= " AND o.status IN ('Issued Without Repair', 'Repair Cancelled') AND o.updated_at BETWEEN ? AND ?";
+        $where .= " AND o.status IN ('Issued Without Repair','Repair Cancelled','Cancelled') AND o.updated_at BETWEEN ? AND ?";
         break;
     default:
         echo json_encode(['success' => false, 'message' => 'Invalid type']);

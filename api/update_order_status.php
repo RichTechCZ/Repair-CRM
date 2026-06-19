@@ -34,19 +34,25 @@ $terminal_statuses = ['Issued', 'Issued Without Repair', 'Repair Cancelled'];
 
 // Statuses that require a cancellation_reason
 $reason_required_statuses = ['Issued Without Repair', 'Repair Cancelled'];
+$can_store_cancellation_reason = tableColumnExists('orders', 'cancellation_reason');
 
 if (!$order_id || !$new_status) {
     echo json_encode(['success' => false, 'message' => __('missing_data')]);
     exit;
 }
 
-if (!in_array($new_status, $allowed_statuses, true)) {
+$requested_status = $new_status;
+$canonical_new_status = canonicalOrderStatus($requested_status);
+
+if (!in_array($canonical_new_status, $allowed_statuses, true)) {
     echo json_encode(['success' => false, 'message' => 'Invalid status']);
     exit;
 }
 
+$new_status = getOrderStatusStorageValue($requested_status);
+
 // Validate cancellation_reason for terminal rejection statuses
-if (in_array($new_status, $reason_required_statuses, true) && empty(trim($cancellation_reason ?? ''))) {
+if ($can_store_cancellation_reason && in_array($canonical_new_status, $reason_required_statuses, true) && empty(trim($cancellation_reason ?? ''))) {
     echo json_encode(['success' => false, 'message' => __('cancellation_reason')]);
     exit;
 }
@@ -68,17 +74,18 @@ try {
     }
 
     $current_status = $order_data['status'];
+    $canonical_current_status = canonicalOrderStatus($current_status);
     $current_tech_id = $order_data['technician_id'];
     $current_estimated = $order_data['estimated_cost'];
     $current_final = $order_data['final_cost'];
 
     // Block changes from terminal statuses
-    if (in_array($current_status, $terminal_statuses, true) && $new_status !== $current_status) {
+    if (in_array($canonical_current_status, $terminal_statuses, true) && $canonical_new_status !== $canonical_current_status) {
         throw new Exception(__('status_change_after_collected_forbidden'));
     }
 
     // Validate 'Issued' requires final_cost and shipping_method
-    if ($new_status === 'Issued') {
+    if ($canonical_new_status === 'Issued') {
         $effective_final = ($final_cost !== null && $final_cost !== '') ? $final_cost : $current_final;
         $effective_shipping = $shipping_method !== '' ? $shipping_method : ($order_data['shipping_method'] ?? null);
         if (empty($effective_final) || $effective_final <= 0) {
@@ -90,14 +97,14 @@ try {
     }
 
     $finishing_statuses = ['Ready', 'Issued', 'Issued Without Repair'];
-    $was_finished = in_array($current_status, $finishing_statuses, true);
-    $is_finishing = in_array($new_status, $finishing_statuses, true);
+    $was_finished = in_array($canonical_current_status, $finishing_statuses, true);
+    $is_finishing = in_array($canonical_new_status, $finishing_statuses, true);
 
     $sql = 'UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP';
     $params = [$new_status];
 
     // Auto-set shipping_date when Issued
-    if ($new_status === 'Issued') {
+    if ($canonical_new_status === 'Issued') {
         $sql .= ', shipping_date = IFNULL(shipping_date, CURRENT_TIMESTAMP)';
         if ($shipping_method !== '') {
             $sql .= ', shipping_method = ?';
@@ -106,7 +113,7 @@ try {
     }
 
     // Fallback final_cost for Issued
-    if ($new_status === 'Issued' && ($final_cost === null || $final_cost === '')) {
+    if ($canonical_new_status === 'Issued' && ($final_cost === null || $final_cost === '')) {
         $final_cost = ($current_final !== null && $current_final !== '') ? $current_final : $current_estimated;
     }
 
@@ -124,7 +131,7 @@ try {
     }
 
     // Save cancellation_reason for terminal rejection statuses
-    if (in_array($new_status, $reason_required_statuses, true)) {
+    if ($can_store_cancellation_reason && in_array($canonical_new_status, $reason_required_statuses, true)) {
         $sql .= ', cancellation_reason = ?';
         $params[] = trim($cancellation_reason);
     }
@@ -141,7 +148,7 @@ try {
 
     if (!$was_finished && $is_finishing) {
         processOrderInventoryChange($order_id, $is_finishing, $was_finished);
-        if ($new_status === 'Ready' && get_setting('acc_auto_create_invoice', '0') == '1') {
+        if ($canonical_new_status === 'Ready' && get_setting('acc_auto_create_invoice', '0') == '1') {
             $invoiceResult = createLocalInvoiceForCompletedOrder($pdo, (int)$order_id, $final_cost);
             if ($invoiceResult['success'] ?? false) {
                 $invoice_to_sync = (int)$invoiceResult['id'];
@@ -168,7 +175,7 @@ try {
 
         if ($techData && $techData['telegram_id']) {
             $msg = sprintf(__('tg_order_update_title'), $order_id) . "\n";
-            $msg .= sprintf(__('tg_new_status'), getStatusLabel($new_status)) . "\n";
+            $msg .= sprintf(__('tg_new_status'), getStatusLabel($canonical_new_status)) . "\n";
             if ($final_cost !== null) {
                 $msg .= sprintf(__('tg_cost'), formatMoney($final_cost)) . "\n";
             }

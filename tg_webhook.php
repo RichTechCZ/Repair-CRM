@@ -42,7 +42,7 @@ if ($text == '/start' || $text == '/help') {
 }
 
 if ($text == '/my') {
-    $stmt = $pdo->prepare("SELECT id, device_brand, device_model, status FROM orders WHERE technician_id = ? AND status NOT IN ('Issued', 'Issued Without Repair', 'Repair Cancelled') ORDER BY created_at DESC");
+    $stmt = $pdo->prepare("SELECT id, device_brand, device_model, status FROM orders WHERE technician_id = ? AND status NOT IN ('Issued', 'Issued Without Repair', 'Repair Cancelled', 'Collected', 'Cancelled') ORDER BY created_at DESC");
     $stmt->execute([$tech['id']]);
     $orders = $stmt->fetchAll();
     

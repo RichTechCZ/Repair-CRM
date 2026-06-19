@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $problem_description = $_POST['problem_description'];
         $technician_notes = $_POST['technician_notes'];
         $estimated_cost = $_POST['estimated_cost'];
-        $status = $_POST['status'];
+        $status = getOrderStatusStorageValue(canonicalOrderStatus($_POST['status']));
 
         try {
             // First get current status to see if it changed to Issued
@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $current_order = $stmt_curr->fetch();
             
             $shipping_date_sql = "";
-            if ($status === 'Issued' && !$current_order['shipping_date']) {
+            if (canonicalOrderStatus($status) === 'Issued' && !$current_order['shipping_date']) {
                 $shipping_date_sql = ", shipping_date = NOW()";
             }
 
@@ -180,7 +180,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <label class="form-label"><i class="fas fa-tasks me-2 text-warning"></i><?php echo __('status'); ?></label>
                     <select name="status" class="form-select">
                         <?php foreach (getAllStatuses() as $status_option): ?>
-                            <option value="<?php echo e($status_option); ?>" <?php echo ($order['status'] ?? '') === $status_option ? 'selected' : ''; ?>>
+                            <option value="<?php echo e($status_option); ?>" <?php echo canonicalOrderStatus($order['status'] ?? '') === $status_option ? 'selected' : ''; ?>>
                                 <?php echo e(getStatusLabel($status_option)); ?>
                             </option>
                         <?php endforeach; ?>

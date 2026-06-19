@@ -196,6 +196,13 @@ function getStatusBadge($status) {
         'Issued' => 'bg-secondary',
         'Issued Without Repair' => 'bg-dark',
         'Repair Cancelled' => 'bg-danger',
+        'New' => 'bg-primary',
+        'Pending Approval' => 'bg-warning text-dark',
+        'In Progress' => 'bg-warning',
+        'Waiting for Parts' => 'bg-secondary',
+        'Completed' => 'bg-success',
+        'Collected' => 'bg-secondary',
+        'Cancelled' => 'bg-danger',
     ];
 
     $class = $classes[$status] ?? 'bg-dark';
@@ -213,6 +220,133 @@ function getAllStatuses(): array {
         'Issued Without Repair',
         'Repair Cancelled',
     ];
+}
+
+function getLegacyStatusMap(): array {
+    return [
+        'New' => 'Accepted',
+        'Pending Approval' => 'Approval',
+        'In Progress' => 'In Repair',
+        'Waiting for Parts' => 'In Repair',
+        'Completed' => 'Ready',
+        'Collected' => 'Issued',
+        'Cancelled' => 'Repair Cancelled',
+    ];
+}
+
+function canonicalOrderStatus($status): string {
+    $status = (string)$status;
+    $legacy_map = getLegacyStatusMap();
+    return $legacy_map[$status] ?? $status;
+}
+
+function getLegacyEquivalentStatus(string $status): ?string {
+    $reverse_map = [
+        'Accepted' => 'New',
+        'Diagnostics' => 'In Progress',
+        'Approval' => 'Pending Approval',
+        'In Repair' => 'In Progress',
+        'Ready' => 'Completed',
+        'Issued' => 'Collected',
+        'Issued Without Repair' => 'Cancelled',
+        'Repair Cancelled' => 'Cancelled',
+    ];
+
+    return $reverse_map[$status] ?? null;
+}
+
+function getOrderStatusStorageValues(): array {
+    global $pdo;
+    static $cache = null;
+
+    if ($cache !== null) {
+        return $cache;
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM orders LIKE 'status'");
+        $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : false;
+        $type = $column['Type'] ?? '';
+        preg_match_all("/'((?:[^'\\\\]|\\\\.)*)'/", $type, $matches);
+        $cache = array_map(static function ($value) {
+            return str_replace("\\'", "'", $value);
+        }, $matches[1] ?? []);
+    } catch (Exception $e) {
+        $cache = [];
+    }
+
+    return $cache;
+}
+
+function orderStatusValueSupported(string $status): bool {
+    $values = getOrderStatusStorageValues();
+    return empty($values) || in_array($status, $values, true);
+}
+
+function getOrderStatusStorageValue(string $status): string {
+    if (orderStatusValueSupported($status)) {
+        return $status;
+    }
+
+    $canonical = canonicalOrderStatus($status);
+    if ($canonical !== $status && orderStatusValueSupported($canonical)) {
+        return $canonical;
+    }
+
+    $legacy = getLegacyEquivalentStatus($canonical);
+    if ($legacy !== null && orderStatusValueSupported($legacy)) {
+        return $legacy;
+    }
+
+    return $status;
+}
+
+function getDefaultOrderStatus(): string {
+    return getOrderStatusStorageValue('Accepted');
+}
+
+function getOrderStatusQueryValues(array $statuses): array {
+    $values = [];
+    foreach ($statuses as $status) {
+        $status = (string)$status;
+        $values[] = $status;
+        $canonical = canonicalOrderStatus($status);
+        $values[] = $canonical;
+        $legacy = getLegacyEquivalentStatus($canonical);
+        if ($legacy !== null) {
+            $values[] = $legacy;
+        }
+    }
+
+    return array_values(array_unique(array_filter($values, static function ($value) {
+        return $value !== '';
+    })));
+}
+
+function buildStatusInCondition(string $column, array $statuses, array &$params): string {
+    $values = getOrderStatusQueryValues($statuses);
+    $params = array_merge($params, $values);
+    return $column . ' IN (' . implode(',', array_fill(0, count($values), '?')) . ')';
+}
+
+function tableColumnExists(string $table, string $column): bool {
+    global $pdo;
+    static $cache = [];
+    $key = $table . '.' . $column;
+
+    if (array_key_exists($key, $cache)) {
+        return $cache[$key];
+    }
+
+    try {
+        $stmt = $pdo->prepare("SHOW COLUMNS FROM `$table` LIKE ?");
+        $stmt->execute([$column]);
+        $cache[$key] = (bool)$stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        $cache[$key] = false;
+    }
+
+    return $cache[$key];
 }
 
 function getStatusLabel($status): string {

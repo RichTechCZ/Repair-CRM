@@ -13,10 +13,10 @@ if ($_SESSION['role'] == 'technician' && !hasPermission('view_all_orders')) {
 }
 
 // Count for Stats
-$new_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'Accepted'" . $tech_cond)->fetchColumn();
-$pending_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'Approval'" . $tech_cond)->fetchColumn();
-$progress_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('Diagnostics','In Repair')" . $tech_cond)->fetchColumn();
-$ready_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('Ready', 'Issued')" . $tech_cond)->fetchColumn();
+$new_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('Accepted','New')" . $tech_cond)->fetchColumn();
+$pending_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('Approval','Pending Approval')" . $tech_cond)->fetchColumn();
+$progress_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('Diagnostics','In Repair','In Progress','Waiting for Parts')" . $tech_cond)->fetchColumn();
+$ready_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('Ready','Issued','Completed','Collected')" . $tech_cond)->fetchColumn();
 
 // Online Techs (Last 5 minutes) - Admin or those with admin_access
 $online_count = 0;
@@ -131,10 +131,11 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
             <div class="card-header bg-transparent border-bottom-0 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">
                     <?php 
-                    if ($filter_status == 'Accepted') echo __('new_orders');
-                    elseif ($filter_status == 'Approval') echo __('pending_approval_orders');
-                    elseif (in_array($filter_status, ['Diagnostics', 'In Repair'], true)) echo __('in_progress_orders');
-                    elseif ($filter_status == 'Ready') echo __('completed_orders');
+                    $canonical_filter_status = canonicalOrderStatus($filter_status ?? '');
+                    if ($canonical_filter_status == 'Accepted') echo __('new_orders');
+                    elseif ($canonical_filter_status == 'Approval') echo __('pending_approval_orders');
+                    elseif (in_array($canonical_filter_status, ['Diagnostics', 'In Repair'], true)) echo __('in_progress_orders');
+                    elseif ($canonical_filter_status == 'Ready') echo __('completed_orders');
                     else echo __('recent_orders'); 
                     ?>
                 </h5>
@@ -176,11 +177,10 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                             }
 
                             if ($filter_status) {
-                                if ($filter_status == 'Ready') {
-                                    $where_clauses[] = "o.status IN ('Ready', 'Issued')";
+                                if (canonicalOrderStatus($filter_status) == 'Ready') {
+                                    $where_clauses[] = buildStatusInCondition('o.status', ['Ready', 'Issued'], $params);
                                 } else {
-                                    $where_clauses[] = 'o.status = ?';
-                                    $params[] = $filter_status;
+                                    $where_clauses[] = buildStatusInCondition('o.status', [$filter_status], $params);
                                 }
                             }
 

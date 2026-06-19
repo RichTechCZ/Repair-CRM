@@ -9,7 +9,7 @@ $page   = max(1, (int)($_GET['p'] ?? 1));
 $offset = ($page - 1) * $limit;
 
 // FIX #7: Whitelist filter values to prevent unexpected SQL behavior
-$allowed_statuses = getAllStatuses();
+$allowed_statuses = array_merge(getAllStatuses(), array_keys(getLegacyStatusMap()));
 $filter_status    = in_array($_GET['filter'] ?? '', $allowed_statuses, true) ? $_GET['filter'] : null;
 
 $orders       = [];
@@ -34,11 +34,10 @@ if (isset($pdo)) {
             $sql_params = array_merge($sql_params, $search_parts['where_params']);
         }
 
-        if ($filter_status === 'Ready') {
-            $where_clauses[] = "o.status IN ('Ready', 'Issued')";
+        if (canonicalOrderStatus($filter_status) === 'Ready') {
+            $where_clauses[] = buildStatusInCondition('o.status', ['Ready', 'Issued'], $sql_params);
         } elseif ($filter_status) {
-            $where_clauses[] = 'o.status = ?';
-            $sql_params[]    = $filter_status;
+            $where_clauses[] = buildStatusInCondition('o.status', [$filter_status], $sql_params);
         }
 
         $where_sql = $where_clauses ? ' WHERE ' . implode(' AND ', $where_clauses) : '';
@@ -134,10 +133,10 @@ if (isset($pdo)) {
         }
         $s = $pdo->prepare(
             "SELECT
-                SUM(status = 'Accepted') as cnt_new,
-                SUM(status = 'Approval') as cnt_pending,
-                SUM(status IN ('Diagnostics','In Repair')) as cnt_progress,
-                SUM(status IN ('Ready','Issued')) as cnt_ready
+                SUM(status IN ('Accepted','New')) as cnt_new,
+                SUM(status IN ('Approval','Pending Approval')) as cnt_pending,
+                SUM(status IN ('Diagnostics','In Repair','In Progress','Waiting for Parts')) as cnt_progress,
+                SUM(status IN ('Ready','Issued','Completed','Collected')) as cnt_ready
              FROM orders WHERE 1=1" . $stats_where
         );
         $s->execute($stats_params);
@@ -349,9 +348,10 @@ if (isset($pdo)) {
                                 ?>
                                 <?php
                                     $terminal_statuses = ['Issued', 'Issued Without Repair', 'Repair Cancelled'];
-                                    $can_cancel = !in_array($order['status'], $terminal_statuses, true);
+                                    $canonical_status = canonicalOrderStatus($order['status']);
+                                    $can_cancel = !in_array($canonical_status, $terminal_statuses, true);
                                     $show_quick = $can_quick && (
-                                        !in_array($order['status'], $terminal_statuses, true) || $can_cancel
+                                        !in_array($canonical_status, $terminal_statuses, true) || $can_cancel
                                     );
                                 ?>
                                 <?php // inline quick-status buttons removed; using dropdown only ?>
@@ -362,11 +362,11 @@ if (isset($pdo)) {
                                             <i class="fas fa-bolt text-primary"></i>
                                         </button>
                                         <ul class="dropdown-menu shadow">
-                                            <?php if ($order['status'] === 'Accepted'): ?>
+                                            <?php if ($canonical_status === 'Accepted'): ?>
                                                 <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="Diagnostics"><i class="fas fa-stethoscope me-2 text-primary"></i><?php echo getStatusLabel('Diagnostics'); ?></a></li>
-                                            <?php elseif (in_array($order['status'], ['Diagnostics', 'Approval'], true)): ?>
+                                            <?php elseif (in_array($canonical_status, ['Diagnostics', 'Approval'], true)): ?>
                                                 <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="In Repair"><i class="fas fa-tools me-2 text-warning"></i><?php echo getStatusLabel('In Repair'); ?></a></li>
-                                            <?php elseif ($order['status'] === 'In Repair'): ?>
+                                            <?php elseif ($canonical_status === 'In Repair'): ?>
                                                 <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="Ready"><i class="fas fa-check me-2 text-success"></i><?php echo getStatusLabel('Ready'); ?></a></li>
                                             <?php endif; ?>
                                             <?php if ($can_cancel): ?>
@@ -627,7 +627,14 @@ document.addEventListener('DOMContentLoaded', function() {
             'Ready': 'success',
             'Issued': 'secondary',
             'Issued Without Repair': 'dark',
-            'Repair Cancelled': 'danger'
+            'Repair Cancelled': 'danger',
+            'New': 'primary',
+            'Pending Approval': 'warning',
+            'In Progress': 'warning',
+            'Waiting for Parts': 'warning',
+            'Completed': 'success',
+            'Collected': 'secondary',
+            'Cancelled': 'danger'
         };
 
         var html = '<div class="table-responsive">'

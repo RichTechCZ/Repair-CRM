@@ -42,16 +42,18 @@ try {
     $is_admin = hasPermission('admin_access');
     $allowed_statuses = getAllStatuses();
     $new_status = $_POST['status'] ?? $current['status'];
-    if (!in_array($new_status, $allowed_statuses, true)) {
+    $canonical_new_status = canonicalOrderStatus($new_status);
+    if (!in_array($canonical_new_status, $allowed_statuses, true)) {
         throw new Exception('Invalid status');
     }
+    $new_status = getOrderStatusStorageValue($canonical_new_status);
 
     $incoming_final_cost = isset($_POST['final_cost']) ? (float)$_POST['final_cost'] : (float)($current['final_cost'] ?? 0);
-    if ($new_status === 'Issued' && ($incoming_final_cost <= 0 || empty($current['shipping_method']))) {
+    if ($canonical_new_status === 'Issued' && ($incoming_final_cost <= 0 || empty($current['shipping_method']))) {
         throw new Exception(__('required_for_issue'));
     }
 
-    if (in_array($new_status, ['Issued Without Repair', 'Repair Cancelled'], true) && empty(trim($current['cancellation_reason'] ?? ''))) {
+    if (tableColumnExists('orders', 'cancellation_reason') && in_array($canonical_new_status, ['Issued Without Repair', 'Repair Cancelled'], true) && empty(trim($current['cancellation_reason'] ?? ''))) {
         throw new Exception(__('cancellation_reason'));
     }
 
@@ -104,10 +106,11 @@ try {
     $final_cost = isset($_POST['final_cost']) ? (float)$_POST['final_cost'] : (float)$current['final_cost'];
 
     $finishing_statuses = ['Ready', 'Issued', 'Issued Without Repair'];
-    $was_finished = in_array($current['status'], $finishing_statuses, true);
-    $is_finishing = in_array($new_status, $finishing_statuses, true);
+    $canonical_current_status = canonicalOrderStatus($current['status']);
+    $was_finished = in_array($canonical_current_status, $finishing_statuses, true);
+    $is_finishing = in_array($canonical_new_status, $finishing_statuses, true);
 
-    if (in_array($current['status'], ['Issued', 'Issued Without Repair', 'Repair Cancelled'], true) && $new_status !== $current['status']) {
+    if (in_array($canonical_current_status, ['Issued', 'Issued Without Repair', 'Repair Cancelled'], true) && $canonical_new_status !== $canonical_current_status) {
         throw new Exception(__('status_change_after_collected_forbidden'));
     }
 
@@ -128,7 +131,7 @@ try {
                 sendTelegramNotification($techData['telegram_id'], $msg);
             }
 
-            if ($new_status === 'Ready' && get_setting('acc_auto_create_invoice', '0') == '1') {
+            if ($canonical_new_status === 'Ready' && get_setting('acc_auto_create_invoice', '0') == '1') {
                 $invoiceResult = createLocalInvoiceForCompletedOrder($pdo, (int)$order_id, $_POST['final_cost'] ?? null);
                 if ($invoiceResult['success'] ?? false) {
                     $invoice_to_sync = (int)$invoiceResult['id'];

@@ -39,7 +39,7 @@ $inventory = $pdo->query("SELECT id, part_name, quantity, sale_price FROM invent
 // Fetch active technicians for edit modal
 $techs = getActiveTechnicians();
 
-$status = $order['status'] ?? 'Accepted';
+$status = canonicalOrderStatus($order['status'] ?? 'Accepted');
 $show_shipping = $status === 'Issued';
 $show_invoice = hasPermission('admin_access')
     && in_array($status, ['Ready', 'Issued'], true)
@@ -356,7 +356,7 @@ try {
                             </label>
                             <select name="status" class="form-select mb-2">
                                 <?php foreach (getAllStatuses() as $status_option): ?>
-                                    <option value="<?php echo e($status_option); ?>" <?php echo ($order['status'] ?? '') === $status_option ? 'selected' : ''; ?>>
+                                    <option value="<?php echo e($status_option); ?>" <?php echo $status === $status_option ? 'selected' : ''; ?>>
                                         <?php echo e(getStatusLabel($status_option)); ?>
                                     </option>
                                 <?php endforeach; ?>
@@ -415,7 +415,7 @@ try {
         <div class="card glass-card border-0 mb-4">
             <div class="card-header bg-transparent border-bottom-0 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><?php echo __('shipping'); ?></h5>
-                <?php if($order['status'] === 'Issued'): ?>
+                <?php if($status === 'Issued'): ?>
                     <span class="badge bg-success small"><?php echo getStatusLabel('Issued'); ?></span>
                 <?php endif; ?>
             </div>
