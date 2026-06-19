@@ -46,10 +46,6 @@ function runCommand(string $command, ?int &$exitCode = null): string {
     return '';
 }
 
-$repo   = $localVersion['github_repo'] ?? 'RichTechCZ/Repair-CRM';
-$branch = $localVersion['github_branch'] ?? 'main';
-$projectDir = realpath(__DIR__ . '/..');
-
 function fetchRemoteUrl(string $url, array $headers = [], int $timeout = 15): array {
     $options = [
         CURLOPT_URL            => $url,

@@ -406,9 +406,271 @@ function applyArchiveUpdate(string $projectDir, string $repo, string $branch): a
 }
 
 function tableExists(PDO $pdo, string $tableName): bool {
-    $stmt = $pdo->prepare('SHOW TABLES LIKE ?');
-    $stmt->execute([$tableName]);
-    return (bool)$stmt->fetchColumn();
+    $stmt = $pdo->query('SHOW TABLES LIKE ' . $pdo->quote($tableName));
+    return $stmt ? (bool)$stmt->fetchColumn() : false;
+}
+
+function getColumnDefinition(PDO $pdo, string $tableName, string $columnName): ?array {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $tableName)) {
+        return null;
+    }
+
+    $stmt = $pdo->query("SHOW COLUMNS FROM `{$tableName}` LIKE " . $pdo->quote($columnName));
+    $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : false;
+    return is_array($column) ? $column : null;
+}
+
+function columnExists(PDO $pdo, string $tableName, string $columnName): bool {
+    return getColumnDefinition($pdo, $tableName, $columnName) !== null;
+}
+
+function indexExists(PDO $pdo, string $tableName, string $indexName): bool {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $tableName)) {
+        return false;
+    }
+
+    $stmt = $pdo->query("SHOW INDEX FROM `{$tableName}` WHERE Key_name = " . $pdo->quote($indexName));
+    return $stmt ? (bool)$stmt->fetch(PDO::FETCH_ASSOC) : false;
+}
+
+function getEnumValues(PDO $pdo, string $tableName, string $columnName): array {
+    $column = getColumnDefinition($pdo, $tableName, $columnName);
+    $type = $column['Type'] ?? '';
+    preg_match_all("/'((?:[^'\\\\]|\\\\.)*)'/", $type, $matches);
+
+    return array_map(static function ($value) {
+        return str_replace("\\'", "'", $value);
+    }, $matches[1] ?? []);
+}
+
+function executeSqlStatements(PDO $pdo, string $sql): void {
+    foreach (array_filter(array_map('trim', explode(';', $sql))) as $statement) {
+        $pdo->exec($statement);
+    }
+}
+
+function ensureMigrationRegistry(PDO $pdo): array {
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `migrations` (
+            `id`             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `migration_name` VARCHAR(255) NOT NULL UNIQUE,
+            `executed_at`    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    if (tableExists($pdo, '_migrations')) {
+        $legacy = $pdo->query("SELECT filename FROM _migrations")->fetchAll(PDO::FETCH_COLUMN);
+        $insert = $pdo->prepare("INSERT IGNORE INTO migrations (migration_name) VALUES (?)");
+        foreach ($legacy as $filename) {
+            $insert->execute([$filename]);
+        }
+    }
+
+    return $pdo->query("SELECT migration_name FROM migrations")->fetchAll(PDO::FETCH_COLUMN);
+}
+
+function markMigrationExecuted(PDO $pdo, string $migrationName): void {
+    $pdo->prepare("INSERT IGNORE INTO migrations (migration_name) VALUES (?)")->execute([$migrationName]);
+}
+
+function applyStatusOverhaulMigration(PDO $pdo): void {
+    if (tableExists($pdo, 'orders') && columnExists($pdo, 'orders', 'status')) {
+        $pdo->exec("
+            ALTER TABLE `orders`
+              MODIFY COLUMN `status`
+                ENUM(
+                  'New','In Progress','Waiting for Parts','Pending Approval','Completed','Collected','Cancelled',
+                  'Accepted','Diagnostics','Approval','In Repair','Ready','Issued','Issued Without Repair','Repair Cancelled'
+                ) NOT NULL DEFAULT 'Accepted'
+        ");
+
+        $statusMap = [
+            'New' => 'Accepted',
+            'Pending Approval' => 'Approval',
+            'In Progress' => 'In Repair',
+            'Waiting for Parts' => 'In Repair',
+            'Completed' => 'Ready',
+            'Collected' => 'Issued',
+            'Cancelled' => 'Repair Cancelled',
+        ];
+
+        $stmt = $pdo->prepare("UPDATE `orders` SET `status` = ? WHERE `status` = ?");
+        foreach ($statusMap as $old => $new) {
+            $stmt->execute([$new, $old]);
+        }
+
+        $pdo->exec("
+            ALTER TABLE `orders`
+              MODIFY COLUMN `status`
+                ENUM(
+                  'Accepted','Diagnostics','Approval','In Repair','Ready','Issued','Issued Without Repair','Repair Cancelled'
+                ) NOT NULL DEFAULT 'Accepted'
+        ");
+
+        if (!columnExists($pdo, 'orders', 'cancellation_reason')) {
+            $pdo->exec("ALTER TABLE `orders` ADD COLUMN `cancellation_reason` TEXT DEFAULT NULL AFTER `status`");
+        }
+    }
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `order_status_log` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `order_id` INT NOT NULL,
+            `old_status` VARCHAR(50) NOT NULL,
+            `new_status` VARCHAR(50) NOT NULL,
+            `changed_by` INT NULL,
+            `changed_role` VARCHAR(20) NULL,
+            `changed_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $statusMap = [
+        'New' => 'Accepted',
+        'Pending Approval' => 'Approval',
+        'In Progress' => 'In Repair',
+        'Waiting for Parts' => 'In Repair',
+        'Completed' => 'Ready',
+        'Collected' => 'Issued',
+        'Cancelled' => 'Repair Cancelled',
+    ];
+    foreach ($statusMap as $old => $new) {
+        $stmt = $pdo->prepare("UPDATE `order_status_log` SET `old_status` = ? WHERE `old_status` = ?");
+        $stmt->execute([$new, $old]);
+        $stmt = $pdo->prepare("UPDATE `order_status_log` SET `new_status` = ? WHERE `new_status` = ?");
+        $stmt->execute([$new, $old]);
+    }
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `device_models` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `brand` VARCHAR(100) NOT NULL,
+            `model_name` VARCHAR(200) NOT NULL,
+            `usage_count` INT UNSIGNED NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX `idx_brand` (`brand`),
+            INDEX `idx_usage_count` (`usage_count`),
+            INDEX `idx_model_name` (`model_name`),
+            UNIQUE KEY `unique_brand_model` (`brand`, `model_name`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    if (!columnExists($pdo, 'device_models', 'usage_count')) {
+        $pdo->exec("ALTER TABLE `device_models` ADD COLUMN `usage_count` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `model_name`");
+    }
+    if (!indexExists($pdo, 'device_models', 'idx_usage_count')) {
+        $pdo->exec("CREATE INDEX `idx_usage_count` ON `device_models` (`usage_count`)");
+    }
+    if (!indexExists($pdo, 'device_models', 'idx_model_name')) {
+        $pdo->exec("CREATE INDEX `idx_model_name` ON `device_models` (`model_name`)");
+    }
+    if (!indexExists($pdo, 'device_models', 'unique_brand_model')) {
+        $pdo->exec("CREATE UNIQUE INDEX `unique_brand_model` ON `device_models` (`brand`, `model_name`)");
+    }
+
+    $pdo->exec("
+        INSERT IGNORE INTO `device_models` (`brand`, `model_name`) VALUES
+          ('APPLE', 'iPhone 11'),
+          ('APPLE', 'iPhone 11 Pro'),
+          ('APPLE', 'iPhone 11 Pro Max'),
+          ('APPLE', 'iPhone 12'),
+          ('APPLE', 'iPhone 12 Mini'),
+          ('APPLE', 'iPhone 12 Pro'),
+          ('APPLE', 'iPhone 12 Pro Max'),
+          ('APPLE', 'iPhone 13'),
+          ('APPLE', 'iPhone 13 Mini'),
+          ('APPLE', 'iPhone 13 Pro'),
+          ('APPLE', 'iPhone 13 Pro Max'),
+          ('APPLE', 'iPhone 14'),
+          ('APPLE', 'iPhone 14 Plus'),
+          ('APPLE', 'iPhone 14 Pro'),
+          ('APPLE', 'iPhone 14 Pro Max'),
+          ('APPLE', 'iPhone 15'),
+          ('APPLE', 'iPhone 15 Plus'),
+          ('APPLE', 'iPhone 15 Pro'),
+          ('APPLE', 'iPhone 15 Pro Max'),
+          ('APPLE', 'iPhone 16'),
+          ('APPLE', 'iPhone 16 Plus'),
+          ('APPLE', 'iPhone 16 Pro'),
+          ('APPLE', 'iPhone 16 Pro Max'),
+          ('SAMSUNG', 'Galaxy S24'),
+          ('SAMSUNG', 'Galaxy S24+'),
+          ('SAMSUNG', 'Galaxy S24 Ultra'),
+          ('XIAOMI', 'Redmi Note 13'),
+          ('XIAOMI', 'Redmi Note 13 Pro'),
+          ('GOOGLE', 'Pixel 8'),
+          ('GOOGLE', 'Pixel 8 Pro')
+    ");
+
+    if (tableExists($pdo, 'orders') && columnExists($pdo, 'orders', 'device_brand') && columnExists($pdo, 'orders', 'device_model')) {
+        $pdo->exec("
+            INSERT INTO `device_models` (`brand`, `model_name`, `usage_count`)
+            SELECT
+              UPPER(TRIM(`device_brand`)) AS `brand`,
+              TRIM(`device_model`) AS `model_name`,
+              COUNT(*) AS `usage_count`
+            FROM `orders`
+            WHERE TRIM(COALESCE(`device_brand`, '')) <> ''
+              AND TRIM(COALESCE(`device_model`, '')) <> ''
+            GROUP BY UPPER(TRIM(`device_brand`)), TRIM(`device_model`)
+            ON DUPLICATE KEY UPDATE `usage_count` = VALUES(`usage_count`)
+        ");
+    }
+
+    if (tableExists($pdo, 'order_items')) {
+        if (columnExists($pdo, 'order_items', 'inventory_id')) {
+            $pdo->exec("ALTER TABLE `order_items` MODIFY COLUMN `inventory_id` INT(11) NULL");
+        }
+        if (!columnExists($pdo, 'order_items', 'part_name')) {
+            $pdo->exec("ALTER TABLE `order_items` ADD COLUMN `part_name` VARCHAR(255) NULL AFTER `inventory_id`");
+        }
+        if (!columnExists($pdo, 'order_items', 'source')) {
+            $pdo->exec("ALTER TABLE `order_items` ADD COLUMN `source` VARCHAR(255) NULL AFTER `part_name`");
+        }
+    }
+}
+
+function applyMyInvoiceMigration(PDO $pdo): void {
+    if (tableExists($pdo, 'customers')) {
+        if (!columnExists($pdo, 'customers', 'myinvoice_client_id')) {
+            $pdo->exec("ALTER TABLE `customers` ADD COLUMN `myinvoice_client_id` INT NULL AFTER `address`");
+        }
+        if (!indexExists($pdo, 'customers', 'idx_customers_myinvoice_client_id')) {
+            $pdo->exec("ALTER TABLE `customers` ADD KEY `idx_customers_myinvoice_client_id` (`myinvoice_client_id`)");
+        }
+    }
+
+    if (tableExists($pdo, 'invoices')) {
+        if (!columnExists($pdo, 'invoices', 'myinvoice_invoice_id')) {
+            $pdo->exec("ALTER TABLE `invoices` ADD COLUMN `myinvoice_invoice_id` INT NULL AFTER `pdf_path`");
+        }
+        if (!columnExists($pdo, 'invoices', 'myinvoice_status')) {
+            $pdo->exec("ALTER TABLE `invoices` ADD COLUMN `myinvoice_status` VARCHAR(30) NULL AFTER `myinvoice_invoice_id`");
+        }
+        if (!columnExists($pdo, 'invoices', 'myinvoice_synced_at')) {
+            $pdo->exec("ALTER TABLE `invoices` ADD COLUMN `myinvoice_synced_at` DATETIME NULL AFTER `myinvoice_status`");
+        }
+        if (!columnExists($pdo, 'invoices', 'myinvoice_sync_error')) {
+            $pdo->exec("ALTER TABLE `invoices` ADD COLUMN `myinvoice_sync_error` TEXT NULL AFTER `myinvoice_synced_at`");
+        }
+        if (!indexExists($pdo, 'invoices', 'uniq_invoices_myinvoice_invoice_id')) {
+            $pdo->exec("ALTER TABLE `invoices` ADD UNIQUE KEY `uniq_invoices_myinvoice_invoice_id` (`myinvoice_invoice_id`)");
+        }
+    }
+
+    if (tableExists($pdo, 'system_settings')) {
+        $pdo->exec("
+            INSERT INTO `system_settings` (`setting_key`, `setting_value`) VALUES
+            ('acc_auto_create_invoice', '1'),
+            ('myinvoice_enabled', '1'),
+            ('myinvoice_auto_issue', '1'),
+            ('myinvoice_api_base_url', 'http://fakturace.43.157.31.121.sslip.io'),
+            ('myinvoice_default_country_id', '1'),
+            ('myinvoice_default_street', '-'),
+            ('myinvoice_default_city', 'Praha'),
+            ('myinvoice_default_zip', '11000')
+            ON DUPLICATE KEY UPDATE `setting_value` = VALUES(`setting_value`)
+        ");
+    }
 }
 
 function runMigrations(PDO $pdo, string $projectDir): array {
@@ -423,13 +685,7 @@ function runMigrations(PDO $pdo, string $projectDir): array {
     sort($migrationFiles);
 
     try {
-        $pdo->exec("CREATE TABLE IF NOT EXISTS _migrations (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            filename VARCHAR(255) NOT NULL UNIQUE,
-            executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )");
-
-        $executed = $pdo->query("SELECT filename FROM _migrations")->fetchAll(PDO::FETCH_COLUMN);
+        $executed = ensureMigrationRegistry($pdo);
 
         foreach ($migrationFiles as $migFile) {
             $basename = basename($migFile);
@@ -443,18 +699,27 @@ function runMigrations(PDO $pdo, string $projectDir): array {
                 tableExists($pdo, 'customers') &&
                 tableExists($pdo, 'orders')
             ) {
-                $pdo->prepare("INSERT INTO _migrations (filename) VALUES (?)")->execute([$basename]);
+                markMigrationExecuted($pdo, $basename);
                 $results[] = ['file' => $basename, 'status' => 'skipped_existing_schema'];
                 continue;
             }
 
             try {
-                $sql = file_get_contents($migFile);
-                $pdo->exec($sql);
-                $pdo->prepare("INSERT INTO _migrations (filename) VALUES (?)")->execute([$basename]);
+                if ($basename === '002_status_overhaul.sql') {
+                    applyStatusOverhaulMigration($pdo);
+                } elseif ($basename === '002_myinvoice_integration.sql') {
+                    applyMyInvoiceMigration($pdo);
+                } else {
+                    $sql = file_get_contents($migFile);
+                    executeSqlStatements($pdo, $sql === false ? '' : $sql);
+                }
+
+                markMigrationExecuted($pdo, $basename);
+                $executed[] = $basename;
                 $results[] = ['file' => $basename, 'status' => 'ok'];
             } catch (Throwable $e) {
                 $results[] = ['file' => $basename, 'status' => 'error', 'message' => $e->getMessage()];
+                break;
             }
         }
     } catch (Throwable $e) {
