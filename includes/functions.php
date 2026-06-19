@@ -339,8 +339,7 @@ function tableColumnExists(string $table, string $column): bool {
     }
 
     try {
-        $stmt = $pdo->prepare("SHOW COLUMNS FROM `$table` LIKE ?");
-        $stmt->execute([$column]);
+        $stmt = $pdo->query("SHOW COLUMNS FROM `$table` LIKE " . $pdo->quote($column));
         $cache[$key] = (bool)$stmt->fetch(PDO::FETCH_ASSOC);
     } catch (Exception $e) {
         $cache[$key] = false;
