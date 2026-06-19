@@ -316,6 +316,11 @@ function getOrderStatusQueryValues(array $statuses): array {
         if ($legacy !== null) {
             $values[] = $legacy;
         }
+        foreach (getLegacyStatusMap() as $legacy_status => $canonical_status) {
+            if ($canonical_status === $canonical) {
+                $values[] = $legacy_status;
+            }
+        }
     }
 
     return array_values(array_unique(array_filter($values, static function ($value) {
@@ -327,6 +332,32 @@ function buildStatusInCondition(string $column, array $statuses, array &$params)
     $values = getOrderStatusQueryValues($statuses);
     $params = array_merge($params, $values);
     return $column . ' IN (' . implode(',', array_fill(0, count($values), '?')) . ')';
+}
+
+function getDashboardStatusGroups(): array {
+    return [
+        'new' => ['Accepted'],
+        'pending' => ['Approval'],
+        'progress' => ['Diagnostics', 'In Repair'],
+        'ready' => ['Ready', 'Issued'],
+    ];
+}
+
+function countOrdersByStatusGroup(array $statuses, ?int $technicianId = null): int {
+    global $pdo;
+
+    $params = [];
+    $where = buildStatusInCondition('status', $statuses, $params);
+
+    if ($technicianId !== null) {
+        $where .= ' AND technician_id = ?';
+        $params[] = $technicianId;
+    }
+
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM orders WHERE ' . $where);
+    $stmt->execute($params);
+
+    return (int)$stmt->fetchColumn();
 }
 
 function tableColumnExists(string $table, string $column): bool {

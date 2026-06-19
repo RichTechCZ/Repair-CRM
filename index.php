@@ -5,18 +5,20 @@ require_once 'includes/header.php';
 
 // Filter for Dashboard
 $filter_status = $_GET['filter'] ?? null;
+$dashboard_status_groups = getDashboardStatusGroups();
+$canonical_filter_status = canonicalOrderStatus($filter_status ?? '');
 
 // Technicians always see only orders assigned to them.
-$tech_cond = "";
+$dashboard_technician_id = null;
 if ($_SESSION['role'] == 'technician') {
-    $tech_cond = " AND technician_id = " . (int)$_SESSION['tech_id'];
+    $dashboard_technician_id = (int)$_SESSION['tech_id'];
 }
 
 // Count for Stats
-$new_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('Accepted','New')" . $tech_cond)->fetchColumn();
-$pending_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('Approval','Pending Approval')" . $tech_cond)->fetchColumn();
-$progress_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('Diagnostics','In Repair','In Progress','Waiting for Parts')" . $tech_cond)->fetchColumn();
-$ready_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('Ready','Issued','Completed','Collected')" . $tech_cond)->fetchColumn();
+$new_count = countOrdersByStatusGroup($dashboard_status_groups['new'], $dashboard_technician_id);
+$pending_count = countOrdersByStatusGroup($dashboard_status_groups['pending'], $dashboard_technician_id);
+$progress_count = countOrdersByStatusGroup($dashboard_status_groups['progress'], $dashboard_technician_id);
+$ready_count = countOrdersByStatusGroup($dashboard_status_groups['ready'], $dashboard_technician_id);
 
 // Online Techs (Last 5 minutes) - Admin or those with admin_access
 $online_count = 0;
@@ -44,7 +46,7 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
     <!-- Stat Cards -->
     <div class="col-12 col-sm-6 col-md-4 col-xl">
         <a href="?filter=Accepted" class="text-decoration-none">
-            <div class="card glass-card p-3 h-100 <?php echo $filter_status == 'Accepted' ? 'border-primary border-2' : 'border-0'; ?>">
+            <div class="card glass-card p-3 h-100 <?php echo $canonical_filter_status == 'Accepted' ? 'border-primary border-2' : 'border-0'; ?>">
                 <div class="d-flex align-items-center">
                     <div class="bg-primary bg-opacity-10 p-2 rounded-circle me-3">
                         <i class="fas fa-clipboard-list text-primary fa-xl"></i>
@@ -59,7 +61,7 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
     </div>
     <div class="col-12 col-sm-6 col-md-4 col-xl">
         <a href="?filter=Approval" class="text-decoration-none">
-            <div class="card glass-card p-3 h-100 <?php echo $filter_status == 'Approval' ? 'border-info border-2' : 'border-0'; ?>">
+            <div class="card glass-card p-3 h-100 <?php echo $canonical_filter_status == 'Approval' ? 'border-info border-2' : 'border-0'; ?>">
                 <div class="d-flex align-items-center">
                     <div class="bg-info bg-opacity-10 p-2 rounded-circle me-3">
                         <i class="fas fa-handshake text-info fa-xl"></i>
@@ -74,7 +76,7 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
     </div>
     <div class="col-12 col-sm-6 col-md-4 col-xl">
         <a href="?filter=In Repair" class="text-decoration-none">
-            <div class="card glass-card p-3 h-100 <?php echo in_array($filter_status, ['Diagnostics', 'In Repair'], true) ? 'border-warning border-2' : 'border-0'; ?>">
+            <div class="card glass-card p-3 h-100 <?php echo $canonical_filter_status == 'In Repair' ? 'border-warning border-2' : 'border-0'; ?>">
                 <div class="d-flex align-items-center">
                     <div class="bg-warning bg-opacity-10 p-2 rounded-circle me-3">
                         <i class="fas fa-spinner text-warning fa-xl"></i>
@@ -89,7 +91,7 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
     </div>
     <div class="col-12 col-sm-6 col-md-4 col-xl">
         <a href="?filter=Ready" class="text-decoration-none">
-            <div class="card glass-card p-3 h-100 <?php echo ($filter_status == 'Ready' || $filter_status == 'Issued') ? 'border-success border-2' : 'border-0'; ?>">
+            <div class="card glass-card p-3 h-100 <?php echo $canonical_filter_status == 'Ready' ? 'border-success border-2' : 'border-0'; ?>">
                 <div class="d-flex align-items-center">
                     <div class="bg-success bg-opacity-10 p-2 rounded-circle me-3">
                         <i class="fas fa-check-double text-success fa-xl"></i>
@@ -131,7 +133,6 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
             <div class="card-header bg-transparent border-bottom-0 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">
                     <?php 
-                    $canonical_filter_status = canonicalOrderStatus($filter_status ?? '');
                     if ($canonical_filter_status == 'Accepted') echo __('new_orders');
                     elseif ($canonical_filter_status == 'Approval') echo __('pending_approval_orders');
                     elseif (in_array($canonical_filter_status, ['Diagnostics', 'In Repair'], true)) echo __('in_progress_orders');
@@ -177,8 +178,11 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                             }
 
                             if ($filter_status) {
-                                if (canonicalOrderStatus($filter_status) == 'Ready') {
-                                    $where_clauses[] = buildStatusInCondition('o.status', ['Ready', 'Issued'], $params);
+                                $canonical_filter_status = canonicalOrderStatus($filter_status);
+                                if ($canonical_filter_status == 'Ready') {
+                                    $where_clauses[] = buildStatusInCondition('o.status', $dashboard_status_groups['ready'], $params);
+                                } elseif ($canonical_filter_status == 'In Repair') {
+                                    $where_clauses[] = buildStatusInCondition('o.status', $dashboard_status_groups['progress'], $params);
                                 } else {
                                     $where_clauses[] = buildStatusInCondition('o.status', [$filter_status], $params);
                                 }

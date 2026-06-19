@@ -11,6 +11,8 @@ $offset = ($page - 1) * $limit;
 // FIX #7: Whitelist filter values to prevent unexpected SQL behavior
 $allowed_statuses = array_merge(getAllStatuses(), array_keys(getLegacyStatusMap()));
 $filter_status    = in_array($_GET['filter'] ?? '', $allowed_statuses, true) ? $_GET['filter'] : null;
+$dashboard_status_groups = getDashboardStatusGroups();
+$canonical_filter_status = canonicalOrderStatus($filter_status ?? '');
 
 $orders       = [];
 $total_orders = 0;
@@ -34,8 +36,10 @@ if (isset($pdo)) {
             $sql_params = array_merge($sql_params, $search_parts['where_params']);
         }
 
-        if (canonicalOrderStatus($filter_status) === 'Ready') {
-            $where_clauses[] = buildStatusInCondition('o.status', ['Ready', 'Issued'], $sql_params);
+        if ($canonical_filter_status === 'Ready') {
+            $where_clauses[] = buildStatusInCondition('o.status', $dashboard_status_groups['ready'], $sql_params);
+        } elseif ($canonical_filter_status === 'In Repair') {
+            $where_clauses[] = buildStatusInCondition('o.status', $dashboard_status_groups['progress'], $sql_params);
         } elseif ($filter_status) {
             $where_clauses[] = buildStatusInCondition('o.status', [$filter_status], $sql_params);
         }
@@ -125,26 +129,14 @@ $now_ts = time();
 $s_new = $s_pending = $s_progress = $s_ready = 0;
 if (isset($pdo)) {
     try {
-        $stats_where  = '';
-        $stats_params = [];
+        $dashboard_technician_id = null;
         if (($_SESSION['role'] ?? '') === 'technician') {
-            $stats_where  = ' AND technician_id = ?';
-            $stats_params[] = (int)($_SESSION['tech_id'] ?? 0);
+            $dashboard_technician_id = (int)($_SESSION['tech_id'] ?? 0);
         }
-        $s = $pdo->prepare(
-            "SELECT
-                SUM(status IN ('Accepted','New')) as cnt_new,
-                SUM(status IN ('Approval','Pending Approval')) as cnt_pending,
-                SUM(status IN ('Diagnostics','In Repair','In Progress','Waiting for Parts')) as cnt_progress,
-                SUM(status IN ('Ready','Issued','Completed','Collected')) as cnt_ready
-             FROM orders WHERE 1=1" . $stats_where
-        );
-        $s->execute($stats_params);
-        $stats_row  = $s->fetch();
-        $s_new      = (int)($stats_row['cnt_new'] ?? 0);
-        $s_pending  = (int)($stats_row['cnt_pending'] ?? 0);
-        $s_progress = (int)($stats_row['cnt_progress'] ?? 0);
-        $s_ready    = (int)($stats_row['cnt_ready'] ?? 0);
+        $s_new = countOrdersByStatusGroup($dashboard_status_groups['new'], $dashboard_technician_id);
+        $s_pending = countOrdersByStatusGroup($dashboard_status_groups['pending'], $dashboard_technician_id);
+        $s_progress = countOrdersByStatusGroup($dashboard_status_groups['progress'], $dashboard_technician_id);
+        $s_ready = countOrdersByStatusGroup($dashboard_status_groups['ready'], $dashboard_technician_id);
     } catch (PDOException $e) {
         error_log('orders.php stats error: ' . $e->getMessage());
     }
@@ -164,7 +156,7 @@ if (isset($pdo)) {
 <div class="row g-3 mb-4">
     <div class="col-12 col-sm-6 col-md-3">
         <a href="?filter=Accepted" class="text-decoration-none">
-            <div class="card bg-primary bg-opacity-10 border-0 p-3 <?php echo $filter_status == 'Accepted' ? 'ring-2 ring-primary border-primary border-1 shadow-sm' : ''; ?>">
+            <div class="card bg-primary bg-opacity-10 border-0 p-3 <?php echo $canonical_filter_status == 'Accepted' ? 'ring-2 ring-primary border-primary border-1 shadow-sm' : ''; ?>">
                 <div class="d-flex align-items-center">
                     <i class="fas fa-clipboard-list text-primary fa-2x me-3"></i>
                     <div>
@@ -177,7 +169,7 @@ if (isset($pdo)) {
     </div>
     <div class="col-12 col-sm-6 col-md-3">
         <a href="?filter=Approval" class="text-decoration-none">
-            <div class="card bg-info bg-opacity-10 border-0 p-3 <?php echo $filter_status == 'Approval' ? 'ring-2 ring-info border-info border-1 shadow-sm' : ''; ?>">
+            <div class="card bg-info bg-opacity-10 border-0 p-3 <?php echo $canonical_filter_status == 'Approval' ? 'ring-2 ring-info border-info border-1 shadow-sm' : ''; ?>">
                 <div class="d-flex align-items-center">
                     <i class="fas fa-handshake text-info fa-2x me-3"></i>
                     <div>
@@ -190,7 +182,7 @@ if (isset($pdo)) {
     </div>
     <div class="col-12 col-sm-6 col-md-3">
         <a href="?filter=In Repair" class="text-decoration-none">
-            <div class="card bg-warning bg-opacity-10 border-0 p-3 <?php echo in_array($filter_status, ['Diagnostics', 'In Repair'], true) ? 'ring-2 ring-warning border-warning border-1 shadow-sm' : ''; ?>">
+            <div class="card bg-warning bg-opacity-10 border-0 p-3 <?php echo $canonical_filter_status == 'In Repair' ? 'ring-2 ring-warning border-warning border-1 shadow-sm' : ''; ?>">
                 <div class="d-flex align-items-center">
                     <i class="fas fa-spinner text-warning fa-2x me-3"></i>
                     <div>
@@ -203,7 +195,7 @@ if (isset($pdo)) {
     </div>
     <div class="col-12 col-sm-6 col-md-3">
         <a href="?filter=Ready" class="text-decoration-none">
-            <div class="card bg-success bg-opacity-10 border-0 p-3 <?php echo ($filter_status == 'Ready' || $filter_status == 'Issued') ? 'ring-2 ring-success border-success border-1 shadow-sm' : ''; ?>">
+            <div class="card bg-success bg-opacity-10 border-0 p-3 <?php echo $canonical_filter_status == 'Ready' ? 'ring-2 ring-success border-success border-1 shadow-sm' : ''; ?>">
                 <div class="d-flex align-items-center">
                     <i class="fas fa-check-double text-success fa-2x me-3"></i>
                     <div>
