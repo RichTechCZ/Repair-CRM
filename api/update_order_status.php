@@ -167,23 +167,8 @@ try {
         $sync_result = syncInvoiceToMyInvoice($pdo, $invoice_to_sync);
     }
 
-    $notify_id = $technician_id ? $technician_id : $current_tech_id;
-    if ($notify_id) {
-        $tech = $pdo->prepare('SELECT telegram_id, name FROM technicians WHERE id = ?');
-        $tech->execute([$notify_id]);
-        $techData = $tech->fetch();
-
-        if ($techData && $techData['telegram_id']) {
-            $msg = sprintf(__('tg_order_update_title'), $order_id) . "\n";
-            $msg .= sprintf(__('tg_new_status'), getStatusLabel($canonical_new_status)) . "\n";
-            if ($final_cost !== null) {
-                $msg .= sprintf(__('tg_cost'), formatMoney($final_cost)) . "\n";
-            }
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
-            $link = $protocol . $_SERVER['HTTP_HOST'] . '/view_order.php?id=' . $order_id;
-            $msg .= sprintf(__('tg_open_crm'), $link);
-            sendTelegramNotification($techData['telegram_id'], $msg);
-        }
+    if ($current_status !== $new_status) {
+        sendOrderStatusAdminNotification($order_id, $canonical_new_status, $final_cost);
     }
 
     echo json_encode(['success' => true, 'message' => 'Status updated', 'myinvoice_sync' => $sync_result]);

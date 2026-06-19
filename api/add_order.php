@@ -36,6 +36,10 @@ if (!$customer_id || !$device_model) {
     die(__('missing_fields'));
 }
 
+if (($_SESSION['role'] ?? '') === 'technician') {
+    $technician_id = (int)($_SESSION['tech_id'] ?? 0);
+}
+
 try {
     $pdo->beginTransaction();
     $initial_status = getDefaultOrderStatus();

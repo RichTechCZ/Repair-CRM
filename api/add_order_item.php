@@ -50,14 +50,13 @@ try {
         throw new Exception("Order not found");
     }
     
-    if (($_SESSION['role'] ?? '') == 'technician' && !hasPermission('view_all_orders') && $order['technician_id'] != ($_SESSION['tech_id'] ?? 0)) {
+    if (!currentUserCanEditOrder($order_id)) {
         throw new Exception(__('access_denied_msg'));
     }
 
     if ($mode === 'manual') {
         $stmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, part_name, source, quantity, price) VALUES (?, NULL, ?, ?, ?, ?)");
         $stmt->execute([$order_id, $manual_part_name, $manual_source, $qty, $manual_price]);
-        $notify_part_name = $manual_part_name;
     } else {
         // Get current price from inventory
         $stmt = $pdo->prepare("SELECT sale_price, part_name FROM inventory WHERE id = ?");
@@ -69,21 +68,6 @@ try {
 
         $stmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, quantity, price) VALUES (?, ?, ?, ?)");
         $stmt->execute([$order_id, $inventory_id, $qty, $inventory_item['sale_price']]);
-        $notify_part_name = $inventory_item['part_name'];
-    }
-
-    // Notify technician about added part
-    $stmt = $pdo->prepare("SELECT o.technician_id, t.telegram_id
-                           FROM orders o 
-                           LEFT JOIN technicians t ON o.technician_id = t.id 
-                           WHERE o.id = ?");
-    $stmt->execute([$order_id]);
-    $notify = $stmt->fetch();
-    
-    if ($notify && $notify['telegram_id']) {
-        $msg = sprintf(__('tg_part_added'), $order_id) . "\n";
-        $msg .= sprintf(__('tg_part_added_detail'), $notify_part_name, $qty) . "\n";
-        sendTelegramNotification($notify['telegram_id'], $msg);
     }
 
     echo json_encode(['success' => true]);

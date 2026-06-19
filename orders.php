@@ -23,8 +23,8 @@ if (isset($pdo)) {
         $where_clauses = [];
         $sql_params    = []; // FIX #9: renamed from $params to avoid collision with pagination block
 
-        // FIX #1: permission filter via PDO parameter, not concatenation
-        if (($_SESSION['role'] ?? '') === 'technician' && !hasPermission('view_all_orders')) {
+        // Technicians always see only orders assigned to them.
+        if (($_SESSION['role'] ?? '') === 'technician') {
             $where_clauses[] = 'o.technician_id = ?';
             $sql_params[]    = (int)($_SESSION['tech_id'] ?? 0);
         }
@@ -127,7 +127,7 @@ if (isset($pdo)) {
     try {
         $stats_where  = '';
         $stats_params = [];
-        if (($_SESSION['role'] ?? '') === 'technician' && !hasPermission('view_all_orders')) {
+        if (($_SESSION['role'] ?? '') === 'technician') {
             $stats_where  = ' AND technician_id = ?';
             $stats_params[] = (int)($_SESSION['tech_id'] ?? 0);
         }
@@ -342,7 +342,7 @@ if (isset($pdo)) {
                             <td class="fw-bold text-white"><?php echo formatMoney($order['final_cost'] ?: $order['estimated_cost']); ?></td>
                             <td class="text-end pe-4">
                                 <?php
-                                    $can_quick = hasPermission('admin_access') || hasPermission('edit_orders')
+                                    $can_quick = hasPermission('admin_access')
                                         || (($_SESSION['role'] ?? '') === 'technician'
                                             && (int)($order['technician_id'] ?? 0) === (int)($_SESSION['tech_id'] ?? 0));
                                 ?>

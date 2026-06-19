@@ -38,7 +38,7 @@ try {
     }
 
     // Check permissions
-    if (!hasPermission('edit_orders') && ($item['technician_id'] ?? 0) != ($_SESSION['tech_id'] ?? 0)) {
+    if (!currentUserCanEditOrder($item['order_id'])) {
         throw new Exception(__('access_denied_msg'));
     }
 

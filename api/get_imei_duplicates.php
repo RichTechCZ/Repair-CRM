@@ -37,7 +37,7 @@ try {
     $where = "WHERE (o.serial_number = ? OR o.serial_number_2 = ?)";
     $params = [$sn, $sn];
 
-    if (!hasPermission('admin_access') && !hasPermission('view_all_orders')) {
+    if (!hasPermission('admin_access')) {
         if (($_SESSION['role'] ?? '') !== 'technician' || empty($_SESSION['tech_id'])) {
             echo json_encode(['orders' => []], JSON_UNESCAPED_UNICODE);
             exit;

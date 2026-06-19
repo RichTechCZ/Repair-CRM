@@ -42,7 +42,7 @@ function currentUserCanViewOrder($order_id): bool {
         return false;
     }
 
-    if (hasPermission('admin_access') || hasPermission('view_all_orders')) {
+    if (hasPermission('admin_access')) {
         return true;
     }
 
@@ -64,7 +64,7 @@ function currentUserCanEditOrder($order_id): bool {
         return false;
     }
 
-    if (hasPermission('admin_access') || hasPermission('edit_orders')) {
+    if (hasPermission('admin_access')) {
         return true;
     }
 
@@ -86,7 +86,7 @@ function currentUserCanViewCustomer($customer_id): bool {
         return false;
     }
 
-    if (hasPermission('admin_access') || hasPermission('edit_customers') || hasPermission('view_all_orders')) {
+    if (hasPermission('admin_access')) {
         return true;
     }
 
@@ -637,6 +637,31 @@ function sendTelegramNotification($chatId, $message) {
     
     $result = json_decode($response, true);
     return isset($result['ok']) && $result['ok'];
+}
+
+function getStatusChangeAdminTelegramId(): string {
+    $chatId = trim((string)get_setting('status_change_admin_telegram_id', '2427615'));
+    return $chatId !== '' ? $chatId : '2427615';
+}
+
+function sendOrderStatusAdminNotification($order_id, string $canonical_status, $final_cost = null): bool {
+    $chatId = getStatusChangeAdminTelegramId();
+    if ($chatId === '') {
+        return false;
+    }
+
+    $msg = sprintf(__('tg_order_update_title'), $order_id) . "\n";
+    $msg .= sprintf(__('tg_new_status'), getStatusLabel($canonical_status)) . "\n";
+    if ($final_cost !== null && $final_cost !== '') {
+        $msg .= sprintf(__('tg_cost'), formatMoney($final_cost)) . "\n";
+    }
+
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+    $host = $_SERVER['HTTP_HOST'] ?? 'app.servis.expert';
+    $link = $protocol . $host . '/view_order.php?id=' . (int)$order_id;
+    $msg .= sprintf(__('tg_open_crm'), $link);
+
+    return sendTelegramNotification($chatId, $msg);
 }
 
 function ensureOrderStatusLogTable() {

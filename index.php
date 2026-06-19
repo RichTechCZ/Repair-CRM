@@ -6,9 +6,9 @@ require_once 'includes/header.php';
 // Filter for Dashboard
 $filter_status = $_GET['filter'] ?? null;
 
-// Permission check for stats - technicians only see their orders unless they have view_all_orders
+// Technicians always see only orders assigned to them.
 $tech_cond = "";
-if ($_SESSION['role'] == 'technician' && !hasPermission('view_all_orders')) {
+if ($_SESSION['role'] == 'technician') {
     $tech_cond = " AND technician_id = " . (int)$_SESSION['tech_id'];
 }
 
@@ -163,10 +163,10 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                             $search = normalizeSearchQuery($_GET['search'] ?? '');
                             $search_parts = buildOrderSearchQueryParts($search, 'o', 'c', 't');
                             
-                            // Permission check for technicians
+                            // Technicians always see only orders assigned to them.
                             $where_clauses = [];
                             $params = [];
-                            if ($_SESSION['role'] == 'technician' && !hasPermission('view_all_orders')) {
+                            if ($_SESSION['role'] == 'technician') {
                                 $where_clauses[] = 'o.technician_id = ?';
                                 $params[] = (int)$_SESSION['tech_id'];
                             }

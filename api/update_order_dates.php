@@ -6,7 +6,7 @@ require_once '../includes/functions.php';
 if (ob_get_length()) ob_clean(); 
 header('Content-Type: application/json');
 
-if (!isset($_SESSION['user_id']) || (!hasPermission('edit_orders') && !hasPermission('admin_access'))) {
+if (!isset($_SESSION['user_id'])) {
     echo json_encode(['success' => false, 'message' => __('unauthorized')]);
     exit;
 }

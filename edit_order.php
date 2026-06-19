@@ -12,8 +12,7 @@ $order = $stmt->fetch();
 
 if (!$order) die(__('order_not_found'));
 
-// Access Control for technicians
-if ($_SESSION['role'] == 'technician' && !hasPermission('edit_orders') && $order['technician_id'] != $_SESSION['tech_id']) {
+if (!currentUserCanEditOrder($id)) {
     die(__('no_edit_permission'));
 }
 
@@ -30,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $error = __('csrf_token_invalid');
     } else {
         $customer_id = $_POST['customer_id'];
-        $technician_id = $_POST['technician_id'];
+        $technician_id = hasPermission('admin_access') ? ($_POST['technician_id'] ?? $order['technician_id']) : $order['technician_id'];
         $device_type = $_POST['device_type'];
         $order_type = $_POST['order_type'];
         $device_brand = $_POST['device_brand'];
@@ -83,6 +82,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $status, 
                 $id
             ]);
+
+            if (($current_order['status'] ?? '') !== $status) {
+                logOrderStatusChange($id, $current_order['status'] ?? '', $status);
+                sendOrderStatusAdminNotification($id, canonicalOrderStatus($status));
+            }
 
             // Handle File Uploads during Edit
             if (isset($_FILES['files'])) {

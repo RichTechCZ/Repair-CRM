@@ -36,7 +36,7 @@ try {
         exit;
     }
 
-    if (!hasPermission('edit_orders') && ($order['technician_id'] ?? 0) != ($_SESSION['tech_id'] ?? 0)) {
+    if (!currentUserCanEditOrder($order_id)) {
         echo json_encode(['success' => false, 'message' => __('access_denied_msg')]);
         exit;
     }

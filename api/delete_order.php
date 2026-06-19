@@ -35,7 +35,7 @@ try {
         exit;
     }
     
-    if (!hasPermission('edit_orders') && ($order['technician_id'] ?? 0) != ($_SESSION['tech_id'] ?? 0)) {
+    if (!currentUserCanEditOrder($id)) {
         echo json_encode(['success' => false, 'message' => __('no_delete_permission')]);
         exit;
     }

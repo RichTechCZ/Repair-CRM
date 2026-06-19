@@ -16,8 +16,7 @@ $order = $stmt->fetch();
 
 if (!$order) die(__('order_not_found'));
 
-// Access Control for technicians
-if ($_SESSION['role'] == 'technician' && !hasPermission('view_all_orders') && $order['technician_id'] != $_SESSION['tech_id']) {
+if (!currentUserCanViewOrder($id)) {
     die(__('no_edit_permission'));
 }
 

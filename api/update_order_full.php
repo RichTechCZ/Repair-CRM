@@ -118,19 +118,6 @@ try {
         if (!$was_finished && $is_finishing) {
             processOrderInventoryChange($order_id, $is_finishing, $was_finished);
 
-            $tech = $pdo->prepare('SELECT telegram_id, name FROM technicians WHERE id = ?');
-            $tech->execute([$technician_id ?: $current['technician_id']]);
-            $techData = $tech->fetch();
-            if ($techData && $techData['telegram_id']) {
-                $msg = sprintf(__('tg_order_ready'), $order_id) . "\n";
-                $msg .= sprintf(__('tg_device'), ($_POST['device_model'] ?? $current['device_model'])) . "\n";
-                $msg .= sprintf(__('tg_final_price'), formatMoney($final_cost)) . "\n";
-                $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
-                $link = $protocol . $_SERVER['HTTP_HOST'] . '/view_order.php?id=' . $order_id;
-                $msg .= sprintf(__('tg_open_link'), $link);
-                sendTelegramNotification($techData['telegram_id'], $msg);
-            }
-
             if ($canonical_new_status === 'Ready' && get_setting('acc_auto_create_invoice', '0') == '1') {
                 $invoiceResult = createLocalInvoiceForCompletedOrder($pdo, (int)$order_id, $_POST['final_cost'] ?? null);
                 if ($invoiceResult['success'] ?? false) {
@@ -143,6 +130,7 @@ try {
             processOrderInventoryChange($order_id, $is_finishing, $was_finished);
         }
         logOrderStatusChange($order_id, $current['status'], $new_status);
+        sendOrderStatusAdminNotification($order_id, $canonical_new_status, $final_cost);
     }
 
     saveDeviceModelUsage($_POST['device_brand'] ?? $current['device_brand'], $_POST['device_model'] ?? $current['device_model']);
