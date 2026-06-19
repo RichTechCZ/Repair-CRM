@@ -23,7 +23,8 @@ if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
 $order_id = $_REQUEST['order_id'] ?? null;
 $new_status = $_REQUEST['status'] ?? null;
 $final_cost = $_REQUEST['final_cost'] ?? null;
-$technician_id = hasPermission('admin_access') ? ($_REQUEST['technician_id'] ?? null) : null;
+$is_admin = hasPermission('admin_access');
+$technician_id = $is_admin ? ($_REQUEST['technician_id'] ?? null) : null;
 $cancellation_reason = $_REQUEST['cancellation_reason'] ?? null;
 $shipping_method = trim($_REQUEST['shipping_method'] ?? '');
 
@@ -80,7 +81,7 @@ try {
     $current_final = $order_data['final_cost'];
 
     // Block changes from terminal statuses
-    if (in_array($canonical_current_status, $terminal_statuses, true) && $canonical_new_status !== $canonical_current_status) {
+    if (!$is_admin && in_array($canonical_current_status, $terminal_statuses, true) && $canonical_new_status !== $canonical_current_status) {
         throw new Exception(__('status_change_after_collected_forbidden'));
     }
 

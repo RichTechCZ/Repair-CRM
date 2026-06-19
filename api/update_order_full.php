@@ -53,6 +53,12 @@ try {
         throw new Exception(__('required_for_issue'));
     }
 
+    $terminal_statuses = ['Issued', 'Issued Without Repair', 'Repair Cancelled'];
+    $canonical_current_status = canonicalOrderStatus($current['status']);
+    if (!$is_admin && in_array($canonical_current_status, $terminal_statuses, true) && $canonical_new_status !== $canonical_current_status) {
+        throw new Exception(__('status_change_after_collected_forbidden'));
+    }
+
     if (tableColumnExists('orders', 'cancellation_reason') && in_array($canonical_new_status, ['Issued Without Repair', 'Repair Cancelled'], true) && empty(trim($current['cancellation_reason'] ?? ''))) {
         throw new Exception(__('cancellation_reason'));
     }
@@ -106,13 +112,8 @@ try {
     $final_cost = isset($_POST['final_cost']) ? (float)$_POST['final_cost'] : (float)$current['final_cost'];
 
     $finishing_statuses = ['Ready', 'Issued', 'Issued Without Repair'];
-    $canonical_current_status = canonicalOrderStatus($current['status']);
     $was_finished = in_array($canonical_current_status, $finishing_statuses, true);
     $is_finishing = in_array($canonical_new_status, $finishing_statuses, true);
-
-    if (in_array($canonical_current_status, ['Issued', 'Issued Without Repair', 'Repair Cancelled'], true) && $canonical_new_status !== $canonical_current_status) {
-        throw new Exception(__('status_change_after_collected_forbidden'));
-    }
 
     if ($current['status'] !== $new_status) {
         if (!$was_finished && $is_finishing) {
