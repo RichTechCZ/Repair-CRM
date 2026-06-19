@@ -187,23 +187,103 @@ function getDeviceIcon($type) {
 }
 
 function getStatusBadge($status) {
-    switch ($status) {
-        case 'New':
-            return '<span class="badge bg-primary">'.__('new').'</span>';
-        case 'Pending Approval':
-            return '<span class="badge bg-info text-dark">'.__('pending_approval').'</span>';
-        case 'In Progress':
-            return '<span class="badge bg-warning">'.__('in_progress').'</span>';
-        case 'Waiting for Parts':
-            return '<span class="badge bg-secondary">'.__('waiting_parts').'</span>';
-        case 'Completed':
-            return '<span class="badge bg-success">'.__('status_completed').'</span>';
-        case 'Collected':
-            return '<span class="badge bg-info text-dark">'.__('status_collected').'</span>';
-        case 'Cancelled':
-            return '<span class="badge bg-danger">'.__('status_cancelled').'</span>';
-        default:
-            return '<span class="badge bg-dark">' . $status . '</span>';
+    $classes = [
+        'Accepted' => 'bg-primary',
+        'Diagnostics' => 'bg-info text-dark',
+        'Approval' => 'bg-warning text-dark',
+        'In Repair' => 'bg-warning',
+        'Ready' => 'bg-success',
+        'Issued' => 'bg-secondary',
+        'Issued Without Repair' => 'bg-dark',
+        'Repair Cancelled' => 'bg-danger',
+    ];
+
+    $class = $classes[$status] ?? 'bg-dark';
+    return '<span class="badge ' . $class . '">' . htmlspecialchars(getStatusLabel($status)) . '</span>';
+}
+
+function getAllStatuses(): array {
+    return [
+        'Accepted',
+        'Diagnostics',
+        'Approval',
+        'In Repair',
+        'Ready',
+        'Issued',
+        'Issued Without Repair',
+        'Repair Cancelled',
+    ];
+}
+
+function getStatusLabel($status): string {
+    $labels = [
+        'Accepted' => __('status_accepted'),
+        'Diagnostics' => __('status_diagnostics'),
+        'Approval' => __('status_approval'),
+        'In Repair' => __('status_in_repair'),
+        'Ready' => __('status_ready'),
+        'Issued' => __('status_issued'),
+        'Issued Without Repair' => __('status_issued_without_repair'),
+        'Repair Cancelled' => __('status_repair_cancelled'),
+        // Legacy labels keep old records and logs readable before migration.
+        'New' => __('new'),
+        'Pending Approval' => __('pending_approval'),
+        'In Progress' => __('in_progress'),
+        'Waiting for Parts' => __('waiting_parts'),
+        'Completed' => __('completed'),
+        'Collected' => __('collected'),
+        'Cancelled' => __('cancelled'),
+    ];
+
+    return $labels[$status] ?? (string)$status;
+}
+
+function getDeviceModels($brand = null, string $term = '', int $limit = 50): array {
+    global $pdo;
+
+    $limit = max(1, min($limit, 100));
+    $sql = 'SELECT model_name, usage_count FROM device_models WHERE 1=1';
+    $params = [];
+
+    if ($brand !== null && trim((string)$brand) !== '') {
+        $sql .= ' AND UPPER(brand) = UPPER(?)';
+        $params[] = trim((string)$brand);
+    }
+
+    if ($term !== '') {
+        $sql .= ' AND model_name LIKE ?';
+        $params[] = '%' . $term . '%';
+    }
+
+    $sql .= ' ORDER BY usage_count DESC, model_name ASC LIMIT ' . $limit;
+
+    try {
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        return [];
+    }
+}
+
+function saveDeviceModelUsage(string $brand, string $model): void {
+    global $pdo;
+
+    $brand = trim($brand);
+    $model = trim($model);
+    if ($brand === '' || $model === '') {
+        return;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            "INSERT INTO device_models (brand, model_name, usage_count)
+             VALUES (?, ?, 1)
+             ON DUPLICATE KEY UPDATE usage_count = usage_count + 1"
+        );
+        $stmt->execute([$brand, $model]);
+    } catch (Exception $e) {
+        // Autocomplete history must not block order creation.
     }
 }
 

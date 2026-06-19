@@ -41,7 +41,7 @@ try {
     }
 
     // If order is already completed/collected, return parts to stock
-    if (in_array($item['status'], ['Completed', 'Collected'])) {
+    if (in_array($item['status'], ['Ready', 'Issued', 'Issued Without Repair'], true) && !empty($item['inventory_id'])) {
         changeInventoryQuantity($item['inventory_id'], $item['quantity']);
     }
 

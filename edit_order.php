@@ -43,13 +43,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $status = $_POST['status'];
 
         try {
-            // First get current status to see if it changed to Collected
+            // First get current status to see if it changed to Issued
             $stmt_curr = $pdo->prepare("SELECT status, shipping_date FROM orders WHERE id = ?");
             $stmt_curr->execute([$id]);
             $current_order = $stmt_curr->fetch();
             
             $shipping_date_sql = "";
-            if ($status === 'Collected' && !$current_order['shipping_date']) {
+            if ($status === 'Issued' && !$current_order['shipping_date']) {
                 $shipping_date_sql = ", shipping_date = NOW()";
             }
 
@@ -179,17 +179,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <div class="col-md-4">
                     <label class="form-label"><i class="fas fa-tasks me-2 text-warning"></i><?php echo __('status'); ?></label>
                     <select name="status" class="form-select">
-                        <?php if (($order['status'] ?? '') === 'Collected'): ?>
-                            <option value="Collected" selected><?php echo __('collected'); ?></option>
-                        <?php else: ?>
-                            <option value="New" <?php if($order['status']=='New') echo 'selected'; ?>><?php echo __('new'); ?></option>
-                            <option value="Pending Approval" <?php if($order['status']=='Pending Approval') echo 'selected'; ?>><?php echo __('pending_approval'); ?></option>
-                            <option value="In Progress" <?php if($order['status']=='In Progress') echo 'selected'; ?>><?php echo __('in_progress'); ?></option>
-                            <option value="Waiting for Parts" <?php if($order['status']=='Waiting for Parts') echo 'selected'; ?>><?php echo __('waiting_parts'); ?></option>
-                            <option value="Completed" <?php if($order['status']=='Completed') echo 'selected'; ?>><?php echo __('completed'); ?></option>
-                            <option value="Collected" <?php if($order['status']=='Collected') echo 'selected'; ?>><?php echo __('collected'); ?></option>
-                            <option value="Cancelled" <?php if($order['status']=='Cancelled') echo 'selected'; ?>><?php echo __('cancelled'); ?></option>
-                        <?php endif; ?>
+                        <?php foreach (getAllStatuses() as $status_option): ?>
+                            <option value="<?php echo e($status_option); ?>" <?php echo ($order['status'] ?? '') === $status_option ? 'selected' : ''; ?>>
+                                <?php echo e(getStatusLabel($status_option)); ?>
+                            </option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-4">

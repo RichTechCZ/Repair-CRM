@@ -43,7 +43,7 @@ try {
     }
 
     // If order is completed/collected, adjust inventory
-    if (in_array($item['status'], ['Completed', 'Collected'])) {
+    if (in_array($item['status'], ['Ready', 'Issued', 'Issued Without Repair'], true) && !empty($item['inventory_id'])) {
         $diff = $new_qty - $item['quantity'];
         // Subtract the difference from stock
         changeInventoryQuantity($item['inventory_id'], -$diff);

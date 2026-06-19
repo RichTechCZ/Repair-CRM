@@ -45,11 +45,11 @@ try {
     log_msg("\n--- Status Mapping ---");
     $statuses = $pdo->query("SELECT * FROM statuslist")->fetchAll(PDO::FETCH_ASSOC);
     foreach ($statuses as $s) {
-        $mapped = "New"; // Default
-        if (strpos($s['statusname'], 'práci') !== false) $mapped = "In Progress";
-        if (strpos($s['statusname'], 'připraven') !== false) $mapped = "Completed";
-        if (strpos($s['statusname'], 'zrušen') !== false) $mapped = "Cancelled";
-        if (strpos($s['statusname'], 'dil') !== false) $mapped = "Waiting for Parts";
+        $mapped = "Accepted"; // Default
+        if (strpos($s['statusname'], 'práci') !== false) $mapped = "In Repair";
+        if (strpos($s['statusname'], 'připraven') !== false) $mapped = "Ready";
+        if (strpos($s['statusname'], 'zrušen') !== false) $mapped = "Repair Cancelled";
+        if (strpos($s['statusname'], 'dil') !== false) $mapped = "In Repair";
         log_msg("  Legacy: '{$s['statusname']}' -> New CRM: '$mapped'");
     }
 

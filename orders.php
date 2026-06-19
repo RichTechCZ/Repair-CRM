@@ -9,7 +9,7 @@ $page   = max(1, (int)($_GET['p'] ?? 1));
 $offset = ($page - 1) * $limit;
 
 // FIX #7: Whitelist filter values to prevent unexpected SQL behavior
-$allowed_statuses = ['New','Pending Approval','In Progress','Waiting for Parts','Completed','Collected','Cancelled'];
+$allowed_statuses = getAllStatuses();
 $filter_status    = in_array($_GET['filter'] ?? '', $allowed_statuses, true) ? $_GET['filter'] : null;
 
 $orders       = [];
@@ -34,8 +34,8 @@ if (isset($pdo)) {
             $sql_params = array_merge($sql_params, $search_parts['where_params']);
         }
 
-        if ($filter_status === 'Completed') {
-            $where_clauses[] = "o.status IN ('Completed', 'Collected')";
+        if ($filter_status === 'Ready') {
+            $where_clauses[] = "o.status IN ('Ready', 'Issued')";
         } elseif ($filter_status) {
             $where_clauses[] = 'o.status = ?';
             $sql_params[]    = $filter_status;
@@ -134,10 +134,10 @@ if (isset($pdo)) {
         }
         $s = $pdo->prepare(
             "SELECT
-                SUM(status = 'New') as cnt_new,
-                SUM(status = 'Pending Approval') as cnt_pending,
-                SUM(status = 'In Progress') as cnt_progress,
-                SUM(status IN ('Completed','Collected')) as cnt_ready
+                SUM(status = 'Accepted') as cnt_new,
+                SUM(status = 'Approval') as cnt_pending,
+                SUM(status IN ('Diagnostics','In Repair')) as cnt_progress,
+                SUM(status IN ('Ready','Issued')) as cnt_ready
              FROM orders WHERE 1=1" . $stats_where
         );
         $s->execute($stats_params);
@@ -164,8 +164,8 @@ if (isset($pdo)) {
 
 <div class="row g-3 mb-4">
     <div class="col-12 col-sm-6 col-md-3">
-        <a href="?filter=New" class="text-decoration-none">
-            <div class="card bg-primary bg-opacity-10 border-0 p-3 <?php echo $filter_status == 'New' ? 'ring-2 ring-primary border-primary border-1 shadow-sm' : ''; ?>">
+        <a href="?filter=Accepted" class="text-decoration-none">
+            <div class="card bg-primary bg-opacity-10 border-0 p-3 <?php echo $filter_status == 'Accepted' ? 'ring-2 ring-primary border-primary border-1 shadow-sm' : ''; ?>">
                 <div class="d-flex align-items-center">
                     <i class="fas fa-clipboard-list text-primary fa-2x me-3"></i>
                     <div>
@@ -177,8 +177,8 @@ if (isset($pdo)) {
         </a>
     </div>
     <div class="col-12 col-sm-6 col-md-3">
-        <a href="?filter=Pending Approval" class="text-decoration-none">
-            <div class="card bg-info bg-opacity-10 border-0 p-3 <?php echo $filter_status == 'Pending Approval' ? 'ring-2 ring-info border-info border-1 shadow-sm' : ''; ?>">
+        <a href="?filter=Approval" class="text-decoration-none">
+            <div class="card bg-info bg-opacity-10 border-0 p-3 <?php echo $filter_status == 'Approval' ? 'ring-2 ring-info border-info border-1 shadow-sm' : ''; ?>">
                 <div class="d-flex align-items-center">
                     <i class="fas fa-handshake text-info fa-2x me-3"></i>
                     <div>
@@ -190,8 +190,8 @@ if (isset($pdo)) {
         </a>
     </div>
     <div class="col-12 col-sm-6 col-md-3">
-        <a href="?filter=In Progress" class="text-decoration-none">
-            <div class="card bg-warning bg-opacity-10 border-0 p-3 <?php echo $filter_status == 'In Progress' ? 'ring-2 ring-warning border-warning border-1 shadow-sm' : ''; ?>">
+        <a href="?filter=In Repair" class="text-decoration-none">
+            <div class="card bg-warning bg-opacity-10 border-0 p-3 <?php echo in_array($filter_status, ['Diagnostics', 'In Repair'], true) ? 'ring-2 ring-warning border-warning border-1 shadow-sm' : ''; ?>">
                 <div class="d-flex align-items-center">
                     <i class="fas fa-spinner text-warning fa-2x me-3"></i>
                     <div>
@@ -203,8 +203,8 @@ if (isset($pdo)) {
         </a>
     </div>
     <div class="col-12 col-sm-6 col-md-3">
-        <a href="?filter=Completed" class="text-decoration-none">
-            <div class="card bg-success bg-opacity-10 border-0 p-3 <?php echo ($filter_status == 'Completed' || $filter_status == 'Collected') ? 'ring-2 ring-success border-success border-1 shadow-sm' : ''; ?>">
+        <a href="?filter=Ready" class="text-decoration-none">
+            <div class="card bg-success bg-opacity-10 border-0 p-3 <?php echo ($filter_status == 'Ready' || $filter_status == 'Issued') ? 'ring-2 ring-success border-success border-1 shadow-sm' : ''; ?>">
                 <div class="d-flex align-items-center">
                     <i class="fas fa-check-double text-success fa-2x me-3"></i>
                     <div>
@@ -222,17 +222,7 @@ if (isset($pdo)) {
         <h2 class="mb-0"><?php echo __('orders'); ?></h2>
         <?php if($filter_status): ?>
             <?php
-            // FIX #7: explicit status→key map (strtolower breaks 'In Progress' → 'in progress')
-            $status_key_map = [
-                'New'               => 'new',
-                'Pending Approval'  => 'pending_approval',
-                'In Progress'       => 'in_progress',
-                'Waiting for Parts' => 'waiting_parts',
-                'Completed'         => 'completed',
-                'Collected'         => 'collected',
-                'Cancelled'         => 'cancelled',
-            ];
-            $status_label = __($status_key_map[$filter_status] ?? $filter_status);
+            $status_label = getStatusLabel($filter_status);
             ?>
             <div class="mt-1">
                 <span class="badge bg-secondary text-white"><?php echo e(__('status')); ?>: <?php echo e($status_label); ?></span>
@@ -358,9 +348,10 @@ if (isset($pdo)) {
                                             && (int)($order['technician_id'] ?? 0) === (int)($_SESSION['tech_id'] ?? 0));
                                 ?>
                                 <?php
-                                    $can_cancel = !in_array($order['status'], ['Cancelled', 'Collected'], true);
+                                    $terminal_statuses = ['Issued', 'Issued Without Repair', 'Repair Cancelled'];
+                                    $can_cancel = !in_array($order['status'], $terminal_statuses, true);
                                     $show_quick = $can_quick && (
-                                        in_array($order['status'], ['New', 'Pending Approval', 'Waiting for Parts', 'In Progress', 'Completed'], true) || $can_cancel
+                                        !in_array($order['status'], $terminal_statuses, true) || $can_cancel
                                     );
                                 ?>
                                 <?php // inline quick-status buttons removed; using dropdown only ?>
@@ -371,15 +362,15 @@ if (isset($pdo)) {
                                             <i class="fas fa-bolt text-primary"></i>
                                         </button>
                                         <ul class="dropdown-menu shadow">
-                                            <?php if ($order['status'] === 'New'): ?>
-                                                <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="In Progress"><i class="fas fa-play me-2 text-primary"></i><?php echo __('move_to_in_progress'); ?></a></li>
-                                            <?php elseif (in_array($order['status'], ['Pending Approval', 'Waiting for Parts', 'In Progress'], true)): ?>
-                                                <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="Completed"><i class="fas fa-check me-2 text-success"></i><?php echo __('move_to_completed'); ?></a></li>
-                                            <?php elseif ($order['status'] === 'Completed'): ?>
-                                                <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="Collected"><i class="fas fa-box me-2 text-info"></i><?php echo __('move_to_collected'); ?></a></li>
+                                            <?php if ($order['status'] === 'Accepted'): ?>
+                                                <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="Diagnostics"><i class="fas fa-stethoscope me-2 text-primary"></i><?php echo getStatusLabel('Diagnostics'); ?></a></li>
+                                            <?php elseif (in_array($order['status'], ['Diagnostics', 'Approval'], true)): ?>
+                                                <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="In Repair"><i class="fas fa-tools me-2 text-warning"></i><?php echo getStatusLabel('In Repair'); ?></a></li>
+                                            <?php elseif ($order['status'] === 'In Repair'): ?>
+                                                <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="Ready"><i class="fas fa-check me-2 text-success"></i><?php echo getStatusLabel('Ready'); ?></a></li>
                                             <?php endif; ?>
                                             <?php if ($can_cancel): ?>
-                                                <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="Cancelled"><i class="fas fa-ban me-2 text-danger"></i><?php echo __('cancel'); ?></a></li>
+                                                <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="Repair Cancelled"><i class="fas fa-ban me-2 text-danger"></i><?php echo getStatusLabel('Repair Cancelled'); ?></a></li>
                                             <?php endif; ?>
                                         </ul>
                                     </div>
@@ -629,9 +620,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         var statusColors = {
-            'New': 'primary', 'In Progress': 'warning', 'Completed': 'success',
-            'Collected': 'info', 'Cancelled': 'danger',
-            'Pending Approval': 'secondary', 'Waiting for Parts': 'warning'
+            'Accepted': 'primary',
+            'Diagnostics': 'info',
+            'Approval': 'warning',
+            'In Repair': 'warning',
+            'Ready': 'success',
+            'Issued': 'secondary',
+            'Issued Without Repair': 'dark',
+            'Repair Cancelled': 'danger'
         };
 
         var html = '<div class="table-responsive">'
@@ -690,6 +686,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 <?php echo csrfField(); ?> <!-- FIX #6: CSRF protection -->
                 <div class="modal-header bg-dark bg-opacity-25 border-secondary">
                     <h5 class="modal-title"><?php echo __('new_order'); ?></h5>
+                    <div class="ms-auto me-3">
+                        <div class="input-group input-group-sm" style="width: 260px;">
+                            <input type="number" id="copyOrderIdInput" class="form-control" placeholder="<?php echo __('copy_order_id_placeholder'); ?>" min="1">
+                            <button type="button" class="btn btn-outline-info" id="copyOrderBtn" title="<?php echo __('copy_order_btn'); ?>">
+                                <i class="fas fa-copy me-1"></i><?php echo __('copy_order_btn'); ?>
+                            </button>
+                        </div>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -816,21 +820,23 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <select name="device_brand" class="form-select select2-brand" style="width: 100%;" required>
                                     <option value=""><?php echo __('brand_placeholder'); ?></option>
                                     <?php foreach(getDeviceBrands() as $brand): ?>
-                                        <option value="<?php echo $brand; ?>"><?php echo $brand; ?></option>
+                                        <option value="<?php echo $brand; ?>" <?php echo ($brand === 'APPLE') ? 'selected' : ''; ?>><?php echo $brand; ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
                             <div class="col-12 col-sm-6 col-md-3">
                                 <label class="form-label"><?php echo __('device_model'); ?></label>
-                                <input type="text" name="device_model" class="form-control" placeholder="<?php echo __('model_placeholder'); ?>" required>
+                                <select name="device_model" id="deviceModelSelect" class="form-select" style="width: 100%;" required>
+                                    <option value=""><?php echo __('model_placeholder'); ?></option>
+                                </select>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label"><?php echo __('serial'); ?></label>
-                                <input type="text" name="serial_number" class="form-control">
+                                <input type="text" name="serial_number" class="form-control sn-uppercase">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label"><?php echo __('serial_2'); ?></label>
-                                <input type="text" name="serial_number_2" class="form-control">
+                                <input type="text" name="serial_number_2" class="form-control sn-uppercase">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label"><?php echo __('pin'); ?></label>
@@ -1065,17 +1071,14 @@ $(document).ready(function() {
                             <div class="col-12 col-sm-6 col-md-3">
                                 <label class="form-label"><?php echo __('status'); ?></label>
                                 <select name="status" class="form-select">
-                                    ${o.status === 'Collected'
-                                        ? `<option value="Collected" selected><?php echo __('collected'); ?></option>`
-                                        : `
-                                    <option value="New" ${o.status=='New' ? 'selected':''}><?php echo __('new'); ?></option>
-                                    <option value="Pending Approval" ${o.status=='Pending Approval' ? 'selected':''}><?php echo __('pending_approval'); ?></option>
-                                    <option value="In Progress" ${o.status=='In Progress' ? 'selected':''}><?php echo __('in_progress'); ?></option>
-                                    <option value="Waiting for Parts" ${o.status=='Waiting for Parts' ? 'selected':''}><?php echo __('waiting_parts'); ?></option>
-                                    <option value="Completed" ${o.status=='Completed' ? 'selected':''}><?php echo __('completed'); ?></option>
-                                    <option value="Collected" ${o.status=='Collected' ? 'selected':''}><?php echo __('collected'); ?></option>
-                                    <option value="Cancelled" ${o.status=='Cancelled' ? 'selected':''}><?php echo __('cancelled'); ?></option>
-                                        `}
+                                    <option value="Accepted" ${o.status=='Accepted' ? 'selected':''}><?php echo getStatusLabel('Accepted'); ?></option>
+                                    <option value="Diagnostics" ${o.status=='Diagnostics' ? 'selected':''}><?php echo getStatusLabel('Diagnostics'); ?></option>
+                                    <option value="Approval" ${o.status=='Approval' ? 'selected':''}><?php echo getStatusLabel('Approval'); ?></option>
+                                    <option value="In Repair" ${o.status=='In Repair' ? 'selected':''}><?php echo getStatusLabel('In Repair'); ?></option>
+                                    <option value="Ready" ${o.status=='Ready' ? 'selected':''}><?php echo getStatusLabel('Ready'); ?></option>
+                                    <option value="Issued" ${o.status=='Issued' ? 'selected':''}><?php echo getStatusLabel('Issued'); ?></option>
+                                    <option value="Issued Without Repair" ${o.status=='Issued Without Repair' ? 'selected':''}><?php echo getStatusLabel('Issued Without Repair'); ?></option>
+                                    <option value="Repair Cancelled" ${o.status=='Repair Cancelled' ? 'selected':''}><?php echo getStatusLabel('Repair Cancelled'); ?></option>
                                 </select>
                             </div>
                             <div class="col-12 col-sm-6 col-md-3">
@@ -1237,6 +1240,132 @@ $(document).ready(function() {
         tags: true
     });
 
+    // ── Model autocomplete (Select2 AJAX) ──
+    $('#deviceModelSelect').select2({
+        dropdownParent: $('#newOrderModal'),
+        placeholder: "<?php echo __('model_placeholder'); ?>",
+        allowClear: true,
+        tags: true,
+        minimumInputLength: 1,
+        ajax: {
+            url: 'api/get_device_models.php',
+            dataType: 'json',
+            delay: 250,
+            data: function(params) {
+                return {
+                    term: params.term,
+                    brand: $('select[name="device_brand"]').val() || ''
+                };
+            },
+            processResults: function(data) {
+                return { results: data.results };
+            }
+        }
+    });
+
+    // Reset model when brand changes
+    $('select[name="device_brand"]').on('change', function() {
+        $('#deviceModelSelect').val(null).trigger('change');
+    });
+
+    // ── S/N / IMEI uppercase ──
+    $(document).on('input', '.sn-uppercase', function() {
+        const pos = this.selectionStart;
+        this.value = this.value.toUpperCase();
+        this.setSelectionRange(pos, pos);
+    });
+
+    // ── Auto-focus customer search when modal opens ──
+    $('#newOrderModal').on('shown.bs.modal', function() {
+        setTimeout(function() {
+            $('#newOrderModal .select2-customer').select2('open');
+        }, 100);
+    });
+
+    // ── Copy Order # ──
+    $('#copyOrderBtn').on('click', function() {
+        const orderId = parseInt($('#copyOrderIdInput').val(), 10);
+        if (!orderId || orderId < 1) {
+            showAlert('<?php echo __('copy_order_enter_id'); ?>');
+            return;
+        }
+        const btn = $(this);
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        $.get('api/copy_order.php', { id: orderId }, function(res) {
+            btn.prop('disabled', false).html('<i class="fas fa-copy me-1"></i><?php echo __('copy_order_btn'); ?>');
+            if (!res.success) {
+                showAlert(res.message || '<?php echo __('copy_order_not_found'); ?>');
+                return;
+            }
+            const o = res.order;
+
+            // Build confirmation message
+            let info = '<?php echo __('copy_order_confirm'); ?>\n\n';
+            info += '<?php echo __('client'); ?>: ' + (o.first_name || '') + ' ' + (o.last_name || '') + '\n';
+            info += '<?php echo __('device_brand'); ?>: ' + (o.device_brand || '') + '\n';
+            info += '<?php echo __('device_model'); ?>: ' + (o.device_model || '') + '\n';
+            info += 'S/N: ' + (o.serial_number || '') + '\n';
+            info += 'IMEI 2: ' + (o.serial_number_2 || '') + '\n';
+            info += '<?php echo __('problem'); ?>: ' + (o.problem_description || '') + '\n';
+
+            showConfirm(info, function() {
+                // Fill customer
+                if (o.customer_id) {
+                    const custLabel = ((o.first_name || '') + ' ' + (o.last_name || '')).trim();
+                    const $sel = $('.select2-customer');
+                    const opt = new Option(custLabel, o.customer_id, true, true);
+                    $sel.append(opt).trigger('change');
+                }
+                // Fill device type
+                if (o.device_type) $('select[name="device_type"]').val(o.device_type);
+                // Fill order type
+                if (o.order_type) $('select[name="order_type"]').val(o.order_type);
+                // Fill brand
+                if (o.device_brand) {
+                    const $brand = $('select[name="device_brand"]');
+                    if ($brand.find('option[value="' + o.device_brand + '"]').length === 0) {
+                        $brand.append(new Option(o.device_brand, o.device_brand, true, true));
+                    } else {
+                        $brand.val(o.device_brand);
+                    }
+                    $brand.trigger('change');
+                }
+                // Fill model
+                if (o.device_model) {
+                    const $model = $('#deviceModelSelect');
+                    $model.append(new Option(o.device_model, o.device_model, true, true)).trigger('change');
+                }
+                // Fill S/N
+                if (o.serial_number) $('input[name="serial_number"]').val(o.serial_number.toUpperCase());
+                if (o.serial_number_2) $('input[name="serial_number_2"]').val(o.serial_number_2.toUpperCase());
+                // Appearance, PIN
+                if (o.appearance) $('input[name="appearance"]').val(o.appearance);
+                if (o.pin_code) $('input[name="pin_code"]').val(o.pin_code);
+                // Problem
+                if (o.problem_description) $('textarea[name="problem_description"]').val(o.problem_description);
+                if (o.technician_notes) $('textarea[name="technician_notes"]').val(o.technician_notes);
+                // Priority
+                if (o.priority === 'High') $('#priorityHighOrders').prop('checked', true);
+                // Estimated cost
+                if (o.estimated_cost) $('input[name="estimated_cost"]').val(o.estimated_cost);
+                // Technician
+                if (o.technician_id) $('select[name="technician_id"]').val(o.technician_id);
+            });
+        }, 'json').fail(function() {
+            btn.prop('disabled', false).html('<i class="fas fa-copy me-1"></i><?php echo __('copy_order_btn'); ?>');
+            showAlert('<?php echo __('error'); ?>');
+        });
+    });
+
+    // Allow Enter in copy order input
+    $('#copyOrderIdInput').on('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            $('#copyOrderBtn').trigger('click');
+        }
+    });
+
     $('.order-template-select').on('change', function() {
         const value = $(this).val();
         if (!value) return;
@@ -1259,8 +1388,13 @@ $(document).ready(function() {
         toast.show();
     }
 
-    function performQuickStatusUpdate(id, status, btn) {
-        $.post('api/update_order_status.php', { order_id: id, status: status }, function(res) {
+    function performQuickStatusUpdate(id, status, btn, cancellationReason) {
+        $.post('api/update_order_status.php', {
+            order_id: id,
+            status: status,
+            cancellation_reason: cancellationReason || '',
+            csrf_token: '<?php echo $_SESSION['csrf_token'] ?? ''; ?>'
+        }, function(res) {
             if (res.success) {
                 showQuickToast('<?php echo __('updated_success'); ?>', 'success');
                 setTimeout(() => window.location.reload(), 300);
@@ -1281,9 +1415,14 @@ $(document).ready(function() {
         const btn = $(this);
         btn.prop('disabled', true);
 
-        if (status === 'Cancelled') {
+        if (status === 'Repair Cancelled') {
             return showConfirm('<?php echo __('delete_confirm'); ?>', function() {
-                performQuickStatusUpdate(id, status, btn);
+                const reason = window.prompt('<?php echo __('cancellation_reason'); ?>');
+                if (reason === null || !reason.trim()) {
+                    btn.prop('disabled', false);
+                    return;
+                }
+                performQuickStatusUpdate(id, status, btn, reason.trim());
             });
         }
 

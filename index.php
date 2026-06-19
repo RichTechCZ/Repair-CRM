@@ -13,10 +13,10 @@ if ($_SESSION['role'] == 'technician' && !hasPermission('view_all_orders')) {
 }
 
 // Count for Stats
-$new_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'New'" . $tech_cond)->fetchColumn();
-$pending_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'Pending Approval'" . $tech_cond)->fetchColumn();
-$progress_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'In Progress'" . $tech_cond)->fetchColumn();
-$ready_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('Completed', 'Collected')" . $tech_cond)->fetchColumn();
+$new_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'Accepted'" . $tech_cond)->fetchColumn();
+$pending_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'Approval'" . $tech_cond)->fetchColumn();
+$progress_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('Diagnostics','In Repair')" . $tech_cond)->fetchColumn();
+$ready_count = $pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('Ready', 'Issued')" . $tech_cond)->fetchColumn();
 
 // Online Techs (Last 5 minutes) - Admin or those with admin_access
 $online_count = 0;
@@ -43,8 +43,8 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
 <div class="row g-4 mb-4">
     <!-- Stat Cards -->
     <div class="col-12 col-sm-6 col-md-4 col-xl">
-        <a href="?filter=New" class="text-decoration-none">
-            <div class="card glass-card p-3 h-100 <?php echo $filter_status == 'New' ? 'border-primary border-2' : 'border-0'; ?>">
+        <a href="?filter=Accepted" class="text-decoration-none">
+            <div class="card glass-card p-3 h-100 <?php echo $filter_status == 'Accepted' ? 'border-primary border-2' : 'border-0'; ?>">
                 <div class="d-flex align-items-center">
                     <div class="bg-primary bg-opacity-10 p-2 rounded-circle me-3">
                         <i class="fas fa-clipboard-list text-primary fa-xl"></i>
@@ -58,8 +58,8 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
         </a>
     </div>
     <div class="col-12 col-sm-6 col-md-4 col-xl">
-        <a href="?filter=Pending Approval" class="text-decoration-none">
-            <div class="card glass-card p-3 h-100 <?php echo $filter_status == 'Pending Approval' ? 'border-info border-2' : 'border-0'; ?>">
+        <a href="?filter=Approval" class="text-decoration-none">
+            <div class="card glass-card p-3 h-100 <?php echo $filter_status == 'Approval' ? 'border-info border-2' : 'border-0'; ?>">
                 <div class="d-flex align-items-center">
                     <div class="bg-info bg-opacity-10 p-2 rounded-circle me-3">
                         <i class="fas fa-handshake text-info fa-xl"></i>
@@ -73,8 +73,8 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
         </a>
     </div>
     <div class="col-12 col-sm-6 col-md-4 col-xl">
-        <a href="?filter=In Progress" class="text-decoration-none">
-            <div class="card glass-card p-3 h-100 <?php echo $filter_status == 'In Progress' ? 'border-warning border-2' : 'border-0'; ?>">
+        <a href="?filter=In Repair" class="text-decoration-none">
+            <div class="card glass-card p-3 h-100 <?php echo in_array($filter_status, ['Diagnostics', 'In Repair'], true) ? 'border-warning border-2' : 'border-0'; ?>">
                 <div class="d-flex align-items-center">
                     <div class="bg-warning bg-opacity-10 p-2 rounded-circle me-3">
                         <i class="fas fa-spinner text-warning fa-xl"></i>
@@ -88,8 +88,8 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
         </a>
     </div>
     <div class="col-12 col-sm-6 col-md-4 col-xl">
-        <a href="?filter=Completed" class="text-decoration-none">
-            <div class="card glass-card p-3 h-100 <?php echo ($filter_status == 'Completed' || $filter_status == 'Collected') ? 'border-success border-2' : 'border-0'; ?>">
+        <a href="?filter=Ready" class="text-decoration-none">
+            <div class="card glass-card p-3 h-100 <?php echo ($filter_status == 'Ready' || $filter_status == 'Issued') ? 'border-success border-2' : 'border-0'; ?>">
                 <div class="d-flex align-items-center">
                     <div class="bg-success bg-opacity-10 p-2 rounded-circle me-3">
                         <i class="fas fa-check-double text-success fa-xl"></i>
@@ -131,10 +131,10 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
             <div class="card-header bg-transparent border-bottom-0 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">
                     <?php 
-                    if ($filter_status == 'New') echo __('new_orders');
-                    elseif ($filter_status == 'Pending Approval') echo __('pending_approval_orders');
-                    elseif ($filter_status == 'In Progress') echo __('in_progress_orders');
-                    elseif ($filter_status == 'Completed') echo __('completed_orders');
+                    if ($filter_status == 'Accepted') echo __('new_orders');
+                    elseif ($filter_status == 'Approval') echo __('pending_approval_orders');
+                    elseif (in_array($filter_status, ['Diagnostics', 'In Repair'], true)) echo __('in_progress_orders');
+                    elseif ($filter_status == 'Ready') echo __('completed_orders');
                     else echo __('recent_orders'); 
                     ?>
                 </h5>
@@ -176,8 +176,8 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                             }
 
                             if ($filter_status) {
-                                if ($filter_status == 'Completed') {
-                                    $where_clauses[] = "o.status IN ('Completed', 'Collected')";
+                                if ($filter_status == 'Ready') {
+                                    $where_clauses[] = "o.status IN ('Ready', 'Issued')";
                                 } else {
                                     $where_clauses[] = 'o.status = ?';
                                     $params[] = $filter_status;
@@ -321,6 +321,14 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                 <?php echo csrfField(); ?>
                 <div class="modal-header bg-transparent border-secondary py-3">
                     <h5 class="modal-title"><?php echo __('new_order'); ?></h5>
+                    <div class="ms-auto me-3">
+                        <div class="input-group input-group-sm" style="width: 260px;">
+                            <input type="number" id="copyOrderIdInput" class="form-control" placeholder="<?php echo __('copy_order_id_placeholder'); ?>" min="1">
+                            <button type="button" class="btn btn-outline-info" id="copyOrderBtn" title="<?php echo __('copy_order_btn'); ?>">
+                                <i class="fas fa-copy me-1"></i><?php echo __('copy_order_btn'); ?>
+                            </button>
+                        </div>
+                    </div>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -447,21 +455,23 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                                 <select name="device_brand" class="form-select select2-brand" style="width: 100%;" required>
                                     <option value=""><?php echo __('brand_placeholder'); ?></option>
                                     <?php foreach(getDeviceBrands() as $brand): ?>
-                                        <option value="<?php echo $brand; ?>"><?php echo $brand; ?></option>
+                                        <option value="<?php echo $brand; ?>" <?php echo ($brand === 'APPLE') ? 'selected' : ''; ?>><?php echo $brand; ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label"><?php echo __('device_model'); ?></label>
-                                <input type="text" name="device_model" class="form-control" placeholder="<?php echo __('model_placeholder'); ?>" required>
+                                <select name="device_model" id="deviceModelSelect" class="form-select" style="width: 100%;" required>
+                                    <option value=""><?php echo __('model_placeholder'); ?></option>
+                                </select>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label"><?php echo __('serial'); ?></label>
-                                <input type="text" name="serial_number" class="form-control">
+                                <input type="text" name="serial_number" class="form-control sn-uppercase">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label"><?php echo __('serial_2'); ?></label>
-                                <input type="text" name="serial_number_2" class="form-control">
+                                <input type="text" name="serial_number_2" class="form-control sn-uppercase">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label"><?php echo __('pin'); ?></label>
@@ -628,6 +638,116 @@ $(document).ready(function() {
         dropdownParent: $('#newOrderModal'),
         placeholder: "<?php echo __('brand'); ?>",
         tags: true
+    });
+
+    // ── Model autocomplete (Select2 AJAX) ──
+    $('#deviceModelSelect').select2({
+        dropdownParent: $('#newOrderModal'),
+        placeholder: "<?php echo __('model_placeholder'); ?>",
+        allowClear: true,
+        tags: true,
+        minimumInputLength: 1,
+        ajax: {
+            url: 'api/get_device_models.php',
+            dataType: 'json',
+            delay: 250,
+            data: function(params) {
+                return {
+                    term: params.term,
+                    brand: $('select[name="device_brand"]').val() || ''
+                };
+            },
+            processResults: function(data) {
+                return { results: data.results };
+            }
+        }
+    });
+
+    // Reset model when brand changes
+    $('select[name="device_brand"]').on('change', function() {
+        $('#deviceModelSelect').val(null).trigger('change');
+    });
+
+    // ── S/N / IMEI uppercase ──
+    $(document).on('input', '.sn-uppercase', function() {
+        const pos = this.selectionStart;
+        this.value = this.value.toUpperCase();
+        this.setSelectionRange(pos, pos);
+    });
+
+    // ── Auto-focus customer search when modal opens ──
+    $('#newOrderModal').on('shown.bs.modal', function() {
+        setTimeout(function() {
+            $('#newOrderModal .select2-customer').select2('open');
+        }, 100);
+    });
+
+    // ── Copy Order # ──
+    $('#copyOrderBtn').on('click', function() {
+        const orderId = parseInt($('#copyOrderIdInput').val(), 10);
+        if (!orderId || orderId < 1) {
+            showAlert('<?php echo __('copy_order_enter_id'); ?>');
+            return;
+        }
+        const btn = $(this);
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        $.get('api/get_order.php', { id: orderId }, function(res) {
+            btn.prop('disabled', false).html('<i class="fas fa-copy me-1"></i><?php echo __('copy_order_btn'); ?>');
+            if (!res.success) {
+                showAlert(res.message || '<?php echo __('copy_order_not_found'); ?>');
+                return;
+            }
+            const o = res.order;
+            let info = '<?php echo __('copy_order_confirm'); ?>\n\n';
+            info += '<?php echo __('client'); ?>: ' + (o.first_name || '') + ' ' + (o.last_name || '') + '\n';
+            info += '<?php echo __('device_brand'); ?>: ' + (o.device_brand || '') + '\n';
+            info += '<?php echo __('device_model'); ?>: ' + (o.device_model || '') + '\n';
+            info += 'S/N: ' + (o.serial_number || '') + '\n';
+            info += 'IMEI 2: ' + (o.serial_number_2 || '') + '\n';
+            info += '<?php echo __('problem'); ?>: ' + (o.problem_description || '') + '\n';
+
+            showConfirm(info, function() {
+                if (o.customer_id) {
+                    const custLabel = ((o.first_name || '') + ' ' + (o.last_name || '')).trim();
+                    const $sel = $('.select2-customer');
+                    $sel.append(new Option(custLabel, o.customer_id, true, true)).trigger('change');
+                }
+                if (o.device_type) $('select[name="device_type"]').val(o.device_type);
+                if (o.order_type) $('select[name="order_type"]').val(o.order_type);
+                if (o.device_brand) {
+                    const $brand = $('select[name="device_brand"]');
+                    if ($brand.find('option[value="' + o.device_brand + '"]').length === 0) {
+                        $brand.append(new Option(o.device_brand, o.device_brand, true, true));
+                    } else {
+                        $brand.val(o.device_brand);
+                    }
+                    $brand.trigger('change');
+                }
+                if (o.device_model) {
+                    $('#deviceModelSelect').append(new Option(o.device_model, o.device_model, true, true)).trigger('change');
+                }
+                if (o.serial_number) $('input[name="serial_number"]').val(o.serial_number.toUpperCase());
+                if (o.serial_number_2) $('input[name="serial_number_2"]').val(o.serial_number_2.toUpperCase());
+                if (o.appearance) $('input[name="appearance"]').val(o.appearance);
+                if (o.pin_code) $('input[name="pin_code"]').val(o.pin_code);
+                if (o.problem_description) $('textarea[name="problem_description"]').val(o.problem_description);
+                if (o.technician_notes) $('textarea[name="technician_notes"]').val(o.technician_notes);
+                if (o.priority === 'High') $('#priorityHighDashboard').prop('checked', true);
+                if (o.estimated_cost) $('input[name="estimated_cost"]').val(o.estimated_cost);
+                if (o.technician_id) $('select[name="technician_id"]').val(o.technician_id);
+            });
+        }, 'json').fail(function() {
+            btn.prop('disabled', false).html('<i class="fas fa-copy me-1"></i><?php echo __('copy_order_btn'); ?>');
+            showAlert('<?php echo __('error'); ?>');
+        });
+    });
+
+    $('#copyOrderIdInput').on('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            $('#copyOrderBtn').trigger('click');
+        }
     });
 
     $('.order-template-select').on('change', function() {

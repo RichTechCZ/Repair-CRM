@@ -414,3 +414,6 @@ body.modal-open {
     color: #6edff6 !important;
     box-shadow: 0 0 8px rgba(13, 202, 240, 0.4);
 }
+.sn-uppercase {
+    text-transform: uppercase;
+}

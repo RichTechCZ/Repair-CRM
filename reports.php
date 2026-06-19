@@ -30,17 +30,17 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
     $received = $stmt->fetchColumn();
 
     // In Progress
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status = 'In Progress' AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status IN ('Diagnostics','In Repair') AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
     $stmt->execute($params);
     $in_progress = $stmt->fetchColumn();
 
-    // Completed/Collected (Done)
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status IN ('Completed', 'Collected') AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
+    // Ready/Issued (Done)
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status IN ('Ready', 'Issued') AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
     $stmt->execute($params);
     $completed = $stmt->fetchColumn();
 
-    // Cancelled (Without repair)
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status = 'Cancelled' AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
+    // Cancelled / issued without repair
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status IN ('Issued Without Repair', 'Repair Cancelled') AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
     $stmt->execute($params);
     $cancelled = $stmt->fetchColumn();
 
@@ -48,7 +48,7 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
     // Finance date priority:
     //   1. payment_date from linked invoice (status='paid')  ← correct for accounting
     //   2. shipping_date of the order (fallback when no invoice exists)
-    // Only 'Collected' orders are counted.
+    // Only issued orders are counted.
     //
     // IMPORTANT: Use a SEPARATE params array here, because:
     //  - $params above has layout: [start_dt, end_dt, tech_id]
@@ -76,7 +76,7 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
              WHERE oi2.order_id = o.id) AS inventory_cost
         FROM orders o
         LEFT JOIN invoices inv ON inv.order_id = o.id AND inv.status = 'paid'
-        WHERE o.status = 'Collected'
+        WHERE o.status = 'Issued'
           AND COALESCE(inv.payment_date, DATE(o.shipping_date)) BETWEEN ? AND ?
     " . $fin_tech_cond;
 
@@ -404,7 +404,7 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
                                 FROM orders o
                                 JOIN customers c ON o.customer_id = c.id
                                 LEFT JOIN invoices inv ON inv.order_id = o.id AND inv.status = 'paid'
-                                WHERE o.technician_id = ? AND o.status = 'Collected'
+                                WHERE o.technician_id = ? AND o.status = 'Issued'
                                   AND COALESCE(inv.payment_date, DATE(o.shipping_date)) BETWEEN ? AND ?
                                 ORDER BY finance_date DESC
                             ");
@@ -556,33 +556,28 @@ function showOrdersModal(techId, type, title) {
 
 function getStatusBadgeClass(status) {
     switch(status) {
-        case 'New': return 'bg-primary';
-        case 'Pending Approval': return 'bg-info text-dark';
-        case 'In Progress': return 'bg-warning';
-        case 'Waiting for Parts': return 'bg-secondary';
-        case 'Completed': return 'bg-success';
-        case 'Collected': return 'bg-info text-dark';
-        case 'Cancelled': return 'bg-danger';
+        case 'Accepted': return 'bg-primary';
+        case 'Diagnostics': return 'bg-info text-dark';
+        case 'Approval': return 'bg-warning text-dark';
+        case 'In Repair': return 'bg-warning';
+        case 'Ready': return 'bg-success';
+        case 'Issued': return 'bg-info text-dark';
+        case 'Issued Without Repair': return 'bg-dark';
+        case 'Repair Cancelled': return 'bg-danger';
         default: return 'bg-secondary';
     }
 }
 
 function getStatusLabel(status) {
     const labels = {
-        'New': '<?php echo __('new'); ?>',
-        'Новый': '<?php echo __('new'); ?>',
-        'Pending Approval': '<?php echo __('pending_approval'); ?>',
-        'На согласовании': '<?php echo __('pending_approval'); ?>',
-        'In Progress': '<?php echo __('in_progress'); ?>',
-        'В работе': '<?php echo __('in_progress'); ?>',
-        'Waiting for Parts': '<?php echo __('waiting_parts'); ?>',
-        'Ожидание запчастей': '<?php echo __('waiting_parts'); ?>',
-        'Completed': '<?php echo __('status_completed'); ?>',
-        'Готов': '<?php echo __('status_completed'); ?>',
-        'Collected': '<?php echo __('status_collected'); ?>',
-        'Выдан': '<?php echo __('status_collected'); ?>',
-        'Cancelled': '<?php echo __('status_cancelled'); ?>',
-        'Отменен': '<?php echo __('status_cancelled'); ?>'
+        'Accepted': '<?php echo getStatusLabel('Accepted'); ?>',
+        'Diagnostics': '<?php echo getStatusLabel('Diagnostics'); ?>',
+        'Approval': '<?php echo getStatusLabel('Approval'); ?>',
+        'In Repair': '<?php echo getStatusLabel('In Repair'); ?>',
+        'Ready': '<?php echo getStatusLabel('Ready'); ?>',
+        'Issued': '<?php echo getStatusLabel('Issued'); ?>',
+        'Issued Without Repair': '<?php echo getStatusLabel('Issued Without Repair'); ?>',
+        'Repair Cancelled': '<?php echo getStatusLabel('Repair Cancelled'); ?>'
     };
     return labels[status] || status;
 }

@@ -123,7 +123,8 @@ CREATE TABLE IF NOT EXISTS `orders` (
     `estimated_cost`       DECIMAL(10,2) DEFAULT NULL,
     `final_cost`           DECIMAL(10,2) DEFAULT NULL,
     `extra_expenses`       DECIMAL(10,2) DEFAULT 0.00,
-    `status`               ENUM('New','In Progress','Waiting for Parts','Pending Approval','Completed','Collected','Cancelled') DEFAULT 'New',
+    `status`               ENUM('Accepted','Diagnostics','Approval','In Repair','Ready','Issued','Issued Without Repair','Repair Cancelled') NOT NULL DEFAULT 'Accepted',
+    `cancellation_reason`  TEXT DEFAULT NULL,
     `technician_id`        INT(11)       DEFAULT NULL,
     `created_at`           TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`           TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -193,7 +194,9 @@ CREATE TABLE IF NOT EXISTS `inventory` (
 CREATE TABLE IF NOT EXISTS `order_items` (
     `id`           INT(11)       NOT NULL AUTO_INCREMENT,
     `order_id`     INT(11)       NOT NULL,
-    `inventory_id` INT(11)       NOT NULL,
+    `inventory_id` INT(11)       DEFAULT NULL,
+    `part_name`    VARCHAR(255)  DEFAULT NULL,
+    `source`       VARCHAR(255)  DEFAULT NULL,
     `quantity`     INT(11)       DEFAULT 1,
     `price`        DECIMAL(10,2) DEFAULT NULL,
     PRIMARY KEY (`id`),
@@ -201,6 +204,19 @@ CREATE TABLE IF NOT EXISTS `order_items` (
     KEY `inventory_id` (`inventory_id`),
     CONSTRAINT `order_items_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`),
     CONSTRAINT `order_items_ibfk_2` FOREIGN KEY (`inventory_id`) REFERENCES `inventory` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `device_models` (
+    `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `brand`       VARCHAR(100) NOT NULL,
+    `model_name`  VARCHAR(200) NOT NULL,
+    `usage_count` INT UNSIGNED NOT NULL DEFAULT 0,
+    `created_at`  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `unique_brand_model` (`brand`, `model_name`),
+    KEY `idx_brand` (`brand`),
+    KEY `idx_usage_count` (`usage_count`),
+    KEY `idx_model_name` (`model_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ═══════════════════════════════════════════════════════════════════════════════

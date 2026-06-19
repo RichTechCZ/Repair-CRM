@@ -22,7 +22,7 @@ if ($_SESSION['role'] == 'technician' && !hasPermission('view_all_orders') && $o
 }
 
 // Fetch parts linked to this order
-$stmt = $pdo->prepare("SELECT oi.*, i.part_name FROM order_items oi JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
+$stmt = $pdo->prepare("SELECT oi.*, COALESCE(oi.part_name, i.part_name) AS part_name FROM order_items oi LEFT JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
 $stmt->execute([$id]);
 $order_items = $stmt->fetchAll();
 
@@ -32,24 +32,10 @@ $inventory = $pdo->query("SELECT id, part_name, quantity, sale_price FROM invent
 // Fetch active technicians for edit modal
 $techs = getActiveTechnicians();
 
-$status = $order['status'] ?? 'New';
-$next_status_map = [
-    'New' => 'In Progress',
-    'Pending Approval' => 'In Progress',
-    'Waiting for Parts' => 'In Progress',
-    'In Progress' => 'Completed',
-    'Completed' => 'Collected'
-];
-$next_status = $next_status_map[$status] ?? null;
-$next_label_map = [
-    'In Progress' => __('move_to_in_progress'),
-    'Completed' => __('move_to_completed'),
-    'Collected' => __('move_to_collected')
-];
-$next_label = $next_status ? ($next_label_map[$next_status] ?? __('next_step')) : '';
-$show_shipping = in_array($status, ['Completed', 'Collected'], true);
+$status = $order['status'] ?? 'Accepted';
+$show_shipping = $status === 'Issued';
 $show_invoice = hasPermission('admin_access')
-    && in_array($status, ['Completed', 'Collected'], true)
+    && in_array($status, ['Ready', 'Issued'], true)
     && (($order['final_cost'] ?? 0) > 0 || ($order['estimated_cost'] ?? 0) > 0);
 
 // Fetch status log
@@ -195,9 +181,9 @@ try {
                             <tr>
                                 <td class="small text-white-75"><?php echo date('d.m.Y H:i', strtotime($log['changed_at'])); ?></td>
                                 <td>
-                                    <span class="badge bg-transparent border border-secondary text-white-75"><?php echo htmlspecialchars($log['old_status']); ?></span>
+                                    <span class="badge bg-transparent border border-secondary text-white-75"><?php echo htmlspecialchars(getStatusLabel($log['old_status'])); ?></span>
                                     <i class="fas fa-arrow-right mx-1 text-white-75"></i>
-                                    <span class="badge bg-primary text-white"><?php echo htmlspecialchars($log['new_status']); ?></span>
+                                    <span class="badge bg-primary text-white"><?php echo htmlspecialchars(getStatusLabel($log['new_status'])); ?></span>
                                 </td>
                                 <td><?php echo htmlspecialchars($who); ?></td>
                             </tr>
@@ -323,32 +309,20 @@ try {
     <div class="col-md-4">
         <div class="card glass-card border-0 mb-4">
             <div class="card-header bg-transparent border-bottom-0">
-                <h5 class="mb-0"><?php echo __('actions'); ?></h5>
+                <h5 class="mb-0"><?php echo __('order_status'); ?></h5>
             </div>
             <div class="card-body">
                 <form id="statusForm">
+                    <?php echo csrfField(); ?>
                     <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
-                    <div class="d-grid gap-2 mb-2">
-                        <?php if ($next_status): ?>
-                            <button type="button" class="btn btn-success" id="nextStatusBtn" data-next-status="<?php echo $next_status; ?>">
-                                <?php echo $next_label ?: __('next_step'); ?>
-                            </button>
-                        <?php else: ?>
-                            <div class="text-white-75 small"><?php echo __('no_next_step'); ?></div>
-                        <?php endif; ?>
-                        <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#actionsAdvanced" aria-expanded="false">
-                            <?php echo __('more_actions'); ?>
-                        </button>
-                    </div>
-
                     <?php if (!$show_shipping): ?>
-                        <div class="text-white-75 small mb-2"><?php echo __('shipping_available_after_completed'); ?></div>
+                        <div class="text-white-75 small mb-2"><?php echo __('shipping_only_when_issued'); ?></div>
                     <?php endif; ?>
                     <?php if (!$show_invoice && hasPermission('admin_access')): ?>
                         <div class="text-white-75 small mb-2"><?php echo __('invoice_available_after_completed'); ?></div>
                     <?php endif; ?>
 
-                    <div class="collapse" id="actionsAdvanced">
+                    <div>
                         <div class="mb-3">
                             <label class="form-label"><?php echo __('technician'); ?></label>
                             <select name="technician_id" class="form-select mb-2" <?php echo $_SESSION['role'] != 'admin' ? 'disabled' : ''; ?>>
@@ -374,17 +348,28 @@ try {
                                 </span>
                             </label>
                             <select name="status" class="form-select mb-2">
-                                <?php if (($order['status'] ?? '') === 'Collected'): ?>
-                                    <option value="Collected" selected><?php echo __('collected'); ?></option>
-                                <?php else: ?>
-                                    <option value="New" <?php if($order['status']=='New') echo 'selected'; ?>><?php echo __('new'); ?></option>
-                                    <option value="Pending Approval" <?php if($order['status']=='Pending Approval') echo 'selected'; ?>><?php echo __('pending_approval'); ?></option>
-                                    <option value="In Progress" <?php if($order['status']=='In Progress') echo 'selected'; ?>><?php echo __('in_progress'); ?></option>
-                                    <option value="Waiting for Parts" <?php if($order['status']=='Waiting for Parts') echo 'selected'; ?>><?php echo __('waiting_parts'); ?></option>
-                                    <option value="Completed" <?php if($order['status']=='Completed') echo 'selected'; ?>><?php echo __('completed'); ?></option>
-                                    <option value="Collected" <?php if($order['status']=='Collected') echo 'selected'; ?>><?php echo __('collected'); ?></option>
-                                    <option value="Cancelled" <?php if($order['status']=='Cancelled') echo 'selected'; ?>><?php echo __('cancelled'); ?></option>
-                                <?php endif; ?>
+                                <?php foreach (getAllStatuses() as $status_option): ?>
+                                    <option value="<?php echo e($status_option); ?>" <?php echo ($order['status'] ?? '') === $status_option ? 'selected' : ''; ?>>
+                                        <?php echo e(getStatusLabel($status_option)); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="mb-3 d-none" id="statusCancellationReasonWrap">
+                            <label class="form-label"><?php echo __('cancellation_reason'); ?></label>
+                            <textarea name="cancellation_reason" class="form-control" rows="3" placeholder="<?php echo __('cancellation_reason_placeholder'); ?>"><?php echo e($order['cancellation_reason'] ?? ''); ?></textarea>
+                        </div>
+                        <div class="mb-3 d-none" id="statusShippingMethodWrap">
+                            <label class="form-label"><?php echo __('shipping_method'); ?></label>
+                            <select name="shipping_method" class="form-select">
+                                <option value="" <?php echo empty($order['shipping_method']) ? 'selected' : ''; ?>><?php echo __('choose_option'); ?></option>
+                                <option value="Self Pickup" <?php echo ($order['shipping_method'] ?? '') == 'Self Pickup' ? 'selected' : ''; ?>><?php echo __('self_pickup'); ?></option>
+                                <option value="Zasilkovna" <?php echo ($order['shipping_method'] ?? '') == 'Zasilkovna' ? 'selected' : ''; ?>>Zasilkovna</option>
+                                <option value="Ceska Posta" <?php echo ($order['shipping_method'] ?? '') == 'Ceska Posta' ? 'selected' : ''; ?>>Česká pošta</option>
+                                <option value="PPL" <?php echo ($order['shipping_method'] ?? '') == 'PPL' ? 'selected' : ''; ?>>PPL</option>
+                                <option value="DPD" <?php echo ($order['shipping_method'] ?? '') == 'DPD' ? 'selected' : ''; ?>>DPD</option>
+                                <option value="GLS" <?php echo ($order['shipping_method'] ?? '') == 'GLS' ? 'selected' : ''; ?>>GLS</option>
+                                <option value="Courier" <?php echo ($order['shipping_method'] ?? '') == 'Courier' ? 'selected' : ''; ?>><?php echo __('courier'); ?></option>
                             </select>
                         </div>
                         <div class="mb-3">
@@ -423,8 +408,8 @@ try {
         <div class="card glass-card border-0 mb-4">
             <div class="card-header bg-transparent border-bottom-0 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><?php echo __('shipping'); ?></h5>
-                <?php if($order['status'] === 'Collected'): ?>
-                    <span class="badge bg-success small"><?php echo __('collected'); ?></span>
+                <?php if($order['status'] === 'Issued'): ?>
+                    <span class="badge bg-success small"><?php echo getStatusLabel('Issued'); ?></span>
                 <?php endif; ?>
             </div>
             <div class="card-body">
@@ -514,7 +499,7 @@ try {
                             <label class="form-label"><?php echo __('status'); ?></label>
                             <select name="status" class="form-select">
                                 <option value="draft" <?php echo ($existing_invoice['status'] ?? '') == 'draft' ? 'selected' : ''; ?>><?php echo __('status_draft'); ?></option>
-                                <option value="issued" <?php echo ($existing_invoice['status'] ?? 'issued') == 'issued' ? 'selected' : ''; ?>><?php echo __('status_issued'); ?></option>
+                                <option value="issued" <?php echo ($existing_invoice['status'] ?? 'issued') == 'issued' ? 'selected' : ''; ?>><?php echo __('status_invoice_issued'); ?></option>
                                 <option value="paid" <?php echo ($existing_invoice['status'] ?? '') == 'paid' ? 'selected' : ''; ?>><?php echo __('status_paid'); ?></option>
                                 <option value="overdue" <?php echo ($existing_invoice['status'] ?? '') == 'overdue' ? 'selected' : ''; ?>><?php echo __('status_overdue'); ?></option>
                                 <option value="cancelled" <?php echo ($existing_invoice['status'] ?? '') == 'cancelled' ? 'selected' : ''; ?>><?php echo __('status_cancelled'); ?></option>
@@ -571,6 +556,12 @@ try {
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <div class="btn-group w-100 mb-3" role="group">
+                        <input type="radio" class="btn-check" name="mode" id="partModeInventory" value="inventory" autocomplete="off" checked>
+                        <label class="btn btn-outline-primary" for="partModeInventory"><?php echo __('part_mode_inventory'); ?></label>
+                        <input type="radio" class="btn-check" name="mode" id="partModeManual" value="manual" autocomplete="off">
+                        <label class="btn btn-outline-primary" for="partModeManual"><?php echo __('part_mode_manual'); ?></label>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label"><?php echo __('select_part_from_warehouse'); ?></label>
                         <select name="inventory_id" class="form-select" required>
@@ -581,6 +572,23 @@ try {
                             </option>
                             <?php endforeach; ?>
                         </select>
+                    </div>
+                    <div id="manualPartFields" class="d-none">
+                        <div class="mb-3">
+                            <label class="form-label"><?php echo __('part_name'); ?></label>
+                            <input type="text" name="part_name" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><?php echo __('source'); ?></label>
+                            <input type="text" name="source" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><?php echo __('price'); ?></label>
+                            <div class="input-group">
+                                <input type="number" name="price" class="form-control" step="0.01" min="0">
+                                <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
+                            </div>
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label"><?php echo __('quantity'); ?></label>
@@ -705,36 +713,31 @@ $(document).ready(function() {
         e.preventDefault();
         const form = $(this);
         const status = form.find('select[name="status"]').val();
-        const shippingMethod = $('select[name="shipping_method"]').val();
+        const shippingMethod = form.find('select[name="shipping_method"]').val();
+        const finalCost = parseFloat(form.find('input[name="final_cost"]').val() || '0');
+        const cancellationReason = form.find('textarea[name="cancellation_reason"]').val() || '';
         
-        if (status === 'Collected' && (!shippingMethod || shippingMethod === '')) {
+        if (status === 'Issued' && (isNaN(finalCost) || finalCost <= 0 || !shippingMethod)) {
             showShippingRequiredModal();
             return false;
         }
-        
-        if (status === 'Collected') {
-            const shippingForm = $('#shippingForm');
-            $.post('api/update_shipping.php', shippingForm.serialize(), function(res) {
-                if (res.success) {
-                    showStatusConfirmModal(form);
-                } else {
-                    showAlert('<?php echo __('error'); ?>: ' + (res.message || '<?php echo __('error_shipping_update'); ?>'));
-                }
-            }).fail(function() {
-                showAlert('<?php echo __('error'); ?>: <?php echo __('error_shipping_connect'); ?>');
-            });
-        } else {
-            showStatusConfirmModal(form);
+
+        if ((status === 'Issued Without Repair' || status === 'Repair Cancelled') && !cancellationReason.trim()) {
+            showAlert('<?php echo __('cancellation_reason'); ?>');
+            return false;
         }
+
+        showStatusConfirmModal(form);
     });
 
-    $('#nextStatusBtn').on('click', function() {
-        const nextStatus = $(this).data('next-status');
-        if (!nextStatus) return;
-        const form = $('#statusForm');
-        form.find('select[name="status"]').val(nextStatus);
-        form.submit();
-    });
+    function syncStatusConditionalFields() {
+        const status = $('#statusForm select[name="status"]').val();
+        $('#statusCancellationReasonWrap').toggleClass('d-none', !['Issued Without Repair', 'Repair Cancelled'].includes(status));
+        $('#statusShippingMethodWrap').toggleClass('d-none', status !== 'Issued');
+    }
+
+    $('#statusForm select[name="status"]').on('change', syncStatusConditionalFields);
+    syncStatusConditionalFields();
     
     // ... existing scripts ...
     $('#editOrderDatesForm').on('submit', function(e) {
@@ -786,6 +789,13 @@ $(document).ready(function() {
         dropdownParent: $('#addPartModal'),
         placeholder: "<?php echo __('search_part_placeholder'); ?>",
         width: '100%'
+    });
+
+    $('input[name="mode"]').on('change', function() {
+        const isManual = $(this).val() === 'manual';
+        $('#manualPartFields').toggleClass('d-none', !isManual);
+        $('select[name="inventory_id"]').prop('required', !isManual).closest('.mb-3').toggleClass('d-none', isManual);
+        $('input[name="part_name"], input[name="source"], input[name="price"]').prop('required', isManual);
     });
 
     $('#shippingForm').on('submit', function(e) {
@@ -995,7 +1005,7 @@ function deleteMedia(id) {
     });
 }
 
-// Show animated modal when shipping method is required for Collected status
+// Show animated modal when shipping method is required for Issued status
 function showShippingRequiredModal() {
     const modal = $('#shippingRequiredModal');
     modal.modal('show');
@@ -1014,13 +1024,14 @@ function showStatusConfirmModal(form) {
     const modal = $('#statusConfirmModal');
     const status = form.find('select[name="status"]').val();
     const statusLabels = {
-        'New': '<?php echo __("new"); ?>',
-        'Pending Approval': '<?php echo __("pending_approval"); ?>',
-        'In Progress': '<?php echo __("in_progress"); ?>',
-        'Waiting for Parts': '<?php echo __("waiting_parts"); ?>',
-        'Completed': '<?php echo __("completed"); ?>',
-        'Collected': '<?php echo __("collected"); ?>',
-        'Cancelled': '<?php echo __("cancelled"); ?>'
+        'Accepted': '<?php echo getStatusLabel("Accepted"); ?>',
+        'Diagnostics': '<?php echo getStatusLabel("Diagnostics"); ?>',
+        'Approval': '<?php echo getStatusLabel("Approval"); ?>',
+        'In Repair': '<?php echo getStatusLabel("In Repair"); ?>',
+        'Ready': '<?php echo getStatusLabel("Ready"); ?>',
+        'Issued': '<?php echo getStatusLabel("Issued"); ?>',
+        'Issued Without Repair': '<?php echo getStatusLabel("Issued Without Repair"); ?>',
+        'Repair Cancelled': '<?php echo getStatusLabel("Repair Cancelled"); ?>'
     };
     
     $('#confirmStatusText').text(statusLabels[status] || status);
@@ -1072,15 +1083,15 @@ function showStatusConfirmModal(form) {
 // Go to shipping section
 function goToShipping() {
     $('#shippingRequiredModal').modal('hide');
-    // Scroll to shipping form and highlight it
+    const target = $('#statusShippingMethodWrap:visible').length ? $('#statusShippingMethodWrap') : $('#shippingForm');
+    if (!target.length) return;
     $('html, body').animate({
-        scrollTop: $('#shippingForm').offset().top - 100
+        scrollTop: target.offset().top - 100
     }, 500);
     
-    // Highlight shipping method dropdown
-    $('select[name="shipping_method"]').addClass('border-danger border-2');
+    target.find('select[name="shipping_method"]').addClass('border-danger border-2');
     setTimeout(function() {
-        $('select[name="shipping_method"]').focus();
+        target.find('select[name="shipping_method"]').focus();
     }, 600);
 }
 
@@ -1110,7 +1121,7 @@ function deleteOrder(id) {
                 <div class="mb-4">
                     <i class="fas fa-shipping-fast fa-4x text-warning mb-3 animate-bounce"></i>
                 </div>
-                <h5><?php echo __('before_status_collected'); ?></h5>
+                <h5><?php echo __('required_for_issue'); ?></h5>
                 <p class="text-white-75 mb-0"><?php echo __('shipping_required_msg'); ?></p>
             </div>
             <div class="modal-footer border-top-0 justify-content-center">

@@ -41,17 +41,18 @@ try {
 
     $stmt = $pdo->prepare(
         "INSERT INTO orders (customer_id, technician_id, device_type, order_type, device_brand, device_model,
-         problem_description, technician_notes, serial_number, serial_number_2, pin_code, appearance, priority, estimated_cost, shipping_method)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+         problem_description, technician_notes, serial_number, serial_number_2, pin_code, appearance, priority, estimated_cost, shipping_method, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
     $stmt->execute([
         $customer_id, $technician_id, $device_type, $order_type, $device_brand, $device_model,
         $problem_description, $technician_notes, $serial_number, $serial_number_2,
-        $pin_code, $appearance, $priority, $estimated_cost, $shipping_method
+        $pin_code, $appearance, $priority, $estimated_cost, $shipping_method, 'Accepted'
     ]);
     $order_id = (int)$pdo->lastInsertId();
 
-    logOrderStatusChange($order_id, '', 'New');
+    saveDeviceModelUsage($device_brand, $device_model);
+    logOrderStatusChange($order_id, '', 'Accepted');
 
     // ── Secure file upload ────────────────────────────────────────────────────
     if (!empty($_FILES['files']['name'][0])) {

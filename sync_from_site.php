@@ -64,8 +64,8 @@ function sync_orders($data) {
             
             // 2. Status & Shipping Date
             if ($shipping_date) {
-                if ($local['status'] !== 'Collected') {
-                    $upd_fields[] = "status = 'Collected'";
+                if ($local['status'] !== 'Issued') {
+                    $upd_fields[] = "status = 'Issued'";
                     $needs_update = true;
                 }
                 // Only update shipping_date if it differs significantly

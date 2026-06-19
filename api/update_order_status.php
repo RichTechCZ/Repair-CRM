@@ -3,6 +3,7 @@ ob_start();
 require_once '../includes/config.php';
 require_once '../includes/functions.php';
 require_once '../includes/rate_limit.php';
+require_once '../models/InvoiceAutomation.php';
 ob_clean();
 header('Content-Type: application/json');
 
@@ -23,7 +24,16 @@ $order_id = $_REQUEST['order_id'] ?? null;
 $new_status = $_REQUEST['status'] ?? null;
 $final_cost = $_REQUEST['final_cost'] ?? null;
 $technician_id = hasPermission('admin_access') ? ($_REQUEST['technician_id'] ?? null) : null;
-$allowed_statuses = ['New', 'Pending Approval', 'In Progress', 'Waiting for Parts', 'Completed', 'Collected', 'Cancelled'];
+$cancellation_reason = $_REQUEST['cancellation_reason'] ?? null;
+$shipping_method = trim($_REQUEST['shipping_method'] ?? '');
+
+$allowed_statuses = getAllStatuses();
+
+// Terminal statuses — once reached, no further changes are allowed
+$terminal_statuses = ['Issued', 'Issued Without Repair', 'Repair Cancelled'];
+
+// Statuses that require a cancellation_reason
+$reason_required_statuses = ['Issued Without Repair', 'Repair Cancelled'];
 
 if (!$order_id || !$new_status) {
     echo json_encode(['success' => false, 'message' => __('missing_data')]);
@@ -35,10 +45,17 @@ if (!in_array($new_status, $allowed_statuses, true)) {
     exit;
 }
 
+// Validate cancellation_reason for terminal rejection statuses
+if (in_array($new_status, $reason_required_statuses, true) && empty(trim($cancellation_reason ?? ''))) {
+    echo json_encode(['success' => false, 'message' => __('cancellation_reason')]);
+    exit;
+}
+
 try {
     $pdo->beginTransaction();
+    $invoice_to_sync = null;
 
-    $stmt = $pdo->prepare('SELECT status, technician_id, estimated_cost, final_cost FROM orders WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT status, technician_id, estimated_cost, final_cost, shipping_method FROM orders WHERE id = ?');
     $stmt->execute([$order_id]);
     $order_data = $stmt->fetch();
 
@@ -55,22 +72,41 @@ try {
     $current_estimated = $order_data['estimated_cost'];
     $current_final = $order_data['final_cost'];
 
-    if ($current_status === 'Collected' && $new_status !== 'Collected') {
+    // Block changes from terminal statuses
+    if (in_array($current_status, $terminal_statuses, true) && $new_status !== $current_status) {
         throw new Exception(__('status_change_after_collected_forbidden'));
     }
 
-    $finishing_statuses = ['Completed', 'Collected'];
+    // Validate 'Issued' requires final_cost and shipping_method
+    if ($new_status === 'Issued') {
+        $effective_final = ($final_cost !== null && $final_cost !== '') ? $final_cost : $current_final;
+        $effective_shipping = $shipping_method !== '' ? $shipping_method : ($order_data['shipping_method'] ?? null);
+        if (empty($effective_final) || $effective_final <= 0) {
+            throw new Exception(__('required_for_issue'));
+        }
+        if (empty($effective_shipping)) {
+            throw new Exception(__('required_for_issue'));
+        }
+    }
+
+    $finishing_statuses = ['Ready', 'Issued', 'Issued Without Repair'];
     $was_finished = in_array($current_status, $finishing_statuses, true);
     $is_finishing = in_array($new_status, $finishing_statuses, true);
 
     $sql = 'UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP';
     $params = [$new_status];
 
-    if ($new_status === 'Collected') {
+    // Auto-set shipping_date when Issued
+    if ($new_status === 'Issued') {
         $sql .= ', shipping_date = IFNULL(shipping_date, CURRENT_TIMESTAMP)';
+        if ($shipping_method !== '') {
+            $sql .= ', shipping_method = ?';
+            $params[] = $shipping_method;
+        }
     }
 
-    if ($new_status === 'Collected' && ($final_cost === null || $final_cost === '')) {
+    // Fallback final_cost for Issued
+    if ($new_status === 'Issued' && ($final_cost === null || $final_cost === '')) {
         $final_cost = ($current_final !== null && $current_final !== '') ? $current_final : $current_estimated;
     }
 
@@ -87,6 +123,12 @@ try {
         $params[] = $_REQUEST['extra_expenses'];
     }
 
+    // Save cancellation_reason for terminal rejection statuses
+    if (in_array($new_status, $reason_required_statuses, true)) {
+        $sql .= ', cancellation_reason = ?';
+        $params[] = trim($cancellation_reason);
+    }
+
     $sql .= ' WHERE id = ?';
     $params[] = $order_id;
 
@@ -99,11 +141,24 @@ try {
 
     if (!$was_finished && $is_finishing) {
         processOrderInventoryChange($order_id, $is_finishing, $was_finished);
+        if ($new_status === 'Ready' && get_setting('acc_auto_create_invoice', '0') == '1') {
+            $invoiceResult = createLocalInvoiceForCompletedOrder($pdo, (int)$order_id, $final_cost);
+            if ($invoiceResult['success'] ?? false) {
+                $invoice_to_sync = (int)$invoiceResult['id'];
+            } else {
+                error_log('Auto invoice creation failed for order #' . $order_id . ': ' . ($invoiceResult['error'] ?? 'unknown error'));
+            }
+        }
     } elseif ($was_finished && !$is_finishing) {
         processOrderInventoryChange($order_id, $is_finishing, $was_finished);
     }
 
     $pdo->commit();
+
+    $sync_result = null;
+    if ($invoice_to_sync) {
+        $sync_result = syncInvoiceToMyInvoice($pdo, $invoice_to_sync);
+    }
 
     $notify_id = $technician_id ? $technician_id : $current_tech_id;
     if ($notify_id) {
@@ -113,7 +168,7 @@ try {
 
         if ($techData && $techData['telegram_id']) {
             $msg = sprintf(__('tg_order_update_title'), $order_id) . "\n";
-            $msg .= sprintf(__('tg_new_status'), $new_status) . "\n";
+            $msg .= sprintf(__('tg_new_status'), getStatusLabel($new_status)) . "\n";
             if ($final_cost !== null) {
                 $msg .= sprintf(__('tg_cost'), formatMoney($final_cost)) . "\n";
             }
@@ -124,7 +179,7 @@ try {
         }
     }
 
-    echo json_encode(['success' => true, 'message' => 'Status updated']);
+    echo json_encode(['success' => true, 'message' => 'Status updated', 'myinvoice_sync' => $sync_result]);
 } catch (Exception $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();

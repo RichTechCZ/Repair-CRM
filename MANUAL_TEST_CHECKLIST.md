@@ -24,9 +24,12 @@ Use an admin account unless a step says technician.
 
 ## Order Detail
 - Open `view_order.php?id=<existing_id>`
-- Change status to `Completed`, then to `Collected` on a test order only
-- Confirm `Collected` orders no longer offer invalid backward statuses
-- Add a part to an order
+- Change status through `Accepted`, `Diagnostics`, `Approval`, `In Repair`, `Ready`, and `Issued` on a test order only
+- Confirm terminal orders (`Issued`, `Issued Without Repair`, `Repair Cancelled`) no longer offer invalid backward statuses
+- Confirm `Issued` requires final cost and shipping method
+- Confirm `Issued Without Repair` and `Repair Cancelled` require a reason
+- Add a warehouse part to an order
+- Add a manual part with source and price
 - Edit and delete a part
 - Upload media and delete one file
 - Open all print preview buttons

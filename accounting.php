@@ -28,6 +28,14 @@ if (isset($_POST['save_acc_settings'])) {
     set_setting('acc_auto_create_invoice', isset($_POST['acc_auto_create_invoice']) ? 1 : 0);
     set_setting('acc_is_vat_payer', isset($_POST['acc_is_vat_payer']) ? 1 : 0);
     set_setting('acc_vat_rate', $_POST['acc_vat_rate']);
+    set_setting('myinvoice_enabled', isset($_POST['myinvoice_enabled']) ? 1 : 0);
+    set_setting('myinvoice_auto_issue', isset($_POST['myinvoice_auto_issue']) ? 1 : 0);
+    set_setting('myinvoice_api_base_url', $_POST['myinvoice_api_base_url'] ?? 'http://fakturace.43.157.31.121.sslip.io');
+    set_setting('myinvoice_default_country_id', $_POST['myinvoice_default_country_id'] ?? '1');
+    set_setting('myinvoice_default_street', $_POST['myinvoice_default_street'] ?? '-');
+    set_setting('myinvoice_default_city', $_POST['myinvoice_default_city'] ?? 'Praha');
+    set_setting('myinvoice_default_zip', $_POST['myinvoice_default_zip'] ?? '11000');
+    set_setting('myinvoice_fallback_email', $_POST['myinvoice_fallback_email'] ?? '');
     echo '<div class="alert alert-success">' . __('settings_saved') . '</div>';
 }
 
@@ -214,7 +222,7 @@ $customers = $stmt->fetchAll();
                             <label class="form-label"><?php echo __('status'); ?></label>
                             <select name="status" id="inv_status" class="form-select">
                                 <option value="draft"><?php echo __('status_draft'); ?></option>
-                                <option value="issued" selected><?php echo __('status_issued'); ?></option>
+                                <option value="issued" selected><?php echo __('status_invoice_issued'); ?></option>
                                 <option value="paid"><?php echo __('status_paid'); ?></option>
                                 <option value="overdue"><?php echo __('status_overdue'); ?></option>
                                 <option value="cancelled"><?php echo __('status_cancelled'); ?></option>
@@ -366,6 +374,48 @@ $customers = $stmt->fetchAll();
                                 </label>
                             </div>
                         </div>
+                        <hr>
+                        <div class="col-12">
+                            <h6 class="mb-0">MyInvoice.cz API</h6>
+                            <div class="form-text">API token is read from <code>MYINVOICE_API_TOKEN</code> in <code>.env</code>.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">API base URL</label>
+                            <input type="url" name="myinvoice_api_base_url" class="form-control" value="<?php echo htmlspecialchars(get_setting('myinvoice_api_base_url', getenv('MYINVOICE_API_BASE_URL') ?: 'http://fakturace.43.157.31.121.sslip.io')); ?>">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Country ID</label>
+                            <input type="number" name="myinvoice_default_country_id" class="form-control" min="1" value="<?php echo htmlspecialchars(get_setting('myinvoice_default_country_id', getenv('MYINVOICE_DEFAULT_COUNTRY_ID') ?: '1')); ?>">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Fallback ZIP</label>
+                            <input type="text" name="myinvoice_default_zip" class="form-control" value="<?php echo htmlspecialchars(get_setting('myinvoice_default_zip', getenv('MYINVOICE_DEFAULT_ZIP') ?: '11000')); ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Fallback street</label>
+                            <input type="text" name="myinvoice_default_street" class="form-control" value="<?php echo htmlspecialchars(get_setting('myinvoice_default_street', getenv('MYINVOICE_DEFAULT_STREET') ?: '-')); ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Fallback city</label>
+                            <input type="text" name="myinvoice_default_city" class="form-control" value="<?php echo htmlspecialchars(get_setting('myinvoice_default_city', getenv('MYINVOICE_DEFAULT_CITY') ?: 'Praha')); ?>">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Fallback email</label>
+                            <input type="email" name="myinvoice_fallback_email" class="form-control" value="<?php echo htmlspecialchars(get_setting('myinvoice_fallback_email', getenv('MYINVOICE_FALLBACK_EMAIL') ?: '')); ?>">
+                            <div class="form-text">Used only when a CRM customer has no email. Leave empty to fail safely instead of creating invoices with a placeholder address.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="myinvoice_enabled" value="1" id="myinvoiceEnabled" <?php echo get_setting('myinvoice_enabled', '1') == '1' ? 'checked' : ''; ?>>
+                                <label class="form-check-label" for="myinvoiceEnabled">Sync auto-created invoices to MyInvoice.cz</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="myinvoice_auto_issue" value="1" id="myinvoiceAutoIssue" <?php echo get_setting('myinvoice_auto_issue', '1') == '1' ? 'checked' : ''; ?>>
+                                <label class="form-check-label" for="myinvoiceAutoIssue">Issue invoice after draft creation</label>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -381,7 +431,7 @@ $customers = $stmt->fetchAll();
 function getInvoiceStatusBadge($status) {
     switch ($status) {
         case 'draft': return '<span class="badge bg-secondary">'.__('status_draft').'</span>';
-        case 'issued': return '<span class="badge bg-info">'.__('status_issued').'</span>';
+        case 'issued': return '<span class="badge bg-info">'.__('status_invoice_issued').'</span>';
         case 'paid': return '<span class="badge bg-success">'.__('status_paid').'</span>';
         case 'overdue': return '<span class="badge bg-danger">'.__('status_overdue').'</span>';
         case 'cancelled': return '<span class="badge bg-dark">'.__('status_cancelled').'</span>';
