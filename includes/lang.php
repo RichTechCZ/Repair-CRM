@@ -583,6 +583,7 @@ $lang_data = [
         'missing_id' => 'Не указан ID',
         'missing_fields' => 'Не заполнены обязательные поля',
         'missing_data' => 'Недостаточно данных',
+        'insufficient_stock' => 'Недостаточно запчастей на складе',
 
         // Phase 3 HTML + general missing
         'unit_label' => 'Ед.',
@@ -1289,6 +1290,7 @@ $lang_data = [
         'missing_id' => 'Chybí ID',
         'missing_fields' => 'Chybí povinná pole',
         'missing_data' => 'Nedostatek dat',
+        'insufficient_stock' => 'Nedostatek dílů na skladě',
 
         // Phase 3 HTML + general missing
         'unit_label' => 'ks',

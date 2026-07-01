@@ -658,8 +658,10 @@ function applyMyInvoiceMigration(PDO $pdo): void {
     }
 
     if (tableExists($pdo, 'system_settings')) {
+        // Seed defaults only for keys that don't exist yet — never overwrite values
+        // an administrator has already configured.
         $pdo->exec("
-            INSERT INTO `system_settings` (`setting_key`, `setting_value`) VALUES
+            INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`) VALUES
             ('acc_auto_create_invoice', '1'),
             ('myinvoice_enabled', '1'),
             ('myinvoice_auto_issue', '1'),
@@ -668,7 +670,6 @@ function applyMyInvoiceMigration(PDO $pdo): void {
             ('myinvoice_default_street', '-'),
             ('myinvoice_default_city', 'Praha'),
             ('myinvoice_default_zip', '11000')
-            ON DUPLICATE KEY UPDATE `setting_value` = VALUES(`setting_value`)
         ");
     }
 }
@@ -729,7 +730,7 @@ function runMigrations(PDO $pdo, string $projectDir): array {
     return $results;
 }
 
-function runGitUpdate(string $projectDir): array {
+function runGitUpdate(string $projectDir, string $branch): array {
     $gitCheckCode = null;
     $gitCheck = runCommand('git --version', $gitCheckCode);
     if (($gitCheckCode !== null && $gitCheckCode !== 0) || stripos($gitCheck, 'git version') === false) {
@@ -777,7 +778,7 @@ function runGitUpdate(string $projectDir): array {
     }
 
     $pullCode = null;
-    $pullOutput = trim(runCommand(buildGitCommand($projectDir, 'pull --ff-only origin main'), $pullCode));
+    $pullOutput = trim(runCommand(buildGitCommand($projectDir, 'pull --ff-only origin ' . escapeshellarg($branch)), $pullCode));
 
     $isError = (
         ($pullCode !== null && $pullCode !== 0) ||
@@ -876,7 +877,7 @@ try {
         $updateSummary = applyArchiveUpdate($projectDir, $repo, $branch);
         $usedMethod = 'archive';
     } elseif (shellFunctionsAvailable() && is_dir($projectDir . '/.git')) {
-        $updateSummary = runGitUpdate($projectDir);
+        $updateSummary = runGitUpdate($projectDir, $branch);
         $usedMethod = 'git';
     } else {
         $updateSummary = applyArchiveUpdate($projectDir, $repo, $branch);

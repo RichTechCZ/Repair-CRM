@@ -15,6 +15,7 @@ $permission_pages = [
     'customers.php' => 'edit_customers',
     'edit_customer.php' => 'edit_customers',
     'inventory.php' => 'admin_access',
+    'edit_inventory.php' => 'admin_access',
     // 'reports.php' => 'admin_access', // Handled specially below
 ];
 

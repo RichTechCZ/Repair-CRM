@@ -16,6 +16,11 @@ $success = false;
 $error = false;
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        die(__('csrf_token_invalid'));
+    }
+
     $part_name = $_POST['part_name'];
     $sku = $_POST['sku'];
     $quantity = $_POST['quantity'];
@@ -55,6 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <div class="card">
     <div class="card-body">
         <form method="POST">
+            <?php echo csrfField(); ?>
             <div class="row g-3">
                 <div class="col-12">
                     <label class="form-label"><?php echo __('part_name'); ?></label>

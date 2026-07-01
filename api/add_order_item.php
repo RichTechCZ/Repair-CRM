@@ -80,7 +80,7 @@ try {
         // When the order already consumes stock, adding more must not drive stock negative.
         $stock_to_check = $order_is_consuming ? $qty : 0;
         if ($order_is_consuming && ($inventory_item['quantity'] - $stock_to_check) < 0) {
-            throw new Exception(__('missing_data'));
+            throw new Exception(__('insufficient_stock'));
         }
 
         $stmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, quantity, price) VALUES (?, ?, ?, ?)");

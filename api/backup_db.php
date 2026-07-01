@@ -41,10 +41,12 @@ try {
 
     foreach ($tables as $table) {
         $table_safe = str_replace('`', '``', $table);
+        // Drop + recreate so the dump can be restored over an existing schema
+        $sqlScript .= "\nDROP TABLE IF EXISTS `$table_safe`;\n";
         // Table structure
         $stmt = $pdo->query("SHOW CREATE TABLE `$table_safe`");
         $row = $stmt->fetch(PDO::FETCH_NUM);
-        $sqlScript .= "\n\n" . $row[1] . ";\n\n";
+        $sqlScript .= $row[1] . ";\n\n";
 
         // Table data
         $stmt = $pdo->query("SELECT * FROM `$table_safe`");
@@ -53,11 +55,12 @@ try {
         while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
             $sqlScript .= "INSERT INTO `$table_safe` VALUES(";
             for ($j = 0; $j < $columnCount; $j++) {
-                if (isset($row[$j])) {
-                    $val = str_replace("\n", "\\n", addslashes((string)$row[$j]));
-                    $sqlScript .= '"' . $val . '"';
-                } else {
+                if (!isset($row[$j])) {
                     $sqlScript .= 'NULL';
+                } else {
+                    // Use the driver's native quoting: it respects the connection
+                    // charset and is safe for multibyte/binary data, unlike addslashes().
+                    $sqlScript .= $pdo->quote((string)$row[$j]);
                 }
                 if ($j < ($columnCount - 1)) {
                     $sqlScript .= ',';
