@@ -40,8 +40,8 @@ try {
         throw new Exception(__('access_denied_msg'));
     }
 
-    // If order is already completed/collected, return parts to stock
-    if (in_array(canonicalOrderStatus($item['status']), ['Ready', 'Issued', 'Issued Without Repair'], true) && !empty($item['inventory_id'])) {
+    // If order is in a stock-consuming state (repaired/handed over), return the parts
+    if (in_array(canonicalOrderStatus($item['status']), ['Ready', 'Issued'], true) && !empty($item['inventory_id'])) {
         changeInventoryQuantity($item['inventory_id'], $item['quantity']);
     }
 

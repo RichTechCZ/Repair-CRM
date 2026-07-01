@@ -25,7 +25,9 @@ if (empty($_SESSION['csrf_token'])) {
     try {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     } catch (Exception $e) {
-        $_SESSION['csrf_token'] = bin2hex(md5(uniqid(mt_rand(), true)) . md5(uniqid(mt_rand(), true)));
+        error_log("CSRF Token Generation Failed: Cryptographically secure entropy source unavailable.");
+        http_response_code(500);
+        die("Internal Server Error: Secure environment requirements not met.");
     }
 }
 

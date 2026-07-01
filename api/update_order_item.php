@@ -42,8 +42,8 @@ try {
         throw new Exception(__('access_denied_msg'));
     }
 
-    // If order is completed/collected, adjust inventory
-    if (in_array(canonicalOrderStatus($item['status']), ['Ready', 'Issued', 'Issued Without Repair'], true) && !empty($item['inventory_id'])) {
+    // If order is in a stock-consuming state (repaired/handed over), adjust inventory
+    if (in_array(canonicalOrderStatus($item['status']), ['Ready', 'Issued'], true) && !empty($item['inventory_id'])) {
         $diff = $new_qty - $item['quantity'];
         // Subtract the difference from stock
         changeInventoryQuantity($item['inventory_id'], -$diff);

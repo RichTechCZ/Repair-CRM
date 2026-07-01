@@ -49,7 +49,12 @@ try {
     $new_status = getOrderStatusStorageValue($canonical_new_status);
 
     $incoming_final_cost = isset($_POST['final_cost']) ? (float)$_POST['final_cost'] : (float)($current['final_cost'] ?? 0);
-    if ($canonical_new_status === 'Issued' && ($incoming_final_cost <= 0 || empty($current['shipping_method']))) {
+    if ($incoming_final_cost < 0) {
+        throw new Exception(__('required_for_issue'));
+    }
+    // Shipping method is managed via the status form / shipping form, so the full
+    // edit only enforces a positive final cost for the Issued status.
+    if ($canonical_new_status === 'Issued' && $incoming_final_cost <= 0) {
         throw new Exception(__('required_for_issue'));
     }
 
@@ -59,7 +64,8 @@ try {
         throw new Exception(__('status_change_after_collected_forbidden'));
     }
 
-    if (tableColumnExists('orders', 'cancellation_reason') && in_array($canonical_new_status, ['Issued Without Repair', 'Repair Cancelled'], true) && empty(trim($current['cancellation_reason'] ?? ''))) {
+    $incoming_cancellation_reason = trim($_POST['cancellation_reason'] ?? '');
+    if (tableColumnExists('orders', 'cancellation_reason') && in_array($canonical_new_status, ['Issued Without Repair', 'Repair Cancelled'], true) && $incoming_cancellation_reason === '' && empty(trim($current['cancellation_reason'] ?? ''))) {
         throw new Exception(__('cancellation_reason'));
     }
 
@@ -81,8 +87,7 @@ try {
         priority = ?,
         serial_number = ?,
         serial_number_2 = ?,
-        updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?";
+        updated_at = CURRENT_TIMESTAMP";
 
     $params = [
         ($is_admin && !empty($_POST['customer_id'])) ? $_POST['customer_id'] : $current['customer_id'],
@@ -102,8 +107,22 @@ try {
         isset($_POST['priority']) ? $_POST['priority'] : $current['priority'],
         isset($_POST['serial_number']) ? $_POST['serial_number'] : $current['serial_number'],
         isset($_POST['serial_number_2']) ? $_POST['serial_number_2'] : $current['serial_number_2'],
-        $order_id
     ];
+
+    // Persist the cancellation reason for terminal rejection statuses when the
+    // column exists and a reason was supplied (or clear it when leaving such a status).
+    if (tableColumnExists('orders', 'cancellation_reason')) {
+        if (in_array($canonical_new_status, ['Issued Without Repair', 'Repair Cancelled'], true) && $incoming_cancellation_reason !== '') {
+            $sql .= ', cancellation_reason = ?';
+            $params[] = $incoming_cancellation_reason;
+        } elseif (!in_array($canonical_new_status, ['Issued Without Repair', 'Repair Cancelled'], true)) {
+            $sql .= ', cancellation_reason = ?';
+            $params[] = null;
+        }
+    }
+
+    $sql .= ' WHERE id = ?';
+    $params[] = $order_id;
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
@@ -111,13 +130,14 @@ try {
     $technician_id = ($is_admin && isset($_POST['technician_id'])) ? $_POST['technician_id'] : $current['technician_id'];
     $final_cost = isset($_POST['final_cost']) ? (float)$_POST['final_cost'] : (float)$current['final_cost'];
 
-    $finishing_statuses = ['Ready', 'Issued', 'Issued Without Repair'];
-    $was_finished = in_array($canonical_current_status, $finishing_statuses, true);
-    $is_finishing = in_array($canonical_new_status, $finishing_statuses, true);
+    // Inventory is only consumed for actually-repaired/handed-over statuses.
+    $inventory_consuming_statuses = ['Ready', 'Issued'];
+    $was_consuming = in_array($canonical_current_status, $inventory_consuming_statuses, true);
+    $is_consuming = in_array($canonical_new_status, $inventory_consuming_statuses, true);
 
     if ($current['status'] !== $new_status) {
-        if (!$was_finished && $is_finishing) {
-            processOrderInventoryChange($order_id, $is_finishing, $was_finished);
+        if (!$was_consuming && $is_consuming) {
+            processOrderInventoryChange($order_id, $is_consuming, $was_consuming);
 
             if ($canonical_new_status === 'Ready' && get_setting('acc_auto_create_invoice', '0') == '1') {
                 $invoiceResult = createLocalInvoiceForCompletedOrder($pdo, (int)$order_id, $_POST['final_cost'] ?? null);
@@ -127,8 +147,9 @@ try {
                     error_log('Auto invoice creation failed for order #' . $order_id . ': ' . ($invoiceResult['error'] ?? 'unknown error'));
                 }
             }
-        } elseif ($was_finished && !$is_finishing) {
-            processOrderInventoryChange($order_id, $is_finishing, $was_finished);
+        } elseif ($was_consuming && !$is_consuming) {
+            processOrderInventoryChange($order_id, $is_consuming, $was_consuming);
+            cancelAutoInvoicesForOrder($pdo, (int)$order_id);
         }
         logOrderStatusChange($order_id, $current['status'], $new_status);
         sendOrderStatusAdminNotification($order_id, $canonical_new_status, $final_cost);

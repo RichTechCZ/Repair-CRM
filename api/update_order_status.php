@@ -23,7 +23,11 @@ if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
 $order_id = $_REQUEST['order_id'] ?? null;
 $new_status = $_REQUEST['status'] ?? null;
 $final_cost = $_REQUEST['final_cost'] ?? null;
-$is_admin = hasPermission('admin_access');
+    if ($final_cost !== null && $final_cost !== '' && (float)$final_cost < 0) {
+        echo json_encode(['success' => false, 'message' => __('required_for_issue')]);
+        exit;
+    }
+    $is_admin = hasPermission('admin_access');
 $technician_id = $is_admin ? ($_REQUEST['technician_id'] ?? null) : null;
 $cancellation_reason = $_REQUEST['cancellation_reason'] ?? null;
 $shipping_method = trim($_REQUEST['shipping_method'] ?? '');
@@ -62,7 +66,7 @@ try {
     $pdo->beginTransaction();
     $invoice_to_sync = null;
 
-    $stmt = $pdo->prepare('SELECT status, technician_id, estimated_cost, final_cost, shipping_method FROM orders WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT status, technician_id, estimated_cost, final_cost, shipping_method, device_brand, device_model, problem_description FROM orders WHERE id = ?');
     $stmt->execute([$order_id]);
     $order_data = $stmt->fetch();
 
@@ -97,9 +101,12 @@ try {
         }
     }
 
-    $finishing_statuses = ['Ready', 'Issued', 'Issued Without Repair'];
-    $was_finished = in_array($canonical_current_status, $finishing_statuses, true);
-    $is_finishing = in_array($canonical_new_status, $finishing_statuses, true);
+    // Inventory is only consumed when a device is actually repaired and handed over.
+    // "Issued Without Repair" / "Repair Cancelled" return the device unrepaired, so
+    // parts must NOT be written off — they go back to stock.
+    $inventory_consuming_statuses = ['Ready', 'Issued'];
+    $was_consuming = in_array($canonical_current_status, $inventory_consuming_statuses, true);
+    $is_consuming = in_array($canonical_new_status, $inventory_consuming_statuses, true);
 
     $sql = 'UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP';
     $params = [$new_status];
@@ -147,8 +154,8 @@ try {
         logOrderStatusChange($order_id, $current_status, $new_status);
     }
 
-    if (!$was_finished && $is_finishing) {
-        processOrderInventoryChange($order_id, $is_finishing, $was_finished);
+    if (!$was_consuming && $is_consuming) {
+        processOrderInventoryChange($order_id, $is_consuming, $was_consuming);
         if ($canonical_new_status === 'Ready' && get_setting('acc_auto_create_invoice', '0') == '1') {
             $invoiceResult = createLocalInvoiceForCompletedOrder($pdo, (int)$order_id, $final_cost);
             if ($invoiceResult['success'] ?? false) {
@@ -157,8 +164,11 @@ try {
                 error_log('Auto invoice creation failed for order #' . $order_id . ': ' . ($invoiceResult['error'] ?? 'unknown error'));
             }
         }
-    } elseif ($was_finished && !$is_finishing) {
-        processOrderInventoryChange($order_id, $is_finishing, $was_finished);
+    } elseif ($was_consuming && !$is_consuming) {
+        // Leaving a repaired state (revert to In Repair, or move to unrepaired
+        // terminal statuses): return parts to stock and cancel auto-created invoices.
+        processOrderInventoryChange($order_id, $is_consuming, $was_consuming);
+        cancelAutoInvoicesForOrder($pdo, (int)$order_id);
     }
 
     $pdo->commit();
@@ -170,6 +180,26 @@ try {
 
     if ($current_status !== $new_status) {
         sendOrderStatusAdminNotification($order_id, $canonical_new_status, $final_cost);
+    }
+
+    // Notify the newly assigned technician (per AGENTS.md: technicians are notified
+    // about newly created/assigned orders). Only fires on an actual reassignment.
+    $effective_tech_id = ($technician_id !== null && $technician_id !== '')
+        ? (int)$technician_id
+        : (int)($current_tech_id ?? 0);
+    if ($effective_tech_id && $effective_tech_id !== (int)($current_tech_id ?? 0)) {
+        $tech = $pdo->prepare("SELECT telegram_id FROM technicians WHERE id = ? AND is_active = 1");
+        $tech->execute([$effective_tech_id]);
+        $techTelegram = $tech->fetchColumn();
+        if ($techTelegram) {
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
+            $link = $protocol . ($_SERVER['HTTP_HOST'] ?? '') . '/view_order.php?id=' . (int)$order_id;
+            $msg  = sprintf(__('tg_new_order'), $order_id) . "\n";
+            $msg .= sprintf(__('tg_device'), trim(($order_data['device_brand'] ?? '') . ' ' . ($order_data['device_model'] ?? ''))) . "\n";
+            $msg .= sprintf(__('tg_problem'), mb_substr((string)($order_data['problem_description'] ?? ''), 0, 100)) . "\n";
+            $msg .= sprintf(__('tg_open_link'), $link);
+            sendTelegramNotification($techTelegram, $msg);
+        }
     }
 
     echo json_encode(['success' => true, 'message' => 'Status updated', 'myinvoice_sync' => $sync_result]);

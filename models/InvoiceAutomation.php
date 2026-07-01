@@ -108,6 +108,38 @@ function createLocalInvoiceForCompletedOrder(PDO $pdo, int $orderId, $finalCost 
     return ['success' => true, 'id' => $invoiceId, 'created' => true];
 }
 
+/**
+ * Cancel auto-created, still-unpaid invoices for an order.
+ *
+ * Called when an order leaves a "repaired" state (Ready/Issued) — e.g. reverted
+ * to In Repair or moved to an unrepaired terminal status — so that a stale
+ * invoice does not remain issued for a job that is back in progress or aborted.
+ * Only invoices created by the automation (notes start with "Auto-created") and
+ * not yet paid are touched; manually created or paid invoices are preserved.
+ */
+function cancelAutoInvoicesForOrder(PDO $pdo, int $orderId): int {
+    $stmt = $pdo->prepare(
+        "SELECT id FROM invoices
+         WHERE order_id = ?
+           AND status IN ('issued', 'draft')
+           AND notes LIKE 'Auto-created%'
+         FOR UPDATE"
+    );
+    $stmt->execute([$orderId]);
+    $ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    if (!$ids) {
+        return 0;
+    }
+
+    $cancel = $pdo->prepare("UPDATE invoices SET status = 'cancelled' WHERE id = ?");
+    foreach ($ids as $invoiceId) {
+        $cancel->execute([(int)$invoiceId]);
+    }
+
+    return count($ids);
+}
+
 function syncInvoiceToMyInvoice(PDO $pdo, int $invoiceId): array {
     if (myInvoiceConfig('MYINVOICE_ENABLED', 'myinvoice_enabled', '1') !== '1') {
         return ['success' => true, 'skipped' => true, 'message' => 'MyInvoice sync disabled'];
