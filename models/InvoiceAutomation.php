@@ -42,6 +42,14 @@ function createLocalInvoiceForCompletedOrder(PDO $pdo, int $orderId, $finalCost 
         $price = ($order['final_cost'] !== null && $order['final_cost'] !== '') ? $order['final_cost'] : $order['estimated_cost'];
     }
     $price = (float)$price;
+
+    // final_cost is the work charge only ("without parts"). Add the parts revenue
+    // (order_items.price * quantity) so the invoice reflects the full amount due.
+    $partsStmt = $pdo->prepare("SELECT COALESCE(SUM(quantity * price), 0) FROM order_items WHERE order_id = ?");
+    $partsStmt->execute([$orderId]);
+    $partsRevenue = (float)$partsStmt->fetchColumn();
+    $price += $partsRevenue;
+
     if ($price <= 0) {
         return ['success' => false, 'error' => 'Final cost is missing or zero'];
     }

@@ -40,6 +40,14 @@ try {
     // Format: Prefix + 4 digits (e.g. 20260001)
     $invoice_number = $prefix . str_pad($next_num, 4, '0', STR_PAD_LEFT);
 
+    // Total = work cost + parts revenue. final_cost is explicitly "work (without parts)",
+    // so prices from order_items must be added to get the true invoiceable total.
+    $work_cost = (float)($order['final_cost'] ?: $order['estimated_cost'] ?: 0);
+    $parts_stmt = $pdo->prepare("SELECT COALESCE(SUM(quantity * price), 0) FROM order_items WHERE order_id = ?");
+    $parts_stmt->execute([$order_id]);
+    $parts_revenue = (float)$parts_stmt->fetchColumn();
+    $total_amount = $work_cost + $parts_revenue;
+
     echo json_encode([
         'success' => true,
         'order' => $order,
@@ -48,7 +56,7 @@ try {
         'date_issue' => date('Y-m-d'),
         'date_tax' => date('Y-m-d'),
         'date_due' => date('Y-m-d', strtotime('+14 days')),
-        'total_amount' => $order['final_cost'] ?: $order['estimated_cost']
+        'total_amount' => $total_amount
     ]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);

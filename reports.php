@@ -70,10 +70,13 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
             o.shipping_date,
             inv.total_amount AS invoice_amount,
             COALESCE(inv.payment_date, DATE(o.shipping_date)) AS finance_date,
-            (SELECT SUM(oi2.quantity * invt.cost_price)
+            (SELECT COALESCE(SUM(oi2.quantity * COALESCE(invt.cost_price, oi2.price)), 0)
              FROM order_items oi2
-             JOIN inventory invt ON oi2.inventory_id = invt.id
-             WHERE oi2.order_id = o.id) AS inventory_cost
+             LEFT JOIN inventory invt ON oi2.inventory_id = invt.id
+             WHERE oi2.order_id = o.id) AS inventory_cost,
+            (SELECT COALESCE(SUM(oi3.quantity * oi3.price), 0)
+             FROM order_items oi3
+             WHERE oi3.order_id = o.id) AS parts_revenue
         FROM orders o
         LEFT JOIN invoices inv ON inv.order_id = o.id AND inv.status = 'paid'
         WHERE o.status IN ('Issued','Collected')
@@ -98,10 +101,14 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
     $engineer_rate = $tech_id ? ($rates[$tech_id] ?? 50) : 50;
 
     foreach ($orders as $o) {
-        // Revenue priority: final_cost → invoice total_amount → estimated_cost
-        $rev    = $o['final_cost'] !== null ? (float)$o['final_cost']
+        // Revenue = work cost (final_cost/estimated_cost) + parts revenue (order_items.price).
+        // final_cost is explicitly labeled "work cost (without parts)", so parts
+        // charges stored in order_items.price must be added to get true revenue.
+        $work_rev = $o['final_cost'] !== null ? (float)$o['final_cost']
                 : ($o['invoice_amount'] !== null ? (float)$o['invoice_amount']
                 : (float)($o['estimated_cost'] ?? 0));
+        $parts_rev = (float)($o['parts_revenue'] ?? 0);
+        $rev    = $work_rev + $parts_rev;
         $exp    = (float)($o['extra_expenses'] ?? 0);
         $p_cost = (float)($o['inventory_cost'] ?? 0);
 
@@ -400,7 +407,11 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
                             $stmt = $pdo->prepare("
                                 SELECT o.*, c.first_name, c.last_name,
                                     COALESCE(inv.payment_date, DATE(o.shipping_date)) AS finance_date,
-                                    (SELECT SUM(oi.quantity * invt.cost_price) FROM order_items oi JOIN inventory invt ON oi.inventory_id = invt.id WHERE oi.order_id = o.id) as inventory_cost
+                                    (SELECT COALESCE(SUM(oi.quantity * COALESCE(invt.cost_price, oi.price)), 0)
+                                     FROM order_items oi LEFT JOIN inventory invt ON oi.inventory_id = invt.id
+                                     WHERE oi.order_id = o.id) as inventory_cost,
+                                    (SELECT COALESCE(SUM(oi2.quantity * oi2.price), 0)
+                                     FROM order_items oi2 WHERE oi2.order_id = o.id) as parts_revenue
                                 FROM orders o
                                 JOIN customers c ON o.customer_id = c.id
                                 LEFT JOIN invoices inv ON inv.order_id = o.id AND inv.status = 'paid'
@@ -409,10 +420,11 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
                                 ORDER BY finance_date DESC
                             ");
                             $stmt->execute([$selected_tech_id, $start_date, $end_date]);
-                            
-                            while($r = $stmt->fetch()): 
-                                $rev = $r['final_cost'] !== null ? $r['final_cost'] : $r['estimated_cost'];
-                                $rev = floatval($rev ?: 0);
+
+                            while($r = $stmt->fetch()):
+                                $work_rev = floatval(($r['final_cost'] !== null ? $r['final_cost'] : $r['estimated_cost']) ?: 0);
+                                $parts_rev = floatval($r['parts_revenue'] ?: 0);
+                                $rev = $work_rev + $parts_rev;
                                 $p_cost = floatval($r['inventory_cost'] ?: 0);
                                 $e_cost = floatval($r['extra_expenses'] ?: 0);
                                 $net = $rev - $p_cost - $e_cost;
