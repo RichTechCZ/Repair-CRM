@@ -68,7 +68,13 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
             o.extra_expenses,
             o.technician_id,
             o.shipping_date,
-            COALESCE(inv.payment_date, DATE(o.shipping_date)) AS finance_date,
+            COALESCE(
+                (SELECT inv.payment_date FROM invoices inv
+                 WHERE inv.order_id = o.id AND inv.status = 'paid'
+                   AND (inv.invoice_type IS NULL OR inv.invoice_type != 'credit_note')
+                 ORDER BY inv.payment_date DESC LIMIT 1),
+                DATE(o.shipping_date)
+            ) AS finance_date,
             (SELECT COALESCE(SUM(oi2.quantity * COALESCE(invt.cost_price, oi2.price)), 0)
              FROM order_items oi2
              LEFT JOIN inventory invt ON oi2.inventory_id = invt.id
@@ -77,9 +83,14 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
              FROM order_items oi3
              WHERE oi3.order_id = o.id) AS parts_revenue
         FROM orders o
-        LEFT JOIN invoices inv ON inv.order_id = o.id AND inv.status = 'paid'
         WHERE o.status IN ('Issued','Collected')
-          AND COALESCE(inv.payment_date, DATE(o.shipping_date)) BETWEEN ? AND ?
+          AND COALESCE(
+                (SELECT inv.payment_date FROM invoices inv
+                 WHERE inv.order_id = o.id AND inv.status = 'paid'
+                   AND (inv.invoice_type IS NULL OR inv.invoice_type != 'credit_note')
+                 ORDER BY inv.payment_date DESC LIMIT 1),
+                DATE(o.shipping_date)
+              ) BETWEEN ? AND ?
     " . $fin_tech_cond;
 
     $stmt = $pdo->prepare($sql_orders);
@@ -405,7 +416,13 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
                             $current_url = urlencode($_SERVER['REQUEST_URI']);
                             $stmt = $pdo->prepare("
                                 SELECT o.*, c.first_name, c.last_name,
-                                    COALESCE(inv.payment_date, DATE(o.shipping_date)) AS finance_date,
+                                    COALESCE(
+                                        (SELECT inv.payment_date FROM invoices inv
+                                         WHERE inv.order_id = o.id AND inv.status = 'paid'
+                                           AND (inv.invoice_type IS NULL OR inv.invoice_type != 'credit_note')
+                                         ORDER BY inv.payment_date DESC LIMIT 1),
+                                        DATE(o.shipping_date)
+                                    ) AS finance_date,
                                     (SELECT COALESCE(SUM(oi.quantity * COALESCE(invt.cost_price, oi.price)), 0)
                                      FROM order_items oi LEFT JOIN inventory invt ON oi.inventory_id = invt.id
                                      WHERE oi.order_id = o.id) as inventory_cost,
@@ -413,22 +430,30 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
                                      FROM order_items oi2 WHERE oi2.order_id = o.id) as parts_revenue
                                 FROM orders o
                                 JOIN customers c ON o.customer_id = c.id
-                                LEFT JOIN invoices inv ON inv.order_id = o.id AND inv.status = 'paid'
                                 WHERE o.technician_id = ? AND o.status IN ('Issued','Collected')
-                                  AND COALESCE(inv.payment_date, DATE(o.shipping_date)) BETWEEN ? AND ?
+                                  AND COALESCE(
+                                        (SELECT inv.payment_date FROM invoices inv
+                                         WHERE inv.order_id = o.id AND inv.status = 'paid'
+                                           AND (inv.invoice_type IS NULL OR inv.invoice_type != 'credit_note')
+                                         ORDER BY inv.payment_date DESC LIMIT 1),
+                                        DATE(o.shipping_date)
+                                      ) BETWEEN ? AND ?
                                 ORDER BY finance_date DESC
                             ");
                             $stmt->execute([$selected_tech_id, $start_date, $end_date]);
 
                             while($r = $stmt->fetch()):
-                                $work_rev = floatval(($r['final_cost'] !== null ? $r['final_cost'] : $r['estimated_cost']) ?: 0);
+                                $work_cost = floatval(($r['final_cost'] !== null ? $r['final_cost'] : $r['estimated_cost']) ?: 0);
                                 $parts_rev = floatval($r['parts_revenue'] ?: 0);
-                                $rev = $work_rev + $parts_rev;
+                                $rev = $work_cost + $parts_rev;
                                 $p_cost = floatval($r['inventory_cost'] ?: 0);
                                 $e_cost = floatval($r['extra_expenses'] ?: 0);
+                                // Net profit per order (can be negative — must NOT floor)
                                 $net = $rev - $p_cost - $e_cost;
-                                if ($net < 0) $net = 0;
-                                $earn = $net * ($is['engineer_rate'] / 100);
+                                // Engineer payout = work_cost − parts_cost − 50% extra (floored at 0)
+                                $earn_base = $work_cost - $p_cost - ($e_cost / 2);
+                                if ($earn_base < 0) $earn_base = 0;
+                                $earn = $earn_base * ($is['engineer_rate'] / 100);
                             ?>
                             <tr>
                                 <td><a href="view_order.php?id=<?php echo $r['id']; ?>&return=<?php echo $current_url; ?>" class="fw-bold">#<?php echo $r['id']; ?></a></td>
@@ -437,7 +462,7 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
                                 <td><?php echo htmlspecialchars($r['first_name'] . ' ' . $r['last_name']); ?></td>
                                 <td class="text-end fw-bold"><?php echo formatMoney($rev); ?></td>
                                 <td class="text-end text-muted small"><?php echo $p_cost > 0 ? '-'.formatMoney($p_cost) : '—'; ?></td>
-                                <td class="text-end"><?php echo formatMoney($net); ?></td>
+                                <td class="text-end <?php echo $net < 0 ? 'text-danger' : ''; ?>"><?php echo formatMoney($net); ?></td>
                                 <td class="text-end fw-bold text-primary"><?php echo formatMoney($earn); ?></td>
                             </tr>
                             <?php endwhile; ?>
