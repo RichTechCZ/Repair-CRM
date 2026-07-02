@@ -68,7 +68,6 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
             o.extra_expenses,
             o.technician_id,
             o.shipping_date,
-            inv.total_amount AS invoice_amount,
             COALESCE(inv.payment_date, DATE(o.shipping_date)) AS finance_date,
             (SELECT COALESCE(SUM(oi2.quantity * COALESCE(invt.cost_price, oi2.price)), 0)
              FROM order_items oi2
@@ -101,32 +100,32 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
     $engineer_rate = $tech_id ? ($rates[$tech_id] ?? 50) : 50;
 
     foreach ($orders as $o) {
-        // Revenue = work cost (final_cost/estimated_cost) + parts revenue (order_items.price).
-        // final_cost is explicitly labeled "work cost (without parts)", so parts
-        // charges stored in order_items.price must be added to get true revenue.
-        $work_rev = $o['final_cost'] !== null ? (float)$o['final_cost']
-                : ($o['invoice_amount'] !== null ? (float)$o['invoice_amount']
-                : (float)($o['estimated_cost'] ?? 0));
+        // final_cost is the repair WORK cost only; parts are billed separately
+        // via order_items.price (print_order.php: total = final_cost + parts).
+        $work_cost = $o['final_cost'] !== null ? (float)$o['final_cost']
+                : (float)($o['estimated_cost'] ?? 0);
         $parts_rev = (float)($o['parts_revenue'] ?? 0);
-        $rev    = $work_rev + $parts_rev;
-        $exp    = (float)($o['extra_expenses'] ?? 0);
-        $p_cost = (float)($o['inventory_cost'] ?? 0);
+        $rev       = $work_cost + $parts_rev;            // total charged to customer
+        $exp       = (float)($o['extra_expenses'] ?? 0);
+        $p_cost    = (float)($o['inventory_cost'] ?? 0); // parts purchase cost
 
         $revenue    += $rev;
         $expenses   += $exp;
         $parts_cost += $p_cost;
 
-        // Net = revenue minus parts and extra expenses.
-        // Technician earns 0 if net is negative (does not 'pay' the SC back).
-        $net  = $rev - $p_cost - $exp;
-        if ($net < 0) $net = 0;
+        // Engineer payout base = work cost − parts purchase cost − 50% of extra
+        // expenses. The engineer never owes the SC, so the base is floored at 0.
+        $earn_base = $work_cost - $p_cost - ($exp / 2);
+        if ($earn_base < 0) $earn_base = 0;
 
         $rate = $rates[$o['technician_id']] ?? $engineer_rate;
-        $engineer_earnings += $net * ($rate / 100);
+        $engineer_earnings += $earn_base * ($rate / 100);
     }
 
-    $net_revenue = $revenue - $parts_cost - $expenses;
-    $sc_profit   = $net_revenue - $engineer_earnings;
+    // Net profit (чистая прибыль) = total revenue − parts purchase cost − extra
+    // expenses. Engineer payouts are tracked separately and NOT subtracted here.
+    $net_profit = $revenue - $parts_cost - $expenses;
+    $sc_income  = $net_profit - $engineer_earnings;
 
     return [
         'received' => $received,
@@ -136,10 +135,10 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
         'revenue' => $revenue,
         'expenses' => $expenses,
         'parts_cost' => $parts_cost,
-        'net_revenue' => $net_revenue,
+        'net_profit' => $net_profit,
         'engineer_rate' => $engineer_rate,
         'earnings' => $engineer_earnings,
-        'profit' => $sc_profit
+        'sc_income' => $sc_income
     ];
 }
 ?>
@@ -201,7 +200,7 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
                         $totals = [
                             'received' => 0, 'in_progress' => 0, 'completed' => 0, 'cancelled' => 0,
                             'revenue' => 0, 'parts_cost' => 0, 'expenses' => 0,
-                            'earnings' => 0, 'profit' => 0
+                            'earnings' => 0, 'sc_income' => 0
                         ];
 
                         foreach ($techs as $t):
@@ -214,7 +213,7 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
                             $totals['parts_cost'] += $s['parts_cost'];
                             $totals['expenses'] += $s['expenses'];
                             $totals['earnings'] += $s['earnings'];
-                            $totals['profit'] += $s['profit'];
+                            $totals['sc_income'] += $s['sc_income'];
                         ?>
                         <tr>
                             <td>
@@ -230,7 +229,7 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
                             <td class="text-end text-muted small"><?php echo $s['parts_cost'] > 0 ? '-'.formatMoney($s['parts_cost']) : '—'; ?></td>
                             <td class="text-end text-muted small"><?php echo $s['expenses'] > 0 ? '-'.formatMoney($s['expenses']) : '—'; ?></td>
                             <td class="text-end fw-bold text-primary"><?php echo formatMoney($s['earnings']); ?></td>
-                            <td class="text-end text-success fw-bold"><?php echo formatMoney($s['profit']); ?></td>
+                            <td class="text-end text-success fw-bold"><?php echo formatMoney($s['sc_income']); ?></td>
                             <td class="text-center"><span class="badge bg-secondary"><?php echo $s['engineer_rate']; ?>%</span></td>
                         </tr>
                         <?php endforeach; ?>
@@ -243,7 +242,7 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
                             <td class="text-end text-muted small">-<?php echo formatMoney($totals['parts_cost']); ?></td>
                             <td class="text-end text-muted small">-<?php echo formatMoney($totals['expenses']); ?></td>
                             <td class="text-end text-primary"><?php echo formatMoney($totals['earnings']); ?></td>
-                            <td class="text-end text-success"><?php echo formatMoney($totals['profit']); ?></td>
+                            <td class="text-end text-success"><?php echo formatMoney($totals['sc_income']); ?></td>
                             <td></td>
                         </tr>
                     </tfoot>
@@ -298,13 +297,13 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
                             <span><?php echo __('extra_expenses'); ?>:</span>
                             <span class="text-danger">- <?php echo formatMoney($gs['expenses']); ?></span>
                         </li>
-                        <li class="list-group-item d-flex justify-content-between px-0">
-                            <span><?php echo __('engineer_payouts'); ?>:</span>
-                            <span class="text-danger">- <?php echo formatMoney($gs['earnings']); ?></span>
-                        </li>
                         <li class="list-group-item d-flex justify-content-between px-0 bg-transparent p-2 mt-2 border-top">
                             <span class="fw-bold text-white"><?php echo __('net_profit'); ?>:</span>
-                            <span class="text-success fw-bold fs-5"><?php echo formatMoney($gs['profit']); ?></span>
+                            <span class="text-success fw-bold fs-5"><?php echo formatMoney($gs['net_profit']); ?></span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between px-0 small text-muted">
+                            <span><?php echo __('engineer_payouts'); ?>:</span>
+                            <span><?php echo formatMoney($gs['earnings']); ?></span>
                         </li>
                     </ul>
                 </div>
@@ -380,7 +379,7 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
                     <div class="col-md-3">
                         <div class="card p-3 border shadow-none text-center">
                             <div class="small text-muted mb-1"><?php echo __('sc_net_income'); ?></div>
-                            <h3 class="mb-0 text-success"><?php echo formatMoney($is['profit']); ?></h3>
+                            <h3 class="mb-0 text-success"><?php echo formatMoney($is['sc_income']); ?></h3>
                         </div>
                     </div>
                     <?php endif; ?>

@@ -79,6 +79,12 @@ Default section order:
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 - Employees and technicians must only see and work with orders assigned to their own `technician_id`; technician-side broad permissions must not expose other technicians' orders.
 - Telegram notifications to technicians are limited to newly created/assigned orders. Order status-change notifications go only to the administrator chat `2427615` unless a more specific `status_change_admin_telegram_id` setting is configured.
+- Financial reporting in `reports.php` uses these binding formulas (centralized in `getDetailedStats()`):
+  - `final_cost` is the repair WORK cost only; parts are billed separately via `order_items.price` (customer total = `final_cost` + Σ `order_items.price × qty`).
+  - Parts purchase cost = Σ `order_items.qty × inventory.cost_price` (falls back to `order_items.price` when `cost_price` is unknown).
+  - Net profit (чистая прибыль) = total revenue (work + parts charged) − parts purchase cost − extra expenses. Engineer payouts are NOT subtracted from net profit; they are tracked as a separate metric.
+  - Engineer payout per order = max(0, `final_cost` − parts purchase cost − ½ × extra expenses) × (technician rate / 100). The base is floored at 0 so engineers never owe the SC; parts revenue never enters the payout base.
+  - SC income (Доход СЦ) = net profit − total engineer payouts.
 
 ## Child DOX Index
 
