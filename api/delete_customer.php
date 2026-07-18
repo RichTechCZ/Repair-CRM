@@ -1,26 +1,21 @@
 <?php
-ob_start();
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
-
-if (ob_get_length()) ob_clean();
-header('Content-Type: application/json');
-
-if (!isset($_SESSION['user_id']) || !hasPermission('edit_customers')) {
-    echo json_encode(['success' => false, 'message' => __('unauthorized')]);
-    exit;
-}
-
-if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => __('csrf_token_invalid')]);
-    exit;
-}
-
-$id = $_POST['id'] ?? $_GET['id'] ?? null;
+require_once __DIR__ . '/../includes/api_bootstrap.php';
+api_bootstrap([
+    'post' => true,
+    'csrf' => true,
+    'permission' => 'edit_customers',
+    'rate' => 'delete_customer',
+]);
+$id = (int)($_POST['id'] ?? 0);
 
 if (!$id) {
     echo json_encode(['success' => false, 'message' => 'ID не указан']);
+    exit;
+}
+
+if (!currentUserCanViewCustomer($id)) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => __('access_denied_msg')]);
     exit;
 }
 
@@ -37,6 +32,6 @@ try {
     
     echo json_encode(['success' => true]);
 } catch (Exception $e) {
-    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => publicExceptionMessage($e)]);
 }
 ?>

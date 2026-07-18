@@ -21,7 +21,11 @@ function hasPermission($permission) {
         if (!isset($_SESSION['_perms'])) {
             $stmt = $pdo->prepare('SELECT permission FROM tech_permissions WHERE technician_id = ?');
             $stmt->execute([$_SESSION['tech_id']]);
-            $_SESSION['_perms'] = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            $raw = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            $allowed = array_fill_keys(getAllowedPermissionKeys(), true);
+            $_SESSION['_perms'] = array_values(array_filter($raw, static function ($p) use ($allowed) {
+                return isset($allowed[$p]);
+            }));
         }
 
         // admin_access grants everything
@@ -101,6 +105,54 @@ function currentUserCanViewCustomer($customer_id): bool {
 }
 
 /**
+ * True when the current user must only see data tied to their own technician_id.
+ * Users with admin_access are not scoped.
+ */
+function isTechnicianScoped(): bool {
+    if (hasPermission('admin_access')) {
+        return false;
+    }
+    return ($_SESSION['role'] ?? '') === 'technician' && !empty($_SESSION['tech_id']);
+}
+
+/**
+ * Current session technician id, or null.
+ */
+function currentTechnicianId(): ?int {
+    if (empty($_SESSION['tech_id'])) {
+        return null;
+    }
+    return (int)$_SESSION['tech_id'];
+}
+
+/**
+ * Client-safe exception message. Logs DB/system errors; passes intentional business messages through.
+ */
+function publicExceptionMessage(Throwable $e): string {
+    if ($e instanceof PDOException) {
+        error_log('PDO: ' . $e->getMessage());
+        return sprintf(__('db_error'), '');
+    }
+
+    $msg = trim((string)$e->getMessage());
+    if ($msg === '') {
+        error_log(get_class($e) . ': empty message');
+        return __('error');
+    }
+
+    // Hide internals (SQL, stack traces, filesystem paths)
+    if (preg_match(
+        '/SQLSTATE|Stack trace| on line \d+|Failed opening|Permission denied|[A-Za-z]:\\\\|\/(?:var|home|usr|tmp|etc)\//i',
+        $msg
+    )) {
+        error_log(get_class($e) . ': ' . $msg);
+        return __('error');
+    }
+
+    return $msg;
+}
+
+/**
  * Invalidate the in-session permissions cache.
  * Call after setTechPermissions() or on logout.
  */
@@ -136,42 +188,101 @@ function getTechPermissions($tech_id) {
     global $pdo;
     $stmt = $pdo->prepare("SELECT permission FROM tech_permissions WHERE technician_id = ?");
     $stmt->execute([$tech_id]);
-    return $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $perms = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    // Drop obsolete keys so the UI never looks like they still apply
+    $allowed = array_fill_keys(getAllowedPermissionKeys(), true);
+    return array_values(array_filter($perms, static function ($p) use ($allowed) {
+        return isset($allowed[$p]);
+    }));
 }
 
 /**
- * Set permissions for a technician (replaces all existing)
+ * Set permissions for a technician (replaces all existing).
+ * Only keys from getAvailablePermissions() are stored (whitelist).
  */
 function setTechPermissions($tech_id, $permissions) {
     global $pdo;
-    
+
+    $tech_id = (int)$tech_id;
+    $allowed = array_fill_keys(getAllowedPermissionKeys(), true);
+    $clean = [];
+    foreach ((array)$permissions as $perm) {
+        $perm = (string)$perm;
+        if (isset($allowed[$perm])) {
+            $clean[$perm] = true;
+        }
+    }
+    $clean = array_keys($clean);
+
     // Delete existing
     $stmt = $pdo->prepare("DELETE FROM tech_permissions WHERE technician_id = ?");
     $stmt->execute([$tech_id]);
-    
+
     // Insert new
-    if (!empty($permissions)) {
+    if (!empty($clean)) {
         $stmt = $pdo->prepare("INSERT INTO tech_permissions (technician_id, permission) VALUES (?, ?)");
-        foreach ($permissions as $perm) {
+        foreach ($clean as $perm) {
             $stmt->execute([$tech_id, $perm]);
         }
     }
+
+    // Drop any obsolete permission rows still stored for other techs
+    purgeObsoleteTechPermissions();
 
     // Invalidate session permission cache so changes take effect immediately
     invalidatePermissionsCache();
 }
 
 /**
- * Available permissions list with descriptions
+ * Active permission keys that can be assigned in Settings → Staff.
+ *
+ * Binding matrix (DOX):
+ * - session role `admin` (users table) → full access (hasPermission always true)
+ * - `admin_access` → full CRM access; not technician-scoped
+ * - no special order permission → every technician can view/edit ONLY their own
+ *   orders (technician_id match). Cross-tech order access is never grantable.
+ * - `edit_customers` → customers UI/API; technicians remain scoped to customers
+ *   they share an order with
+ * - `manage_passwords` → change admin account passwords in settings
+ *
+ * Removed (never enforced, contradicted isolation): view_all_orders, edit_orders
  */
 function getAvailablePermissions() {
     return [
         'admin_access' => ['name' => __('perm_admin_access'), 'desc' => __('perm_admin_access_desc'), 'icon' => 'fas fa-crown text-warning'],
-        'view_all_orders' => ['name' => __('perm_view_all_orders'), 'desc' => __('perm_view_all_orders_desc'), 'icon' => 'fas fa-eye text-info'],
-        'edit_orders' => ['name' => __('perm_edit_orders'), 'desc' => __('perm_edit_orders_desc'), 'icon' => 'fas fa-edit text-primary'],
         'edit_customers' => ['name' => __('perm_edit_customers'), 'desc' => __('perm_edit_customers_desc'), 'icon' => 'fas fa-user-edit text-success'],
         'manage_passwords' => ['name' => __('perm_manage_passwords'), 'desc' => __('perm_manage_passwords_desc'), 'icon' => 'fas fa-key text-danger'],
     ];
+}
+
+/**
+ * @return list<string>
+ */
+function getAllowedPermissionKeys(): array {
+    return array_keys(getAvailablePermissions());
+}
+
+/**
+ * Delete tech_permissions rows that are no longer assignable.
+ */
+function purgeObsoleteTechPermissions(): void {
+    global $pdo;
+    if (!isset($pdo)) {
+        return;
+    }
+
+    $allowed = getAllowedPermissionKeys();
+    try {
+        if (empty($allowed)) {
+            $pdo->exec('DELETE FROM tech_permissions');
+            return;
+        }
+        $placeholders = implode(',', array_fill(0, count($allowed), '?'));
+        $stmt = $pdo->prepare("DELETE FROM tech_permissions WHERE permission NOT IN ($placeholders)");
+        $stmt->execute($allowed);
+    } catch (Throwable $e) {
+        error_log('purgeObsoleteTechPermissions: ' . $e->getMessage());
+    }
 }
 
 function getDeviceIcon($type) {

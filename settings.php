@@ -139,7 +139,7 @@ if (isset($_POST['delete_tech']) && $is_admin_check) {
 
 if (isset($_POST['save_permissions']) && $is_admin_check) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
-    setTechPermissions($_POST['tech_id'], $_POST['permissions'] ?? []);
+    setTechPermissions((int)($_POST['tech_id'] ?? 0), $_POST['permissions'] ?? []);
     header("Location: settings.php?tab=staff&perms_updated=1");
     exit;
 }
@@ -193,6 +193,12 @@ if (!$is_admin_user) {
         $active_tab = 'staff';
     }
 }
+
+// One-shot cleanup of obsolete permission rows (view_all_orders, edit_orders, …)
+if ($is_admin_user && $active_tab === 'staff') {
+    purgeObsoleteTechPermissions();
+}
+
 require_once 'includes/header.php';
 ?>
 
@@ -677,6 +683,9 @@ require_once 'includes/header.php';
         <input type="hidden" name="tech_id" value="<?php echo $t['id']; ?>">
         <div class="modal-header border-secondary bg-warning bg-opacity-10"><h5 class="modal-title"><?php echo __('permissions_title'); ?><?php echo htmlspecialchars($t['name']); ?></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
+            <div class="alert alert-info border-0 bg-info bg-opacity-10 text-white-75 small mb-3">
+                <i class="fas fa-info-circle me-1"></i><?php echo __('perm_orders_note'); ?>
+            </div>
             <?php $tech_perms = getTechPermissions($t['id']); foreach (getAvailablePermissions() as $pk => $pi): ?>
             <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="permissions[]" value="<?php echo $pk; ?>" id="p_<?php echo $t['id'].$pk; ?>" <?php echo in_array($pk, $tech_perms) ? 'checked' : ''; ?>><label class="form-check-label" for="p_<?php echo $t['id'].$pk; ?>"><strong><?php echo $pi['name']; ?></strong><div class="text-white-75 small"><?php echo $pi['desc']; ?></div></label></div>
             <?php endforeach; ?>

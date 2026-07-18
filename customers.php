@@ -4,58 +4,91 @@ require_once 'includes/functions.php';
 require_once 'includes/header.php';
 
 $customers = [];
+$total_customers = 0;
+$total_pages = 1;
+$page = 1;
+$order_counts = [];
+
 if (isset($pdo)) {
     try {
-        $limit = 50; // Show 50 customers per page
+        $limit = 50;
         $page = isset($_GET['cp']) && is_numeric($_GET['cp']) ? (int)$_GET['cp'] : 1;
         if ($page < 1) $page = 1;
         $offset = ($page - 1) * $limit;
 
-        $search = $_GET['search'] ?? '';
-        if (!empty($search)) {
-            $search = trim($search);
-            $exact_id_filter = is_numeric($search) ? " OR id = ?" : "";
-            
-            $count_stmt = $pdo->prepare("SELECT COUNT(*) FROM customers WHERE (first_name LIKE ? OR last_name LIKE ? OR phone LIKE ? OR email LIKE ? OR ico LIKE ? OR dic LIKE ? OR company LIKE ?$exact_id_filter)");
-            $term = "%$search%";
-            $params = [$term, $term, $term, $term, $term, $term, $term];
-            if (is_numeric($search)) $params[] = (int)$search;
-            $count_stmt->execute($params);
-            $total_customers = $count_stmt->fetchColumn();
+        $tech_scoped = isTechnicianScoped();
+        $tech_id = currentTechnicianId();
 
-            $stmt = $pdo->prepare("SELECT * FROM customers WHERE 
-                (first_name LIKE ? OR 
-                last_name LIKE ? OR 
-                phone LIKE ? OR 
-                email LIKE ? OR
-                ico LIKE ? OR
-                dic LIKE ? OR
-                company LIKE ?$exact_id_filter)
-                ORDER BY (CASE WHEN id = ? THEN 1 ELSE 2 END), last_name ASC LIMIT $limit OFFSET $offset");
-            $search_id = is_numeric($search) ? (int)$search : 0;
-            $exec_params = $params;
-            $exec_params[] = $search_id;
-            $stmt->execute($exec_params);
-        } else {
-            $total_customers = $pdo->query("SELECT COUNT(*) FROM customers")->fetchColumn();
-            $stmt = $pdo->query("SELECT * FROM customers ORDER BY last_name ASC LIMIT $limit OFFSET $offset");
+        $search = trim($_GET['search'] ?? '');
+        $where_parts = [];
+        $params = [];
+
+        if ($search !== '') {
+            $term = "%$search%";
+            $search_clause = '(first_name LIKE ? OR last_name LIKE ? OR phone LIKE ? OR email LIKE ? OR ico LIKE ? OR dic LIKE ? OR company LIKE ?';
+            $params = [$term, $term, $term, $term, $term, $term, $term];
+            if (is_numeric($search)) {
+                $search_clause .= ' OR id = ?';
+                $params[] = (int)$search;
+            }
+            $search_clause .= ')';
+            $where_parts[] = $search_clause;
         }
+
+        if ($tech_scoped) {
+            $where_parts[] = 'id IN (SELECT DISTINCT customer_id FROM orders WHERE technician_id = ?)';
+            $params[] = $tech_id;
+        }
+
+        $where_sql = $where_parts ? ('WHERE ' . implode(' AND ', $where_parts)) : '';
+
+        $count_stmt = $pdo->prepare("SELECT COUNT(*) FROM customers $where_sql");
+        $count_stmt->execute($params);
+        $total_customers = (int)$count_stmt->fetchColumn();
+
+        if ($search !== '') {
+            $search_id = is_numeric($search) ? (int)$search : 0;
+            $order_sql = 'ORDER BY (CASE WHEN id = ? THEN 1 ELSE 2 END), last_name ASC';
+            $exec_params = array_merge($params, [$search_id]);
+        } else {
+            $order_sql = 'ORDER BY last_name ASC';
+            $exec_params = $params;
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT * FROM customers $where_sql $order_sql LIMIT " . (int)$limit . " OFFSET " . (int)$offset
+        );
+        $stmt->execute($exec_params);
         $customers = $stmt->fetchAll();
-        $total_pages = ceil($total_customers / $limit);
-        
-        // Pre-count orders for these customers to fix N+1
-        $order_counts = [];
+        $total_pages = $total_customers > 0 ? (int)ceil($total_customers / $limit) : 1;
+
+        // Pre-count orders (scoped to this technician when applicable)
         if (!empty($customers)) {
             $customer_ids = array_column($customers, 'id');
             $placeholders = implode(',', array_fill(0, count($customer_ids), '?'));
-            $c_stmt = $pdo->prepare("SELECT customer_id, COUNT(*) as cnt FROM orders WHERE customer_id IN ($placeholders) GROUP BY customer_id");
-            $c_stmt->execute($customer_ids);
+            if ($tech_scoped) {
+                $c_stmt = $pdo->prepare(
+                    "SELECT customer_id, COUNT(*) as cnt FROM orders
+                     WHERE customer_id IN ($placeholders) AND technician_id = ?
+                     GROUP BY customer_id"
+                );
+                $c_stmt->execute(array_merge($customer_ids, [$tech_id]));
+            } else {
+                $c_stmt = $pdo->prepare(
+                    "SELECT customer_id, COUNT(*) as cnt FROM orders
+                     WHERE customer_id IN ($placeholders)
+                     GROUP BY customer_id"
+                );
+                $c_stmt->execute($customer_ids);
+            }
             while ($row = $c_stmt->fetch()) {
                 $order_counts[$row['customer_id']] = (int)$row['cnt'];
             }
         }
 
-    } catch (PDOException $e) { }
+    } catch (PDOException $e) {
+        error_log('customers.php: ' . $e->getMessage());
+    }
 }
 ?>
 
@@ -383,4 +416,3 @@ $(document).ready(function() {
 </script>
 
 <?php require_once 'includes/footer.php'; ?>
-

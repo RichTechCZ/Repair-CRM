@@ -1,19 +1,20 @@
 <?php
-ob_start();
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
-ob_clean();
-
-// add_order.php returns a redirect (not JSON), so handle errors differently
-if (!isset($_SESSION['user_id'])) {
-    header("Location: ../login.php");
-    exit;
-}
-
-// CSRF validation
-if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
-    die(__('csrf_token_invalid'));
-}
+// Form POST → redirect (not JSON).
+require_once __DIR__ . '/../includes/api_bootstrap.php';
+api_bootstrap([
+    'post' => true,
+    'csrf' => true,
+    'json' => false,
+    'rate' => 'add_order',
+    'fail' => static function (string $message, int $status): void {
+        if ($status === 401) {
+            header('Location: ../login.php');
+            exit;
+        }
+        http_response_code($status);
+        die($message);
+    },
+]);
 
 // ── Input validation ──────────────────────────────────────────────────────────
 $customer_id      = filter_input(INPUT_POST, 'customer_id', FILTER_VALIDATE_INT);

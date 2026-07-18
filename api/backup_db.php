@@ -1,19 +1,11 @@
 <?php
-ob_start();
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
-
-if (ob_get_length()) ob_clean();
-header('Content-Type: application/json');
-
-if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
-    die(json_encode(['success' => false, 'message' => __('access_denied_msg')]));
-}
-
-if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
-    http_response_code(403);
-    die(json_encode(['success' => false, 'message' => __('csrf_token_invalid')]));
-}
+require_once __DIR__ . '/../includes/api_bootstrap.php';
+api_bootstrap([
+    'post' => true,
+    'csrf' => true,
+    'role' => 'admin',
+    'rate' => 'backup_db',
+]);
 
 $configuredBackupDir = trim((string)(getenv('CRM_BACKUP_DIR') ?: ''));
 $backupDir = $configuredBackupDir !== ''
@@ -86,6 +78,6 @@ try {
     }
 
 } catch (Exception $e) {
-    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => publicExceptionMessage($e)]);
 }
 ?>

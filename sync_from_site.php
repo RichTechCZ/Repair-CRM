@@ -12,7 +12,20 @@ error_reporting(E_ALL);
 ini_set('display_errors', php_sapi_name() === 'cli' ? '1' : '0');
 
 if (php_sapi_name() !== 'cli') {
-    $provided_token = isset($_GET['token']) ? (string)$_GET['token'] : '';
+    // Token must NOT travel in query string (logs, Referer, browser history).
+    // Accept: X-Sync-Token header, Authorization: Bearer <token>, or POST field "token".
+    $provided_token = '';
+    $header_token = $_SERVER['HTTP_X_SYNC_TOKEN'] ?? '';
+    if ($header_token !== '') {
+        $provided_token = (string)$header_token;
+    } elseif (!empty($_SERVER['HTTP_AUTHORIZATION']) && preg_match('/^Bearer\s+(\S+)/i', (string)$_SERVER['HTTP_AUTHORIZATION'], $m)) {
+        $provided_token = $m[1];
+    } elseif (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) && preg_match('/^Bearer\s+(\S+)/i', (string)$_SERVER['REDIRECT_HTTP_AUTHORIZATION'], $m)) {
+        $provided_token = $m[1];
+    } elseif (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['token'])) {
+        $provided_token = (string)$_POST['token'];
+    }
+
     if ($provided_token === '' || !hash_equals($sync_token, $provided_token)) {
         http_response_code(403);
         echo "Forbidden\n";

@@ -1,20 +1,13 @@
 <?php
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
-
-if (!isset($_SESSION['user_id']) || !hasPermission('admin_access')) {
-    die(__('unauthorized'));
-}
-
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
-    http_response_code(405);
-    die('Method not allowed');
-}
-
-if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
-    http_response_code(403);
-    die(__('csrf_token_invalid'));
-}
+// Form POST → redirect to inventory (not JSON).
+require_once __DIR__ . '/../includes/api_bootstrap.php';
+api_bootstrap([
+    'post' => true,
+    'csrf' => true,
+    'permission' => 'admin_access',
+    'json' => false,
+    'rate' => 'parse_catalog',
+]);
 
 set_time_limit(300);
 

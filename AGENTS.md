@@ -78,8 +78,10 @@ Default section order:
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 - Employees and technicians must only see and work with orders assigned to their own `technician_id`; technician-side broad permissions must not expose other technicians' orders.
+- Technician-scoped users also may only list/search/edit customers they already share an order with; customer order lists (`get_customer_orders`) must not leak other technicians' orders for the same customer.
+- Assignable tech permissions are only: `admin_access`, `edit_customers`, `manage_passwords`. Cross-tech order rights (`view_all_orders`, `edit_orders`) are removed and must not return; order access is always ownership-based unless the user has `admin_access` / session admin.
 - Telegram notifications to technicians are limited to newly created/assigned orders. Order status-change notifications go only to the administrator chat `2427615` unless a more specific `status_change_admin_telegram_id` setting is configured.
-- Financial reporting in `reports.php` uses these binding formulas (centralized in `getDetailedStats()`):
+- Financial reporting uses these binding formulas (centralized in `getDetailedStats()` in `includes/reports_stats.php`):
   - `final_cost` is the repair WORK cost only; parts are billed separately via `order_items.price` (customer total = `final_cost` + Σ `order_items.price × qty`).
   - Parts purchase cost = Σ `order_items.qty × inventory.cost_price` (falls back to `order_items.price` when `cost_price` is unknown).
   - Net profit (чистая прибыль) = total revenue (work + parts charged) − parts purchase cost − extra expenses. Engineer payouts are NOT subtracted from net profit; they are tracked as a separate metric.

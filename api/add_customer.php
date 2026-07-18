@@ -1,33 +1,33 @@
 <?php
 ob_start();
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
+require_once __DIR__ . '/../includes/api_bootstrap.php';
 
 $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
     && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
 
-if (!isset($_SESSION['user_id']) || !hasPermission('edit_customers')) {
-    if ($isAjax) {
-        ob_clean();
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => __('unauthorized')]);
-    } else {
-        header('Location: ../login.php');
-    }
-    exit;
-}
-
-if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
-    if ($isAjax) {
-        ob_clean();
-        header('Content-Type: application/json');
-        http_response_code(403);
-        echo json_encode(['success' => false, 'message' => __('csrf_token_invalid')]);
-    } else {
-        die(__('csrf_token_invalid'));
-    }
-    exit;
-}
+api_bootstrap([
+    'post' => true,
+    'csrf' => true,
+    'permission' => 'edit_customers',
+    'rate' => 'add_customer',
+    'json' => $isAjax,
+    'fail' => static function (string $message, int $status) use ($isAjax): void {
+        if ($isAjax) {
+            if (ob_get_length()) {
+                ob_clean();
+            }
+            header('Content-Type: application/json; charset=utf-8');
+            http_response_code($status);
+            echo json_encode(['success' => false, 'message' => $message]);
+            exit;
+        }
+        if ($status === 401) {
+            header('Location: ../login.php');
+            exit;
+        }
+        die($message);
+    },
+]);
 
 $customer_type = $_POST['customer_type'] ?? 'private';
 $first_name = $_POST['first_name'] ?? '';
@@ -63,12 +63,13 @@ try {
         header('Location: ../customers.php?success=1');
     }
 } catch (Exception $e) {
+    $safe = publicExceptionMessage($e);
     if ($isAjax) {
         ob_clean();
         header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        echo json_encode(['success' => false, 'message' => $safe]);
     } else {
-        die(sprintf(__('db_error'), $e->getMessage()) . " <a href='../customers.php'>" . __('back') . '</a>');
+        die($safe . " <a href='../customers.php'>" . __('back') . '</a>');
     }
 }
 ?>

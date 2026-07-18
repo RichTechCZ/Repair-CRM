@@ -1,27 +1,10 @@
 <?php
-ob_start();
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
-ob_clean(); // discard any output/warnings
-header('Content-Type: application/json');
-
-if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['success' => false, 'message' => __('unauthorized')]);
-    exit;
-}
-
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'message' => 'Method not allowed']);
-    exit;
-}
-
-if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => __('csrf_token_invalid')]);
-    exit;
-}
-
+require_once __DIR__ . '/../includes/api_bootstrap.php';
+api_bootstrap([
+    'post' => true,
+    'csrf' => true,
+    'rate' => 'add_order_item',
+]);
 $order_id = $_POST['order_id'] ?? null;
 $inventory_id = $_POST['inventory_id'] ?? null;
 $qty = isset($_POST['quantity']) ? (int)$_POST['quantity'] : 1;
@@ -97,5 +80,5 @@ try {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => publicExceptionMessage($e)]);
 }

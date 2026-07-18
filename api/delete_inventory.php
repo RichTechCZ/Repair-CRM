@@ -1,22 +1,11 @@
 <?php
-ob_start();
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
-
-if (ob_get_length()) ob_clean();
-header('Content-Type: application/json');
-
-if (!isset($_SESSION['user_id']) || !hasPermission('admin_access')) {
-    echo json_encode(['success' => false, 'message' => __('unauthorized')]);
-    exit;
-}
-
-if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => __('csrf_token_invalid')]);
-    exit;
-}
-
+require_once __DIR__ . '/../includes/api_bootstrap.php';
+api_bootstrap([
+    'post' => true,
+    'csrf' => true,
+    'permission' => 'admin_access',
+    'rate' => 'delete_inventory',
+]);
 $id = $_POST['id'] ?? null;
 if (!$id) {
     echo json_encode(['success' => false, 'message' => __('missing_id')]);
@@ -39,6 +28,6 @@ try {
         echo json_encode(['success' => true]);
     }
 } catch (Exception $e) {
-    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => publicExceptionMessage($e)]);
 }
 ?>

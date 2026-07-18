@@ -6,6 +6,13 @@ require_once 'includes/header.php';
 $id = $_GET['id'] ?? null;
 if (!$id) die(__('customer_id_missing'));
 
+$id = (int)$id;
+
+if (!currentUserCanViewCustomer($id)) {
+    http_response_code(403);
+    die(__('access_denied_msg'));
+}
+
 $stmt = $pdo->prepare("SELECT * FROM customers WHERE id = ?");
 $stmt->execute([$id]);
 $customer = $stmt->fetch();
@@ -17,7 +24,13 @@ $error = false;
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
-        die("Security token invalid.");
+        die(__('csrf_invalid'));
+    }
+
+    // Re-check after POST (session may have changed; prevent IDOR via form action).
+    if (!currentUserCanViewCustomer($id)) {
+        http_response_code(403);
+        die(__('access_denied_msg'));
     }
 
     $customer_type = $_POST['customer_type'] ?? 'private';
@@ -38,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt->execute([$id]);
         $customer = $stmt->fetch();
     } catch (Exception $e) {
-        $error = __('error') . ": " . $e->getMessage();
+        $error = publicExceptionMessage($e);
     }
 }
 ?>

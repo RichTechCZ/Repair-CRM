@@ -1,6 +1,7 @@
 <?php
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+require_once 'includes/reports_stats.php';
 require_once 'includes/header.php';
 
 // Filter by date range (default to current week)
@@ -16,141 +17,6 @@ $is_tech = ($_SESSION['role'] ?? '') == 'technician';
 if (!$is_admin && $is_tech) {
     $active_tab = 'individual_stats';
     $selected_tech_id = $_SESSION['tech_id'];
-}
-
-// Helper to get stats for a specific period and optional technician
-function getDetailedStats($pdo, $start, $end, $tech_id = null) {
-    $params = [$start . ' 00:00:00', $end . ' 23:59:59'];
-    $tech_cond = $tech_id ? " AND technician_id = ?" : "";
-    if ($tech_id) $params[] = $tech_id;
-
-    // Received
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE (created_at BETWEEN ? AND ?)" . $tech_cond);
-    $stmt->execute($params);
-    $received = $stmt->fetchColumn();
-
-    // In Progress
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status IN ('Diagnostics','In Repair','In Progress','Waiting for Parts') AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
-    $stmt->execute($params);
-    $in_progress = $stmt->fetchColumn();
-
-    // Ready/Issued (Done)
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status IN ('Ready','Issued','Completed','Collected') AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
-    $stmt->execute($params);
-    $completed = $stmt->fetchColumn();
-
-    // Cancelled / issued without repair
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status IN ('Issued Without Repair','Repair Cancelled','Cancelled') AND (updated_at BETWEEN ? AND ?)" . $tech_cond);
-    $stmt->execute($params);
-    $cancelled = $stmt->fetchColumn();
-
-    // ─── Financials ───────────────────────────────────────────────────────────
-    // Finance date priority:
-    //   1. payment_date from linked invoice (status='paid')  ← correct for accounting
-    //   2. shipping_date of the order (fallback when no invoice exists)
-    // Only issued orders are counted.
-    //
-    // IMPORTANT: Use a SEPARATE params array here, because:
-    //  - $params above has layout: [start_dt, end_dt, tech_id]
-    //  - This query needs: [start_date, end_date, tech_id?] in THAT order
-    $fin_params = [$start, $end];
-    $fin_tech_cond = "";
-    if ($tech_id) {
-        $fin_tech_cond = " AND o.technician_id = ?";
-        $fin_params[] = $tech_id;
-    }
-
-    $sql_orders = "
-        SELECT
-            o.id,
-            o.final_cost,
-            o.estimated_cost,
-            o.extra_expenses,
-            o.technician_id,
-            o.shipping_date,
-            COALESCE(
-                (SELECT inv.payment_date FROM invoices inv
-                 WHERE inv.order_id = o.id AND inv.status = 'paid'
-                   AND (inv.invoice_type IS NULL OR inv.invoice_type != 'credit_note')
-                 ORDER BY inv.payment_date DESC LIMIT 1),
-                DATE(o.shipping_date)
-            ) AS finance_date,
-            (SELECT COALESCE(SUM(oi2.quantity * COALESCE(invt.cost_price, oi2.price)), 0)
-             FROM order_items oi2
-             LEFT JOIN inventory invt ON oi2.inventory_id = invt.id
-             WHERE oi2.order_id = o.id) AS inventory_cost,
-            (SELECT COALESCE(SUM(oi3.quantity * oi3.price), 0)
-             FROM order_items oi3
-             WHERE oi3.order_id = o.id) AS parts_revenue
-        FROM orders o
-        WHERE o.status IN ('Issued','Collected')
-          AND COALESCE(
-                (SELECT inv.payment_date FROM invoices inv
-                 WHERE inv.order_id = o.id AND inv.status = 'paid'
-                   AND (inv.invoice_type IS NULL OR inv.invoice_type != 'credit_note')
-                 ORDER BY inv.payment_date DESC LIMIT 1),
-                DATE(o.shipping_date)
-              ) BETWEEN ? AND ?
-    " . $fin_tech_cond;
-
-    $stmt = $pdo->prepare($sql_orders);
-    $stmt->execute($fin_params);
-    $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $revenue          = 0;
-    $expenses         = 0;
-    $parts_cost       = 0;
-    $engineer_earnings = 0;
-
-    // Load all engineer rates once
-    $stmt_rates = $pdo->query("SELECT id, engineer_rate FROM technicians");
-    $rates = [];
-    while ($row = $stmt_rates->fetch(PDO::FETCH_ASSOC)) {
-        $rates[$row['id']] = (float)($row['engineer_rate'] ?? 50);
-    }
-    $engineer_rate = $tech_id ? ($rates[$tech_id] ?? 50) : 50;
-
-    foreach ($orders as $o) {
-        // final_cost is the repair WORK cost only; parts are billed separately
-        // via order_items.price (print_order.php: total = final_cost + parts).
-        $work_cost = $o['final_cost'] !== null ? (float)$o['final_cost']
-                : (float)($o['estimated_cost'] ?? 0);
-        $parts_rev = (float)($o['parts_revenue'] ?? 0);
-        $rev       = $work_cost + $parts_rev;            // total charged to customer
-        $exp       = (float)($o['extra_expenses'] ?? 0);
-        $p_cost    = (float)($o['inventory_cost'] ?? 0); // parts purchase cost
-
-        $revenue    += $rev;
-        $expenses   += $exp;
-        $parts_cost += $p_cost;
-
-        // Engineer payout base = work cost − parts purchase cost − 50% of extra
-        // expenses. The engineer never owes the SC, so the base is floored at 0.
-        $earn_base = $work_cost - $p_cost - ($exp / 2);
-        if ($earn_base < 0) $earn_base = 0;
-
-        $rate = $rates[$o['technician_id']] ?? $engineer_rate;
-        $engineer_earnings += $earn_base * ($rate / 100);
-    }
-
-    // Net profit (чистая прибыль) = total revenue − parts purchase cost − extra
-    // expenses. Engineer payouts are tracked separately and NOT subtracted here.
-    $net_profit = $revenue - $parts_cost - $expenses;
-    $sc_income  = $net_profit - $engineer_earnings;
-
-    return [
-        'received' => $received,
-        'in_progress' => $in_progress,
-        'completed' => $completed,
-        'cancelled' => $cancelled,
-        'revenue' => $revenue,
-        'expenses' => $expenses,
-        'parts_cost' => $parts_cost,
-        'net_profit' => $net_profit,
-        'engineer_rate' => $engineer_rate,
-        'earnings' => $engineer_earnings,
-        'sc_income' => $sc_income
-    ];
 }
 ?>
 

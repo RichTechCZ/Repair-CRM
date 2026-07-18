@@ -1,21 +1,11 @@
 <?php
-ob_start();
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
-ob_clean(); // discard any output/warnings
-header('Content-Type: application/json');
-
-if (!isset($_SESSION['user_id']) || !hasPermission('admin_access')) {
-    echo json_encode(['success' => false, 'message' => __('access_denied_simple')]);
-    exit;
-}
-
-if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => __('csrf_token_invalid')]);
-    exit;
-}
-
+require_once __DIR__ . '/../includes/api_bootstrap.php';
+api_bootstrap([
+    'post' => true,
+    'csrf' => true,
+    'permission' => 'admin_access',
+    'rate' => 'create_express_invoice',
+]);
 $order_id = $_POST['order_id'] ?? null;
 $invoice_id = $_POST['invoice_id'] ?? null;
 $invoice_number = $_POST['invoice_number'] ?? null;
@@ -162,6 +152,6 @@ try {
         $pdo->rollBack();
     }
     error_log("Express Invoice Error: " . $e->getMessage());
-    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => publicExceptionMessage($e)]);
 }
 ?>

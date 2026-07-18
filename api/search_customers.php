@@ -16,19 +16,30 @@ $per_page = 20;
 $offset = ($page - 1) * $per_page;
 
 $params = [];
-$where = '';
+$where_parts = [];
 $order_by = 'created_at DESC, id DESC';
+
 if ($term !== '') {
     $like = '%' . $term . '%';
-    $exact_id = preg_match('/^\d+$/', $term) ? $term : null;
-    $where = "WHERE first_name LIKE ? OR last_name LIKE ? OR phone LIKE ? OR company LIKE ? OR CONCAT_WS(' ', first_name, last_name) LIKE ? OR CONCAT_WS(' ', last_name, first_name) LIKE ?";
+    $exact_id = preg_match('/^\d+$/', $term) ? (int)$term : null;
+    $search_sql = "(first_name LIKE ? OR last_name LIKE ? OR phone LIKE ? OR company LIKE ? OR CONCAT_WS(' ', first_name, last_name) LIKE ? OR CONCAT_WS(' ', last_name, first_name) LIKE ?";
     $params = [$like, $like, $like, $like, $like, $like];
     if ($exact_id !== null) {
-        $where .= " OR id = ?";
-        $params[] = (int)$exact_id;
+        $search_sql .= " OR id = ?";
+        $params[] = $exact_id;
     }
+    $search_sql .= ')';
+    $where_parts[] = $search_sql;
     $order_by = 'last_name ASC, first_name ASC, id DESC';
 }
+
+// Technicians only search customers who have at least one order assigned to them.
+if (isTechnicianScoped()) {
+    $where_parts[] = 'id IN (SELECT DISTINCT customer_id FROM orders WHERE technician_id = ?)';
+    $params[] = currentTechnicianId();
+}
+
+$where = $where_parts ? ('WHERE ' . implode(' AND ', $where_parts)) : '';
 
 try {
     $count_sql = "SELECT COUNT(*) FROM customers $where";
@@ -63,6 +74,6 @@ try {
         'pagination' => ['more' => (($offset + $per_page) < $total)]
     ]);
 } catch (Exception $e) {
+    error_log('search_customers: ' . $e->getMessage());
     echo json_encode(['results' => [], 'pagination' => ['more' => false]]);
 }
-?>

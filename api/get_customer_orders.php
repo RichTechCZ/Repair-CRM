@@ -25,11 +25,26 @@ if (!currentUserCanViewCustomer($customer_id)) {
 }
 
 try {
-    $stmt = $pdo->prepare("SELECT id, device_brand, device_model, status, created_at FROM orders WHERE customer_id = ? ORDER BY created_at DESC");
-    $stmt->execute([$customer_id]);
+    // Technicians only see their own orders for this customer (no cross-tech leak).
+    if (isTechnicianScoped()) {
+        $stmt = $pdo->prepare(
+            "SELECT id, device_brand, device_model, status, created_at
+             FROM orders
+             WHERE customer_id = ? AND technician_id = ?
+             ORDER BY created_at DESC"
+        );
+        $stmt->execute([$customer_id, currentTechnicianId()]);
+    } else {
+        $stmt = $pdo->prepare(
+            "SELECT id, device_brand, device_model, status, created_at
+             FROM orders
+             WHERE customer_id = ?
+             ORDER BY created_at DESC"
+        );
+        $stmt->execute([$customer_id]);
+    }
     $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
     echo json_encode(['success' => true, 'orders' => $orders]);
 } catch (Exception $e) {
-    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => publicExceptionMessage($e)]);
 }
-?>
