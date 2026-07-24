@@ -82,10 +82,11 @@ When the user requests a durable behavior change, record it here or in the relev
 - Assignable tech permissions are only: `admin_access`, `edit_customers`, `manage_passwords`. Cross-tech order rights (`view_all_orders`, `edit_orders`) are removed and must not return; order access is always ownership-based unless the user has `admin_access` / session admin.
 - Telegram notifications to technicians are limited to newly created/assigned orders. Order status-change notifications go only to the administrator chat `2427615` unless a more specific `status_change_admin_telegram_id` setting is configured.
 - Financial reporting uses these binding formulas (centralized in `getDetailedStats()` in `includes/reports_stats.php`):
-  - `final_cost` is the repair WORK cost only; parts are billed separately via `order_items.price` (customer total = `final_cost` + Σ `order_items.price × qty`).
+  - Customer revenue is the `total_amount` from the latest non-credit invoice for the order. If there is no such invoice, use `final_cost`, then `estimated_cost`.
+  - Never add `order_items.price × qty` to an invoice total: parts may already be included in the invoice, and doing so double-counts revenue.
   - Parts purchase cost = Σ `order_items.qty × inventory.cost_price` (falls back to `order_items.price` when `cost_price` is unknown).
-  - Net profit (чистая прибыль) = total revenue (work + parts charged) − parts purchase cost − extra expenses. Engineer payouts are NOT subtracted from net profit; they are tracked as a separate metric.
-  - Engineer payout per order = max(0, `final_cost` − parts purchase cost − ½ × extra expenses) × (technician rate / 100). The base is floored at 0 so engineers never owe the SC; parts revenue never enters the payout base.
+  - Net profit (чистая прибыль) = customer revenue − parts purchase cost − extra expenses. Engineer payouts are NOT subtracted from net profit; they are tracked as a separate metric.
+  - Engineer payout per order = max(0, customer revenue − parts purchase cost − ½ × extra expenses) × (technician rate / 100). The base is floored at 0 so engineers never owe the SC.
   - SC income (Доход СЦ) = net profit − total engineer payouts.
 
 ## Child DOX Index

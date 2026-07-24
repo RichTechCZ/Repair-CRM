@@ -289,11 +289,18 @@ if (!$is_admin && $is_tech) {
                                          ORDER BY inv.payment_date DESC LIMIT 1),
                                         DATE(o.shipping_date)
                                     ) AS finance_date,
+                                    COALESCE(
+                                        (SELECT inv.total_amount FROM invoices inv
+                                         WHERE inv.order_id = o.id
+                                           AND (inv.invoice_type IS NULL OR inv.invoice_type != 'credit_note')
+                                         ORDER BY COALESCE(inv.payment_date, inv.date_issue, inv.created_at) DESC, inv.id DESC LIMIT 1),
+                                        o.final_cost,
+                                        o.estimated_cost,
+                                        0
+                                    ) AS customer_total,
                                     (SELECT COALESCE(SUM(oi.quantity * COALESCE(invt.cost_price, oi.price)), 0)
                                      FROM order_items oi LEFT JOIN inventory invt ON oi.inventory_id = invt.id
-                                     WHERE oi.order_id = o.id) as inventory_cost,
-                                    (SELECT COALESCE(SUM(oi2.quantity * oi2.price), 0)
-                                     FROM order_items oi2 WHERE oi2.order_id = o.id) as parts_revenue
+                                     WHERE oi.order_id = o.id) as inventory_cost
                                 FROM orders o
                                 JOIN customers c ON o.customer_id = c.id
                                 WHERE o.technician_id = ? AND o.status IN ('Issued','Collected')
@@ -309,15 +316,13 @@ if (!$is_admin && $is_tech) {
                             $stmt->execute([$selected_tech_id, $start_date, $end_date]);
 
                             while($r = $stmt->fetch()):
-                                $work_cost = floatval(($r['final_cost'] !== null ? $r['final_cost'] : $r['estimated_cost']) ?: 0);
-                                $parts_rev = floatval($r['parts_revenue'] ?: 0);
-                                $rev = $work_cost + $parts_rev;
+                                $customer_total = floatval($r['customer_total'] ?? 0);
                                 $p_cost = floatval($r['inventory_cost'] ?: 0);
                                 $e_cost = floatval($r['extra_expenses'] ?: 0);
                                 // Net profit per order (can be negative — must NOT floor)
-                                $net = $rev - $p_cost - $e_cost;
-                                // Engineer payout = work_cost − parts_cost − 50% extra (floored at 0)
-                                $earn_base = $work_cost - $p_cost - ($e_cost / 2);
+                                $net = $customer_total - $p_cost - $e_cost;
+                                // Engineer payout = customer total − parts cost − 50% extra (floored at 0)
+                                $earn_base = $customer_total - $p_cost - ($e_cost / 2);
                                 if ($earn_base < 0) $earn_base = 0;
                                 $earn = $earn_base * ($is['engineer_rate'] / 100);
                             ?>
@@ -326,7 +331,7 @@ if (!$is_admin && $is_tech) {
                                 <td><?php echo date('d.m.Y', strtotime($r['finance_date'])); ?></td>
                                 <td><?php echo htmlspecialchars($r['device_brand'] . ' ' . $r['device_model']); ?></td>
                                 <td><?php echo htmlspecialchars($r['first_name'] . ' ' . $r['last_name']); ?></td>
-                                <td class="text-end fw-bold"><?php echo formatMoney($rev); ?></td>
+                                <td class="text-end fw-bold"><?php echo formatMoney($customer_total); ?></td>
                                 <td class="text-end text-muted small"><?php echo $p_cost > 0 ? '-'.formatMoney($p_cost) : '—'; ?></td>
                                 <td class="text-end <?php echo $net < 0 ? 'text-danger' : ''; ?>"><?php echo formatMoney($net); ?></td>
                                 <td class="text-end fw-bold text-primary"><?php echo formatMoney($earn); ?></td>

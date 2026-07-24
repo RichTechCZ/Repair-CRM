@@ -3,10 +3,11 @@
  * Financial / operational reporting helpers.
  *
  * Binding formulas (root AGENTS.md User Preferences):
- * - final_cost = repair WORK cost only; parts billed via order_items.price
+ * - customer revenue = latest non-credit invoice total; fallback final_cost, then estimated_cost
  * - parts purchase cost = Σ qty × inventory.cost_price (fallback order_items.price)
- * - net profit = revenue (work + parts) − parts cost − extra expenses
- * - engineer payout = max(0, work − parts cost − ½ extra) × rate%
+ * - never add order_items.price to an invoice total: that would double-count parts
+ * - net profit = customer revenue − parts cost − extra expenses
+ * - engineer payout = max(0, customer revenue − parts cost − ½ extra) × rate%
  * - SC income = net profit − engineer payouts
  */
 
@@ -79,6 +80,15 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
             o.technician_id,
             o.shipping_date,
             COALESCE(
+                (SELECT inv.total_amount FROM invoices inv
+                 WHERE inv.order_id = o.id
+                   AND (inv.invoice_type IS NULL OR inv.invoice_type != 'credit_note')
+                 ORDER BY COALESCE(inv.payment_date, inv.date_issue, inv.created_at) DESC, inv.id DESC LIMIT 1),
+                o.final_cost,
+                o.estimated_cost,
+                0
+            ) AS customer_total,
+            COALESCE(
                 (SELECT inv.payment_date FROM invoices inv
                  WHERE inv.order_id = o.id AND inv.status = 'paid'
                    AND (inv.invoice_type IS NULL OR inv.invoice_type != 'credit_note')
@@ -88,10 +98,7 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
             (SELECT COALESCE(SUM(oi2.quantity * COALESCE(invt.cost_price, oi2.price)), 0)
              FROM order_items oi2
              LEFT JOIN inventory invt ON oi2.inventory_id = invt.id
-             WHERE oi2.order_id = o.id) AS inventory_cost,
-            (SELECT COALESCE(SUM(oi3.quantity * oi3.price), 0)
-             FROM order_items oi3
-             WHERE oi3.order_id = o.id) AS parts_revenue
+             WHERE oi2.order_id = o.id) AS inventory_cost
         FROM orders o
         WHERE o.status IN ('Issued','Collected')
           AND COALESCE(
@@ -120,18 +127,15 @@ function getDetailedStats($pdo, $start, $end, $tech_id = null) {
     $engineer_rate = $tech_id ? ($rates[$tech_id] ?? 50) : 50;
 
     foreach ($orders as $o) {
-        $work_cost = $o['final_cost'] !== null ? (float)$o['final_cost']
-                : (float)($o['estimated_cost'] ?? 0);
-        $parts_rev = (float)($o['parts_revenue'] ?? 0);
-        $rev = $work_cost + $parts_rev;
+        $customer_total = (float)($o['customer_total'] ?? 0);
         $exp = (float)($o['extra_expenses'] ?? 0);
         $p_cost = (float)($o['inventory_cost'] ?? 0);
 
-        $revenue += $rev;
+        $revenue += $customer_total;
         $expenses += $exp;
         $parts_cost += $p_cost;
 
-        $earn_base = $work_cost - $p_cost - ($exp / 2);
+        $earn_base = $customer_total - $p_cost - ($exp / 2);
         if ($earn_base < 0) {
             $earn_base = 0;
         }

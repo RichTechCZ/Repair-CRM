@@ -9,7 +9,7 @@ Root AGENTS.md -> includes/AGENTS.md
 ## Local Contracts
 - Reusable components and configuration.
 - `api_bootstrap.php` — shared API guards (`api_bootstrap`, `api_json_exit`, `api_exception_exit`).
-- `reports_stats.php` — `getDetailedStats()` financial/ops reporting (binding formulas in root AGENTS.md).
+- `reports_stats.php` — `getDetailedStats()` financial/ops reporting. Revenue comes from the latest non-credit invoice total (fallback `final_cost`, then `estimated_cost`); never add order-item prices to that invoice total.
 - `partials/` — page-specific PHP-rendered scripts (`orders_scripts.php`, `view_order_scripts.php`).
 - `isTechnicianScoped()` / `currentTechnicianId()` — technician isolation helpers (admins and `admin_access` are not scoped).
 - `publicExceptionMessage(Throwable $e)` — safe client-facing errors; logs PDO/system details.
