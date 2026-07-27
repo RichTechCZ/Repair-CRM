@@ -203,15 +203,21 @@ require_once 'includes/header.php';
 ?>
 
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom border-secondary pb-3">
-        <h2 class="mb-0 text-white"><i class="fas fa-cog me-3 text-primary"></i><?php echo __('settings'); ?></h2>
+    <div class="page-header">
+        <div class="page-header__copy">
+            <div class="page-kicker"><?php echo e(get_setting('company_name', 'Repair CRM')); ?></div>
+            <h1><?php echo __('settings'); ?></h1>
+            <p class="page-subtitle"><?php echo e($_SESSION['full_name'] ?? ''); ?></p>
+        </div>
         <?php if (isset($_GET['updated'])): ?>
-            <span class="badge bg-success-glow"><?php echo __('updated_success'); ?></span>
+            <div class="page-actions">
+                <span class="badge bg-success-glow"><?php echo __('updated_success'); ?></span>
+            </div>
         <?php endif; ?>
     </div>
 
     <!-- Tab Navigation -->
-    <ul class="nav nav-pills mb-4 glass-panel p-2 border-secondary" id="settingsTabs">
+    <ul class="nav nav-pills mb-4 glass-panel p-2 border-secondary ui-ready" id="settingsTabs">
         <?php if ($is_admin_user): ?>
         <li class="nav-item">
             <a class="nav-link <?php echo $active_tab == 'company' ? 'active' : 'text-white-75'; ?>" href="?tab=company"><i class="fas fa-building me-2"></i><?php echo __('company_data'); ?></a>

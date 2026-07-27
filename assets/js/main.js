@@ -14,13 +14,25 @@ document.addEventListener('DOMContentLoaded', function() {
     const sidebarCollapse = document.getElementById('sidebarCollapse');
     const sidebar = document.getElementById('sidebar');
     const content = document.getElementById('content');
+    const sidebarBackdrop = document.getElementById('sidebarBackdrop');
 
     if (sidebarCollapse) {
         sidebarCollapse.addEventListener('click', function() {
+            document.body.classList.toggle('sidebar-open');
             sidebar.classList.toggle('active');
             content.classList.toggle('active');
         });
     }
+
+    if (sidebarBackdrop) {
+        sidebarBackdrop.addEventListener('click', closeSidebar);
+    }
+
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            closeSidebar();
+        }
+    });
 
     // Fix for aria-hidden on focusable elements inside modals (Accessibility)
     $(document).on('show.bs.modal shown.bs.modal', '.modal', function() {
@@ -48,7 +60,24 @@ document.addEventListener('DOMContentLoaded', function() {
             // Your custom options
         });
     }
+
+    document.querySelectorAll('.ui-ready').forEach(function(element) {
+        element.classList.add('ui-ready');
+    });
 });
+
+function closeSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const content = document.getElementById('content');
+
+    document.body.classList.remove('sidebar-open');
+    if (sidebar) {
+        sidebar.classList.remove('active');
+    }
+    if (content) {
+        content.classList.remove('active');
+    }
+}
 
 /**
  * Initialize global modal objects safely
@@ -89,6 +118,7 @@ function showAlert(message, title = window.LANG_NOTICE || 'Notice') {
     
     document.getElementById('globalAlertTitle').innerText = title;
     document.getElementById('globalAlertBody').textContent = message;
+    announceStatus(message);
     
     if (globalAlertModal) {
         globalAlertModal.show();
@@ -260,6 +290,16 @@ function openPreviewInNewTab() {
     if (activePreviewUrl) {
         window.open(activePreviewUrl, '_blank');
     }
+}
+
+function announceStatus(message) {
+    const liveRegion = document.getElementById('appStatusLive');
+    if (!liveRegion || !message) return;
+
+    liveRegion.textContent = '';
+    window.setTimeout(function() {
+        liveRegion.textContent = message;
+    }, 25);
 }
 
 /**

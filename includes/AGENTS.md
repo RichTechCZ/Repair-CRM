@@ -10,6 +10,7 @@ Root AGENTS.md -> includes/AGENTS.md
 - Reusable components and configuration.
 - `api_bootstrap.php` — shared API guards (`api_bootstrap`, `api_json_exit`, `api_exception_exit`).
 - `reports_stats.php` — `getDetailedStats()` financial/ops reporting. Revenue comes from the latest non-credit invoice total (fallback `final_cost`, then `estimated_cost`); never add order-item prices to that invoice total.
+- `header.php` / `footer.php` — shared application shell (sidebar, top bar, search, skip link, modal/live-region scaffolding).
 - `partials/` — page-specific PHP-rendered scripts (`orders_scripts.php`, `view_order_scripts.php`).
 - `isTechnicianScoped()` / `currentTechnicianId()` — technician isolation helpers (admins and `admin_access` are not scoped).
 - `publicExceptionMessage(Throwable $e)` — safe client-facing errors; logs PDO/system details.
@@ -31,6 +32,7 @@ Root AGENTS.md -> includes/AGENTS.md
 ## Work Guidance
 - New shared auth/scope/error helpers go here, not duplicated in endpoints.
 - New permission keys must be added to `getAvailablePermissions()`, enforced with `hasPermission()`, and documented in this matrix.
+- Keep shell-level accessibility in shared includes: page structure, skip-link targets, consistent navigation state, and global status/live regions belong here rather than in page files.
 
 ## Verification
 - `php -l includes/functions.php` after helper changes.

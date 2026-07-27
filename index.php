@@ -19,6 +19,7 @@ $new_count = countOrdersByStatusGroup($dashboard_status_groups['new'], $dashboar
 $pending_count = countOrdersByStatusGroup($dashboard_status_groups['pending'], $dashboard_technician_id);
 $progress_count = countOrdersByStatusGroup($dashboard_status_groups['progress'], $dashboard_technician_id);
 $ready_count = countOrdersByStatusGroup($dashboard_status_groups['ready'], $dashboard_technician_id);
+$dashboard_total = $new_count + $pending_count + $progress_count + $ready_count;
 
 // Online Techs (Last 5 minutes) - Admin or those with admin_access
 $online_count = 0;
@@ -42,86 +43,72 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
 
 ?>
 
-<div class="row g-4 mb-4">
-    <!-- Stat Cards -->
+<div class="page-header">
+    <div class="page-header__copy">
+        <div class="page-kicker"><?php echo e(get_setting('company_name', 'Repair CRM')); ?></div>
+        <h1><?php echo __('dashboard'); ?></h1>
+        <p class="page-subtitle">
+            <?php echo __('all_orders'); ?>: <strong class="financial-number"><?php echo $dashboard_total; ?></strong>
+        </p>
+    </div>
+    <div class="page-actions">
+        <a href="orders.php" class="btn btn-outline-secondary"><?php echo __('all_orders'); ?></a>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newOrderModal">
+            <i class="fas fa-plus"></i>
+            <span><?php echo __('new_order'); ?></span>
+        </button>
+    </div>
+</div>
+
+<div class="row g-4 mb-4 ui-ready">
     <div class="col-12 col-sm-6 col-md-4 col-xl">
         <a href="?filter=Accepted" class="text-decoration-none">
-            <div class="card glass-card p-3 h-100 <?php echo $canonical_filter_status == 'Accepted' ? 'border-primary border-2' : 'border-0'; ?>">
-                <div class="d-flex align-items-center">
-                    <div class="bg-primary bg-opacity-10 p-2 rounded-circle me-3">
-                        <i class="fas fa-clipboard-list text-primary fa-xl"></i>
-                    </div>
-                    <div>
-                        <h4 class="mb-0 fw-bold"><?php echo $new_count; ?></h4>
-                        <p class="text-white-75 mb-0 small"><?php echo __('new_orders'); ?></p>
-                    </div>
-                </div>
+            <div class="metric-card metric-card--accent h-100 <?php echo $canonical_filter_status == 'Accepted' ? 'ring-2 text-primary' : ''; ?>">
+                <span class="metric-label"><?php echo __('new_orders'); ?></span>
+                <div class="metric-value financial-number"><?php echo $new_count; ?></div>
+                <div class="metric-meta"><?php echo e(__('status')); ?>: Accepted</div>
             </div>
         </a>
     </div>
     <div class="col-12 col-sm-6 col-md-4 col-xl">
         <a href="?filter=Approval" class="text-decoration-none">
-            <div class="card glass-card p-3 h-100 <?php echo $canonical_filter_status == 'Approval' ? 'border-info border-2' : 'border-0'; ?>">
-                <div class="d-flex align-items-center">
-                    <div class="bg-info bg-opacity-10 p-2 rounded-circle me-3">
-                        <i class="fas fa-handshake text-info fa-xl"></i>
-                    </div>
-                    <div>
-                        <h4 class="mb-0 fw-bold"><?php echo $pending_count; ?></h4>
-                        <p class="text-white-75 mb-0 small"><?php echo __('pending_approval_orders'); ?></p>
-                    </div>
-                </div>
+            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'Approval' ? 'ring-2 text-info' : ''; ?>">
+                <span class="metric-label"><?php echo __('pending_approval_orders'); ?></span>
+                <div class="metric-value financial-number"><?php echo $pending_count; ?></div>
+                <div class="metric-meta"><?php echo e(__('status')); ?>: Approval</div>
             </div>
         </a>
     </div>
     <div class="col-12 col-sm-6 col-md-4 col-xl">
         <a href="?filter=In Repair" class="text-decoration-none">
-            <div class="card glass-card p-3 h-100 <?php echo $canonical_filter_status == 'In Repair' ? 'border-warning border-2' : 'border-0'; ?>">
-                <div class="d-flex align-items-center">
-                    <div class="bg-warning bg-opacity-10 p-2 rounded-circle me-3">
-                        <i class="fas fa-spinner text-warning fa-xl"></i>
-                    </div>
-                    <div>
-                        <h4 class="mb-0 fw-bold"><?php echo $progress_count; ?></h4>
-                        <p class="text-white-75 mb-0 small"><?php echo __('in_progress_orders'); ?></p>
-                    </div>
-                </div>
+            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'In Repair' ? 'ring-2 text-warning' : ''; ?>">
+                <span class="metric-label"><?php echo __('in_progress_orders'); ?></span>
+                <div class="metric-value financial-number"><?php echo $progress_count; ?></div>
+                <div class="metric-meta"><?php echo e(__('status')); ?>: In Repair</div>
             </div>
         </a>
     </div>
     <div class="col-12 col-sm-6 col-md-4 col-xl">
         <a href="?filter=Ready" class="text-decoration-none">
-            <div class="card glass-card p-3 h-100 <?php echo $canonical_filter_status == 'Ready' ? 'border-success border-2' : 'border-0'; ?>">
-                <div class="d-flex align-items-center">
-                    <div class="bg-success bg-opacity-10 p-2 rounded-circle me-3">
-                        <i class="fas fa-check-double text-success fa-xl"></i>
-                    </div>
-                    <div>
-                        <h4 class="mb-0 fw-bold"><?php echo $ready_count; ?></h4>
-                        <p class="text-white-75 mb-0 small"><?php echo __('completed_orders'); ?></p>
-                    </div>
-                </div>
+            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'Ready' ? 'ring-2 text-success' : ''; ?>">
+                <span class="metric-label"><?php echo __('completed_orders'); ?></span>
+                <div class="metric-value financial-number"><?php echo $ready_count; ?></div>
+                <div class="metric-meta"><?php echo e(__('status')); ?>: Ready</div>
             </div>
         </a>
     </div>
     <div class="col-12 col-sm-6 col-md-4 col-xl">
         <?php if ($_SESSION['role'] == 'admin'): ?>
-            <div class="card glass-card p-3 h-100 border-0" data-bs-toggle="tooltip" title="<?php echo __('online_techs_tooltip'); ?>">
-                <div class="d-flex align-items-center">
-                    <div class="bg-info bg-opacity-10 p-2 rounded-circle me-3">
-                        <i class="fas fa-users text-info fa-xl"></i>
-                    </div>
-                    <div>
-                        <h4 class="mb-0 fw-bold"><?php echo $online_count; ?></h4>
-                        <p class="text-white-75 mb-0 small"><?php echo __('online_techs'); ?></p>
-                    </div>
-                </div>
+            <div class="metric-card h-100" data-bs-toggle="tooltip" title="<?php echo __('online_techs_tooltip'); ?>">
+                <span class="metric-label"><?php echo __('online_techs'); ?></span>
+                <div class="metric-value financial-number"><?php echo $online_count; ?></div>
+                <div class="metric-meta"><?php echo __('technician'); ?></div>
             </div>
         <?php else: ?>
-            <div class="card p-3 h-100 border-0 bg-dark bg-opacity-25 shadow-none">
-                <div class="d-flex align-items-center justify-content-center h-100">
-                    <img src="https://servis.expert/wp-content/uploads/2021/04/cropped-logo-servis-expert-1.png" style="max-height: 40px; opacity: 0.5;">
-                </div>
+            <div class="metric-card h-100">
+                <span class="metric-label"><?php echo __('technician'); ?></span>
+                <div class="metric-value financial-number">#<?php echo (int)($_SESSION['tech_id'] ?? 0); ?></div>
+                <div class="metric-meta"><?php echo e($_SESSION['full_name'] ?? ''); ?></div>
             </div>
         <?php endif; ?>
     </div>
@@ -129,7 +116,7 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
 
 <div class="row">
     <div class="col-md-8">
-        <div class="card glass-card border-0 dashboard-orders-card">
+        <div class="card glass-card dashboard-orders-card ui-ready">
             <div class="card-header bg-transparent border-bottom-0 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">
                     <?php 
@@ -842,13 +829,22 @@ $(document).ready(function() {
             ico: $('#inline_ico_input').val() || '',
             company_name: $('#inline_ares_name').val() || '',
             dic: $('#inline_ares_dic').val() || '',
-            csrf_token: $('input[name="csrf_token"]').first().val()
+            response_format: 'json',
+            csrf_token: $panel.closest('form').find('input[name="csrf_token"]').val()
         };
 
-        $.post('api/add_customer.php', formData, function(res) {
-            btn.prop('disabled', false).html('<i class="fas fa-check me-2"></i><?php echo __('save'); ?>');
-            if (res.success) {
-                const id = res.id;
+        $.ajax({
+            url: 'api/add_customer.php',
+            method: 'POST',
+            dataType: 'json',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            data: formData
+        }).done(function(res) {
+            const id = Number(res && res.id);
+            if (res && res.success && Number.isInteger(id) && id > 0) {
                 const label = (lastName + ' ' + firstName).trim() + (phone ? ' (' + phone + ')' : '');
                 const $select = $('.select2-customer');
                 if ($select.length) {
@@ -863,14 +859,17 @@ $(document).ready(function() {
                 $panel.find('#inline_type_private').prop('checked', true);
                 // Collapse the panel
                 const collapseEl = document.getElementById('inlineNewCustomerPanel');
-                const bsCollapse = bootstrap.Collapse.getInstance(collapseEl);
-                if (bsCollapse) bsCollapse.hide();
+                if (collapseEl && window.bootstrap) {
+                    bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false }).hide();
+                }
             } else {
                 showAlert(res.message || '<?php echo __('add_client_error'); ?>');
             }
-        }, 'json').fail(function() {
+        }).fail(function(xhr) {
+            const message = xhr.responseJSON && xhr.responseJSON.message;
+            showAlert(message || '<?php echo __('network_error_client'); ?>');
+        }).always(function() {
             btn.prop('disabled', false).html('<i class="fas fa-check me-2"></i><?php echo __('save'); ?>');
-            showAlert('<?php echo __('network_error_client'); ?>');
         });
     });
 });

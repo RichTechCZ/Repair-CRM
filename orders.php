@@ -153,87 +153,71 @@ if (isset($pdo)) {
 }
 ?>
 
-<div class="row g-3 mb-4">
+<div class="page-header">
+    <div class="page-header__copy">
+        <div class="page-kicker"><?php echo e(get_setting('company_name', 'Repair CRM')); ?></div>
+        <h1><?php echo __('orders'); ?></h1>
+        <p class="page-subtitle">
+            <?php echo __('all_orders'); ?>: <strong class="financial-number"><?php echo $total_orders; ?></strong>
+        </p>
+    </div>
+    <div class="page-actions">
+        <?php if(!empty($_GET['search'])): ?>
+            <a href="orders.php" class="btn btn-outline-secondary"><?php echo __('cancel'); ?></a>
+        <?php endif; ?>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newOrderModal">
+            <i class="fas fa-plus"></i>
+            <span><?php echo __('new_order'); ?></span>
+        </button>
+    </div>
+</div>
+
+<div class="row g-3 mb-4 ui-ready">
     <div class="col-12 col-sm-6 col-md-3">
         <a href="?filter=Accepted" class="text-decoration-none">
-            <div class="card bg-primary bg-opacity-10 border-0 p-3 <?php echo $canonical_filter_status == 'Accepted' ? 'ring-2 ring-primary border-primary border-1 shadow-sm' : ''; ?>">
-                <div class="d-flex align-items-center">
-                    <i class="fas fa-clipboard-list text-primary fa-2x me-3"></i>
-                    <div>
-                        <h4 class="mb-0 text-white"><?php echo $s_new; ?></h4>
-                        <p class="text-white-75 mb-0 small"><?php echo __('new_orders'); ?></p>
-                    </div>
-                </div>
+            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'Accepted' ? 'ring-2 text-primary' : ''; ?>">
+                <span class="metric-label"><?php echo __('new_orders'); ?></span>
+                <div class="metric-value financial-number"><?php echo $s_new; ?></div>
+                <div class="metric-meta"><?php echo e(__('status')); ?>: Accepted</div>
             </div>
         </a>
     </div>
     <div class="col-12 col-sm-6 col-md-3">
         <a href="?filter=Approval" class="text-decoration-none">
-            <div class="card bg-info bg-opacity-10 border-0 p-3 <?php echo $canonical_filter_status == 'Approval' ? 'ring-2 ring-info border-info border-1 shadow-sm' : ''; ?>">
-                <div class="d-flex align-items-center">
-                    <i class="fas fa-handshake text-info fa-2x me-3"></i>
-                    <div>
-                        <h4 class="mb-0 text-white"><?php echo $s_pending; ?></h4>
-                        <p class="text-white-75 mb-0 small"><?php echo __('pending_approval_orders'); ?></p>
-                    </div>
-                </div>
+            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'Approval' ? 'ring-2 text-info' : ''; ?>">
+                <span class="metric-label"><?php echo __('pending_approval_orders'); ?></span>
+                <div class="metric-value financial-number"><?php echo $s_pending; ?></div>
+                <div class="metric-meta"><?php echo e(__('status')); ?>: Approval</div>
             </div>
         </a>
     </div>
     <div class="col-12 col-sm-6 col-md-3">
         <a href="?filter=In Repair" class="text-decoration-none">
-            <div class="card bg-warning bg-opacity-10 border-0 p-3 <?php echo $canonical_filter_status == 'In Repair' ? 'ring-2 ring-warning border-warning border-1 shadow-sm' : ''; ?>">
-                <div class="d-flex align-items-center">
-                    <i class="fas fa-spinner text-warning fa-2x me-3"></i>
-                    <div>
-                        <h4 class="mb-0 text-white"><?php echo $s_progress; ?></h4>
-                        <p class="text-white-75 mb-0 small"><?php echo __('in_progress_orders'); ?></p>
-                    </div>
-                </div>
+            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'In Repair' ? 'ring-2 text-warning' : ''; ?>">
+                <span class="metric-label"><?php echo __('in_progress_orders'); ?></span>
+                <div class="metric-value financial-number"><?php echo $s_progress; ?></div>
+                <div class="metric-meta"><?php echo e(__('status')); ?>: In Repair</div>
             </div>
         </a>
     </div>
     <div class="col-12 col-sm-6 col-md-3">
         <a href="?filter=Ready" class="text-decoration-none">
-            <div class="card bg-success bg-opacity-10 border-0 p-3 <?php echo $canonical_filter_status == 'Ready' ? 'ring-2 ring-success border-success border-1 shadow-sm' : ''; ?>">
-                <div class="d-flex align-items-center">
-                    <i class="fas fa-check-double text-success fa-2x me-3"></i>
-                    <div>
-                        <h4 class="mb-0 text-white"><?php echo $s_ready; ?></h4>
-                        <p class="text-white-75 mb-0 small"><?php echo __('completed_orders'); ?></p>
-                    </div>
-                </div>
+            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'Ready' ? 'ring-2 text-success' : ''; ?>">
+                <span class="metric-label"><?php echo __('completed_orders'); ?></span>
+                <div class="metric-value financial-number"><?php echo $s_ready; ?></div>
+                <div class="metric-meta"><?php echo e(__('status')); ?>: Ready</div>
             </div>
         </a>
     </div>
 </div>
-
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h2 class="mb-0"><?php echo __('orders'); ?></h2>
-        <?php if($filter_status): ?>
-            <?php
-            $status_label = getStatusLabel($filter_status);
-            ?>
-            <div class="mt-1">
-                <span class="badge bg-secondary text-white"><?php echo e(__('status')); ?>: <?php echo e($status_label); ?></span>
-                <a href="orders.php" class="text-danger small ms-2"><i class="fas fa-times me-1"></i><?php echo e(__('cancel')); ?></a>
-            </div>
-        <?php else: ?>
-            <small class="text-white-75"><?php echo __('all_orders'); ?>: <?php echo $total_orders; ?></small>
-        <?php endif; ?>
+<?php if($filter_status): ?>
+    <?php $status_label = getStatusLabel($filter_status); ?>
+    <div class="mb-4">
+        <span class="summary-chip"><?php echo e(__('status')); ?>: <?php echo e($status_label); ?></span>
     </div>
-    <div class="d-flex gap-2">
-        <?php if(!empty($_GET['search'])): ?>
-            <a href="orders.php" class="btn btn-outline-secondary"><?php echo __('cancel'); ?></a>
-        <?php endif; ?>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newOrderModal">
-            <i class="fas fa-plus me-2"></i> <?php echo __('new_order'); ?>
-        </button>
-    </div>
-</div>
+<?php endif; ?>
 
-<div class="card glass-card shadow-sm border-0">
+<div class="card glass-card shadow-sm ui-ready">
     <div class="card-body p-0">
         <div class="table-responsive" style="max-height: 700px; overflow-y: auto;">
             <table class="table table-hover align-middle mb-0">

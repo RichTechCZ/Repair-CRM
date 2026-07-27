@@ -115,16 +115,26 @@ if (isset($_SESSION['user_id'])) {
     <!-- Preconnect for performance -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/style.css">
     <link rel="stylesheet" href="assets/css/login.css">
 </head>
 <body>
 
 <div class="login-card">
-    <div class="glass-card shadow-sm p-2">
-        <div class="card-body p-4 rounded text-white">
-            <h3 class="text-center mb-4">Repair CRM</h3>
+    <div class="glass-card shadow-sm">
+        <div class="card-body rounded text-white">
+            <div class="login-brand">
+                <div class="brand-mark" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <div class="login-brand__copy">
+                    <strong>Repair CRM</strong>
+                    <span>Service operations</span>
+                </div>
+            </div>
 
             <?php if ($error): ?>
                 <div class="alert alert-danger small"><?php echo e($error); ?></div>
@@ -144,7 +154,7 @@ if (isset($_SESSION['user_id'])) {
                     <button type="submit" name="login" class="btn btn-primary"><?php echo e(__('login_btn')); ?></button>
                 </div>
             </form>
-            <div class="mt-4 text-center text-muted small">
+            <div class="login-note">
                 <p><?php echo e(__('demo_access')); ?></p>
             </div>
         </div>

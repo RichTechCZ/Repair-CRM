@@ -13,6 +13,9 @@ Root AGENTS.md -> assets/AGENTS.md
 
 ## Work Guidance
 - New shared browser helpers go in `js/main.js` or a dedicated `js/*.js` file linked from `includes/header.php` / the page.
+- Shared UI follows the premium CRM shell in `css/style.css`: restrained dark palette, warm accent, custom shell/navigation marks, minimal motion (with full `prefers-reduced-motion` support and subtle contextual animations only), and no generic glassmorphism or neon AI styling.
+- Keep new motion subtle and contextual; respect `prefers-reduced-motion`, visible focus states, and keyboard-accessible interactions.
+- Recent fixes (2026-07-24): Enhanced reduced-motion handling, improved mobile table wrapping, removed potential inline style conflicts, restored `.phone-qr-trigger` QR code popover functionality, and made metric cards + page header more compact (reduced padding/font sizes while preserving readability and mobile responsiveness). All changes documented in CHANGELOG.md.
 
 ## Verification
 - Manual smoke of dashboard/orders after asset changes.

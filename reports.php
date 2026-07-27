@@ -21,9 +21,13 @@ if (!$is_admin && $is_tech) {
 ?>
 
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
-        <h2 class="mb-0"><i class="fas fa-chart-line me-2 text-primary"></i><?php echo __('reports'); ?></h2>
-        <form class="d-flex gap-2">
+    <div class="page-header">
+        <div class="page-header__copy">
+            <div class="page-kicker"><?php echo e(get_setting('company_name', 'Repair CRM')); ?></div>
+            <h1><?php echo __('reports'); ?></h1>
+            <p class="page-subtitle"><?php echo e($start_date); ?> - <?php echo e($end_date); ?></p>
+        </div>
+        <form class="page-actions">
             <input type="hidden" name="tab" value="<?php echo $active_tab; ?>">
             <?php if($selected_tech_id): ?><input type="hidden" name="tech_id" value="<?php echo $selected_tech_id; ?>"><?php endif; ?>
             <input type="date" name="start_date" class="form-control form-control-sm" value="<?php echo $start_date; ?>">
@@ -34,7 +38,7 @@ if (!$is_admin && $is_tech) {
 
     <?php if ($is_admin): ?>
     <!-- Tab Navigation -->
-    <ul class="nav nav-pills mb-4 glass-panel p-2">
+    <ul class="nav nav-pills mb-4 glass-panel p-2 ui-ready">
         <li class="nav-item">
             <a class="nav-link <?php echo $active_tab == 'staff_stats' ? 'active' : 'text-white'; ?>" href="?tab=staff_stats&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>">
                 <i class="fas fa-users-cog me-2"></i><?php echo __('staff_stats'); ?>
@@ -53,7 +57,7 @@ if (!$is_admin && $is_tech) {
     </ul>
     <?php endif; ?>
 
-    <div class="tab-content glass-panel p-4">
+    <div class="tab-content glass-panel p-4 ui-ready">
         
         <!-- STAFF STATS TAB -->
         <?php if ($active_tab == 'staff_stats'): ?>

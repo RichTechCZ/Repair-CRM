@@ -1,7 +1,11 @@
-    <footer class="mt-5 pt-3 border-top text-center text-muted">
+    </main>
+
+    <footer class="app-footer">
         <p>&copy; <?php echo date('Y'); ?> Repair CRM - <?php echo __('system_title'); ?></p>
     </footer>
 </div> <!-- /#content -->
+
+<div id="appStatusLive" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
 
 <!-- Universal Preview Modal -->
 <div class="modal fade" id="universalPreviewModal" tabindex="-1">

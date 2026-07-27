@@ -2,8 +2,12 @@
 ob_start();
 require_once __DIR__ . '/../includes/api_bootstrap.php';
 
-$isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
-    && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+$requestFormat = strtolower(trim((string)($_POST['response_format'] ?? '')));
+$acceptsJson = stripos((string)($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json') !== false;
+$isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH'])
+        && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+    || $requestFormat === 'json'
+    || $acceptsJson;
 
 api_bootstrap([
     'post' => true,
@@ -30,14 +34,14 @@ api_bootstrap([
 ]);
 
 $customer_type = $_POST['customer_type'] ?? 'private';
-$first_name = $_POST['first_name'] ?? '';
-$last_name = $_POST['last_name'] ?? '';
-$phone = $_POST['phone'] ?? '';
-$email = $_POST['email'] ?? '';
-$address = $_POST['address'] ?? '';
-$ico = $_POST['ico'] ?? '';
-$dic = $_POST['dic'] ?? '';
-$company_name = $_POST['company_name'] ?? '';
+$first_name = trim((string)($_POST['first_name'] ?? ''));
+$last_name = trim((string)($_POST['last_name'] ?? ''));
+$phone = trim((string)($_POST['phone'] ?? ''));
+$email = trim((string)($_POST['email'] ?? ''));
+$address = trim((string)($_POST['address'] ?? ''));
+$ico = trim((string)($_POST['ico'] ?? ''));
+$dic = trim((string)($_POST['dic'] ?? ''));
+$company_name = trim((string)($_POST['company_name'] ?? ''));
 
 if (!$first_name || !$last_name || !$phone) {
     if ($isAjax) {

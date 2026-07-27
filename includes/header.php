@@ -30,7 +30,7 @@ if ($page == 'reports.php') {
 }
 ?>
 <!DOCTYPE html>
-<html lang="ru" data-bs-theme="dark">
+<html lang="<?php echo e($_SESSION['lang'] ?? 'ru'); ?>" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -52,8 +52,8 @@ if ($page == 'reports.php') {
     <!-- Select2 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 
-    <!-- Custom Google Fonts (Inter) for Liquid Glass Theme -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Typography: refined UI font + mono accents for metrics -->
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="assets/css/style.css">
 
@@ -117,82 +117,170 @@ if ($page == 'reports.php') {
     </script>
 </head>
 <body>
+<?php
+$company_name = (string)get_setting('company_name', 'Repair CRM');
+$current_page = basename($_SERVER['PHP_SELF']);
+$page_titles = [
+    'index.php' => __('dashboard'),
+    'orders.php' => __('orders'),
+    'customers.php' => __('customers'),
+    'inventory.php' => __('inventory'),
+    'reports.php' => __('reports'),
+    'accounting.php' => __('accounting'),
+    'settings.php' => __('settings'),
+    'view_order.php' => __('order'),
+    'edit_order.php' => __('edit'),
+    'edit_customer.php' => __('customers'),
+    'edit_inventory.php' => __('inventory'),
+];
+$page_title = $page_titles[$current_page] ?? $company_name;
 
-<div id="sidebar">
-    <div class="p-4 text-center">
-        <h4><?php echo htmlspecialchars(get_setting('company_name', 'Repair CRM')); ?></h4>
+$search_action = 'index.php';
+$search_placeholder = __('search_placeholder');
+$show_search = true;
+
+if ($current_page == 'orders.php') {
+    $search_action = 'orders.php';
+    $search_placeholder = __('orders') . ' (#ID, ' . __('client') . ', ' . __('phone') . ', ' . __('device_model') . ', ' . __('serial') . '...)';
+} elseif ($current_page == 'customers.php') {
+    $search_action = 'customers.php';
+    $search_placeholder = __('customers') . ' (ID, ' . __('client') . ', ' . __('phone') . ', ' . __('ico') . '...)';
+} elseif ($current_page == 'inventory.php') {
+    $search_action = 'inventory.php';
+    $search_placeholder = __('inventory') . ' (ID, ' . __('part_name') . ', ' . __('sku') . '...)';
+} elseif ($current_page == 'settings.php') {
+    if (($_SESSION['role'] ?? '') == 'admin') {
+        $search_action = 'settings.php';
+        $search_placeholder = __('technicians') . '...';
+    } else {
+        $show_search = false;
+    }
+}
+
+$nav_items = [
+    [
+        'href' => 'index.php',
+        'label' => __('dashboard'),
+        'icon' => 'dashboard',
+        'visible' => true,
+    ],
+    [
+        'href' => 'orders.php',
+        'label' => __('orders'),
+        'icon' => 'orders',
+        'visible' => true,
+    ],
+    [
+        'href' => 'customers.php',
+        'label' => __('customers'),
+        'icon' => 'customers',
+        'visible' => hasPermission('edit_customers'),
+    ],
+    [
+        'href' => 'inventory.php',
+        'label' => __('inventory'),
+        'icon' => 'inventory',
+        'visible' => hasPermission('admin_access'),
+    ],
+    [
+        'href' => 'reports.php',
+        'label' => __('reports'),
+        'icon' => 'reports',
+        'visible' => hasPermission('admin_access') || (($_SESSION['role'] ?? '') === 'technician'),
+    ],
+    [
+        'href' => 'accounting.php',
+        'label' => __('accounting'),
+        'icon' => 'accounting',
+        'visible' => hasPermission('admin_access'),
+    ],
+    [
+        'href' => 'settings.php',
+        'label' => __('settings'),
+        'icon' => 'settings',
+        'visible' => true,
+    ],
+];
+
+$user_initial = mb_strtoupper(mb_substr((string)($_SESSION['full_name'] ?? 'U'), 0, 1));
+?>
+
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
+
+<aside id="sidebar" class="app-sidebar" aria-label="Primary">
+    <div class="sidebar-brand">
+        <div class="brand-mark" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+        <div class="brand-copy">
+            <strong><?php echo e($company_name); ?></strong>
+            <span>Service operations</span>
+        </div>
     </div>
-    <nav class="nav flex-column">
-        <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'index.php' ? 'active' : ''; ?>" href="index.php"><i class="fas fa-home me-2"></i> <?php echo __('dashboard'); ?></a>
-        <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'orders.php' ? 'active' : ''; ?>" href="orders.php"><i class="fas fa-tools me-2"></i> <?php echo __('orders'); ?></a>
-        <?php if (hasPermission('edit_customers')): ?>
-            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'customers.php' ? 'active' : ''; ?>" href="customers.php"><i class="fas fa-users me-2"></i> <?php echo __('customers'); ?></a>
-        <?php endif; ?>
-        <?php if (hasPermission('admin_access')): ?>
-            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'inventory.php' ? 'active' : ''; ?>" href="inventory.php"><i class="fas fa-boxes me-2"></i> <?php echo __('inventory'); ?></a>
-            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'reports.php' ? 'active' : ''; ?>" href="reports.php"><i class="fas fa-chart-line me-2"></i> <?php echo __('reports'); ?></a>
-            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'accounting.php' ? 'active' : ''; ?>" href="accounting.php"><i class="fas fa-file-invoice-dollar me-2"></i> <?php echo __('accounting'); ?></a>
-            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'settings.php' ? 'active' : ''; ?>" href="settings.php"><i class="fas fa-cog me-2"></i> <?php echo __('settings'); ?></a>
-        <?php else: ?>
-            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'reports.php' ? 'active' : ''; ?>" href="reports.php"><i class="fas fa-chart-line me-2"></i> <?php echo __('reports'); ?></a>
-            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'settings.php' ? 'active' : ''; ?>" href="settings.php"><i class="fas fa-user-circle me-2"></i> <?php echo __('settings'); ?></a>
-        <?php endif; ?>
-    </nav>
-</div>
 
-<div id="content">
-    <nav class="navbar navbar-expand-lg navbar-dark mb-4 rounded shadow-sm">
-        <div class="container-fluid d-flex align-items-center justify-content-between">
-            <div class="d-flex align-items-center">
-                <button class="btn btn-sm btn-outline-secondary me-3 d-lg-none" id="sidebarCollapse">
-                    <i class="fas fa-bars"></i>
-                </button>
-                <span class="navbar-brand mb-0 h1 d-none d-sm-inline-block"><?php echo get_setting('company_name', 'Repair CRM'); ?></span>
+    <div class="sidebar-section-label">Workspace</div>
+    <nav class="nav flex-column app-nav">
+        <?php foreach ($nav_items as $item): ?>
+            <?php if (!$item['visible']) continue; ?>
+            <?php $is_active = $current_page === basename($item['href']); ?>
+            <a class="nav-link <?php echo $is_active ? 'active' : ''; ?>" href="<?php echo e($item['href']); ?>">
+                <span class="nav-mark nav-mark--<?php echo e($item['icon']); ?>" aria-hidden="true"></span>
+                <span><?php echo e($item['label']); ?></span>
+            </a>
+        <?php endforeach; ?>
+    </nav>
+
+    <div class="sidebar-foot">
+        <div class="sidebar-user">
+            <span class="sidebar-user__avatar" aria-hidden="true"><?php echo e($user_initial); ?></span>
+            <div class="sidebar-user__copy">
+                <strong><?php echo e($_SESSION['full_name'] ?? __('technician')); ?></strong>
+                <span><?php echo e((($_SESSION['role'] ?? '') === 'admin') ? 'Admin access' : __('technician')); ?></span>
             </div>
-            
-            <!-- Smart Search -->
-            <?php
-            $current_page = basename($_SERVER['PHP_SELF']);
-            $search_action = 'index.php';
-            $search_placeholder = __('search_placeholder'); // Global search
-            $show_search = true;
-            
-            if ($current_page == 'orders.php') {
-                $search_action = 'orders.php';
-                $search_placeholder = __('orders') . ' (#ID, ' . __('client') . ', ' . __('phone') . ', ' . __('device_model') . ', ' . __('serial') . '...)';
-            } elseif ($current_page == 'customers.php') {
-                $search_action = 'customers.php';
-                $search_placeholder = __('customers') . ' (ID, ' . __('client') . ', ' . __('phone') . ', ' . __('ico') . '...)';
-            } elseif ($current_page == 'inventory.php') {
-                $search_action = 'inventory.php';
-                $search_placeholder = __('inventory') . ' (ID, ' . __('part_name') . ', ' . __('sku') . '...)';
-            } elseif ($current_page == 'settings.php') {
-                if ($_SESSION['role'] == 'admin') {
-                    $search_action = 'settings.php';
-                    $search_placeholder = __('technicians') . '...';
-                } else {
-                    $show_search = false; // Hide search for techs on profile page
-                }
-            }
-            ?>
+        </div>
+        <a href="logout.php" class="btn btn-outline-secondary btn-sm w-100"><?php echo __('logout'); ?></a>
+    </div>
+</aside>
+
+<div id="content" class="app-content">
+    <nav class="navbar navbar-expand-lg topbar-shell mb-4" aria-label="Header">
+        <div class="container-fluid topbar-main">
+            <div class="topbar-title-group">
+                <button class="btn btn-outline-secondary topbar-menu d-lg-none" id="sidebarCollapse" type="button" aria-label="Open navigation">
+                    <span class="menu-bars" aria-hidden="true"></span>
+                </button>
+                <div>
+                    <div class="page-kicker"><?php echo e($company_name); ?></div>
+                    <span class="navbar-brand page-title mb-0"><?php echo e($page_title); ?></span>
+                </div>
+            </div>
+
             <?php if ($show_search): ?>
-            <form action="<?php echo $search_action; ?>" method="GET" class="d-flex mx-auto" style="max-width: 400px; width: 100%;">
-                <div class="input-group">
-                    <input type="text" name="search" class="form-control" placeholder="<?php echo e($search_placeholder); ?>" value="<?php echo e($_GET['search'] ?? ''); ?>">
-                    <button class="btn btn-outline-primary" type="submit">
-                        <i class="fas fa-search"></i>
-                    </button>
+            <form action="<?php echo e($search_action); ?>" method="GET" class="topbar-search" role="search">
+                <label for="globalSearch" class="visually-hidden"><?php echo e(__('search_placeholder')); ?></label>
+                <div class="search-shell">
+                    <span class="search-shell__icon" aria-hidden="true"></span>
+                    <input id="globalSearch" type="text" name="search" class="form-control" placeholder="<?php echo e($search_placeholder); ?>" value="<?php echo e($_GET['search'] ?? ''); ?>">
+                    <button class="btn btn-primary btn-sm px-3" type="submit">Go</button>
                 </div>
             </form>
             <?php else: ?>
-                <div class="mx-auto" style="max-width: 400px; width: 100%;"></div>
+                <div class="topbar-search topbar-search--empty" aria-hidden="true"></div>
             <?php endif; ?>
 
-            <div class="d-flex align-items-center">
-                <span class="navbar-text me-3">
-                    <i class="fas fa-user-circle me-1"></i> <?php echo e($_SESSION['full_name'] ?? __('technician')); ?>
-                </span>
-                <a href="logout.php" class="btn btn-outline-danger btn-sm"><?php echo __('logout'); ?></a>
+            <div class="topbar-actions">
+                <div class="topbar-user-chip">
+                    <span class="topbar-user-chip__avatar" aria-hidden="true"><?php echo e($user_initial); ?></span>
+                    <div class="topbar-user-chip__copy">
+                        <strong><?php echo e($_SESSION['full_name'] ?? __('technician')); ?></strong>
+                        <span><?php echo e($page_title); ?></span>
+                    </div>
+                </div>
             </div>
         </div>
     </nav>
+
+    <main id="main-content" class="content-shell" tabindex="-1">

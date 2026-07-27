@@ -43,6 +43,7 @@ $show_shipping = $status === 'Issued';
 $show_invoice = hasPermission('admin_access')
     && in_array($status, ['Ready', 'Issued'], true)
     && (($order['final_cost'] ?? 0) > 0 || ($order['estimated_cost'] ?? 0) > 0);
+$created_label = date('d.m.Y H:i', strtotime($order['created_at']));
 
 // Fetch status log
 $status_log = [];
@@ -63,50 +64,60 @@ try {
 }
 ?>
 
+<?php
+    $back_url = "javascript:history.back()";
+    if (!empty($_GET['return'])) {
+        $candidate_back_url = (string)$_GET['return'];
+        $is_relative_url = !preg_match('#^(?:[a-z][a-z0-9+.-]*:|//)#i', $candidate_back_url);
+        $has_safe_chars = (bool)preg_match('/^[A-Za-z0-9_\/.\-]+(?:\?[A-Za-z0-9_=&%+.,:\-\/]*)?$/', $candidate_back_url);
+        if ($is_relative_url && $has_safe_chars) {
+            $back_url = $candidate_back_url;
+        }
+    }
+?>
+
+<div class="page-header">
+    <div class="page-header__copy">
+        <div class="page-kicker"><?php echo __('order'); ?></div>
+        <h1>#<?php echo $order['id']; ?> · <?php echo htmlspecialchars($order['device_model']); ?></h1>
+        <p class="page-subtitle"><?php echo __('created'); ?>: <?php echo $created_label; ?></p>
+    </div>
+    <div class="page-actions">
+        <a href="<?php echo e($back_url); ?>" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i>
+            <span><?php echo __('back'); ?></span>
+        </a>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#editOrderFullModal">
+            <i class="fas fa-edit"></i>
+            <span><?php echo __('edit'); ?></span>
+        </button>
+        <?php if(hasPermission('admin_access')): ?>
+        <button class="btn btn-outline-danger" onclick="deleteOrder(<?php echo $order['id']; ?>)">
+            <i class="fas fa-trash"></i>
+            <span><?php echo __('delete'); ?></span>
+        </button>
+        <?php endif; ?>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-md-8">
-        <div class="card glass-card border-0 mb-4">
+        <div class="card glass-card mb-4 ui-ready">
             <div class="card-header bg-transparent border-bottom-0 d-flex justify-content-between align-items-center py-3">
-                <div class="d-flex align-items-center">
-                    <?php
-                        $back_url = "javascript:history.back()";
-                        if (!empty($_GET['return'])) {
-                            $candidate_back_url = (string)$_GET['return'];
-                            $is_relative_url = !preg_match('#^(?:[a-z][a-z0-9+.-]*:|//)#i', $candidate_back_url);
-                            $has_safe_chars = (bool)preg_match('/^[A-Za-z0-9_\/.\-]+(?:\?[A-Za-z0-9_=&%+.,:\-\/]*)?$/', $candidate_back_url);
-                            if ($is_relative_url && $has_safe_chars) {
-                                $back_url = $candidate_back_url;
-                            }
-                        }
-                    ?>
-                    <a href="<?php echo e($back_url); ?>" class="btn btn-outline-secondary btn-sm me-2" title="<?php echo __('back'); ?>">
-                        <i class="fas fa-arrow-left"></i>
-                    </a>
-                    <button class="btn btn-sm btn-primary me-2" data-bs-toggle="modal" data-bs-target="#editOrderFullModal">
-                        <i class="fas fa-edit me-1"></i> <?php echo __('edit'); ?>
-                    </button>
-                    <?php if(hasPermission('admin_access')): ?>
-                    <button class="btn btn-sm btn-outline-danger me-3" onclick="deleteOrder(<?php echo $order['id']; ?>)">
-                        <i class="fas fa-trash me-1"></i> <?php echo __('delete'); ?>
-                    </button>
-                    <?php endif; ?>
-                    <h5 class="mb-0">
-                        <?php echo __('order'); ?> #<?php echo $order['id']; ?> - <?php echo htmlspecialchars($order['device_model']); ?>
-                        <span class="text-white-75 fw-normal ms-2" style="font-size: 0.9rem;">
-                            (<?php echo __('created'); ?>: <?php echo date('d.m.Y H:i', strtotime($order['created_at'])); ?>)
-                        </span>
-                    </h5>
+                <div>
+                    <div class="card-eyebrow"><?php echo __('status'); ?></div>
+                    <h5 class="mb-0 mt-1"><?php echo htmlspecialchars($order['device_brand'] . ' ' . $order['device_model']); ?></h5>
                 </div>
                 <?php echo getStatusBadge($order['status']); ?>
             </div>
             <div class="card-body">
-                <div class="row mb-4">
-                    <div class="col-md-6">
+                <div class="detail-grid mb-4">
+                    <div class="detail-card">
                         <h6><?php echo __('client'); ?></h6>
                         <p class="mb-1"><strong><?php echo htmlspecialchars($order['first_name'].' '.$order['last_name']); ?></strong></p>
                         <p class="text-white-75"><i class="fas fa-phone me-2 text-success"></i><?php echo htmlspecialchars($order['phone']); ?></p>
                     </div>
-                    <div class="col-md-6 text-md-end">
+                    <div class="detail-card">
                         <h6><?php echo __('device_model'); ?></h6>
                         <p class="mb-1"><strong><?php echo htmlspecialchars($order['device_brand'] . ' ' . $order['device_model']); ?></strong></p>
                         <p class="text-white-75 mb-1">
@@ -123,22 +134,15 @@ try {
                         </p>
                         <?php endif; ?>
                     </div>
-                </div>
-
-                <div class="row mb-4">
-                    <div class="col-md-4">
+                    <div class="detail-card">
                         <h6><?php echo __('pin'); ?></h6>
                         <div class="alert alert-warning bg-transparent border border-warning py-2 mb-0">
                             <code class="text-warning"><?php echo htmlspecialchars($order['pin_code'] ?: '---'); ?></code>
                         </div>
-                    </div>
-                    <div class="col-md-4">
-                        <h6><?php echo __('technician'); ?></h6>
-                        <div class="alert alert-info bg-transparent border border-info py-2 mb-0 text-info">
+                        <h6 class="mt-3"><?php echo __('technician'); ?></h6>
+                        <div class="alert alert-info bg-transparent border border-info py-2 mb-3 text-info">
                             <i class="fas fa-user-cog me-2"></i><strong><?php echo htmlspecialchars($order['tech_name'] ?: '---'); ?></strong>
                         </div>
-                    </div>
-                    <div class="col-md-4 text-md-end">
                         <h6><?php echo __('priority'); ?></h6>
                         <?php if($order['priority'] == 'High'): ?>
                             <span class="badge bg-danger px-3 py-2 mt-1"><?php echo __('high'); ?></span>
@@ -916,4 +920,3 @@ try {
 
 <?php require_once __DIR__ . '/includes/partials/view_order_scripts.php'; ?>
 <?php require_once 'includes/footer.php'; ?>
-

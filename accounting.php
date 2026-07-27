@@ -251,11 +251,11 @@ $customers = $stmt->fetchAll();
                             <thead class="table-dark">
                                 <tr>
                                     <th><?php echo __('item_name'); ?></th>
-                                    <th style="width: 100px;"><?php echo __('quantity'); ?></th>
-                                    <th style="width: 80px;"><?php echo __('unit_label'); ?></th>
-                                    <th style="width: 150px;"><?php echo __('price_no_vat'); ?></th>
-                                    <th style="width: 100px;"><?php echo __('vat_rate'); ?></th>
-                                    <th style="width: 50px;"></th>
+                                    <th data-col="qty"><?php echo __('quantity'); ?></th>
+                                    <th data-col="unit"><?php echo __('unit_label'); ?></th>
+                                    <th data-col="price"><?php echo __('price_no_vat'); ?></th>
+                                    <th data-col="vat"><?php echo __('vat_rate'); ?></th>
+                                    <th data-col="actions"></th>
                                 </tr>
                             </thead>
                             <tbody>

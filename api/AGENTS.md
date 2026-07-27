@@ -23,6 +23,7 @@ Root AGENTS.md -> api/AGENTS.md
 ## Work Guidance
 - Prefer `api_bootstrap()` for all new write endpoints; set `rate` action name uniquely.
 - Form-redirect endpoints (e.g. `add_order`, `parse_catalog`) use `'json' => false` and optional custom `fail` callback.
+- `add_customer` supports both browser form redirects and explicit JSON responses (`response_format=json` or an `Accept: application/json` request); clients must state the intended response format instead of relying only on `X-Requested-With`.
 - Log system failures with `error_log`; return localized/safe messages to the browser.
 
 ## Verification

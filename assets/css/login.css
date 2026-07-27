@@ -1,2 +1,56 @@
-body { height: 100vh; display: flex; align-items: center; }
-.login-card { width: 100%; max-width: 400px; padding: 15px; margin: auto; }
+body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 27rem;
+    margin: auto;
+}
+
+.login-card .glass-card {
+    padding: 0.5rem;
+}
+
+.login-card .card-body {
+    padding: 2rem !important;
+}
+
+.login-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.9rem;
+    margin-bottom: 1.75rem;
+}
+
+.login-brand__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.login-brand__copy strong {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+}
+
+.login-brand__copy span {
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.login-note {
+    margin-top: 1.25rem;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}

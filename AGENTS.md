@@ -77,6 +77,7 @@ Default section order:
 ## User Preferences
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
+- Shared CRM UI should avoid generic AI styling (glassmorphism, neon gradients, stock-looking iconography, excessive motion) and instead use a restrained premium interface with deliberate typography, limited accents, and subtle microinteractions.
 - Employees and technicians must only see and work with orders assigned to their own `technician_id`; technician-side broad permissions must not expose other technicians' orders.
 - Technician-scoped users also may only list/search/edit customers they already share an order with; customer order lists (`get_customer_orders`) must not leak other technicians' orders for the same customer.
 - Assignable tech permissions are only: `admin_access`, `edit_customers`, `manage_passwords`. Cross-tech order rights (`view_all_orders`, `edit_orders`) are removed and must not return; order access is always ownership-based unless the user has `admin_access` / session admin.

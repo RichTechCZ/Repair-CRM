@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let hideTimeout;
 
     document.querySelectorAll('.phone-qr-trigger').forEach(el => {
-        el.addEventListener('mouseenter', function(e) {
+        el.addEventListener('click', function(e) {
             clearTimeout(hideTimeout);
             const phone = this.dataset.phone;
             if (!phone) return;
@@ -23,10 +23,20 @@ document.addEventListener('DOMContentLoaded', function() {
             phoneLabel.textContent = phone;
             callBtn.href = 'tel:' + phone;
 
-            // Position popover
+            // Position popover (fixed positioning)
             const rect = e.target.getBoundingClientRect();
-            popover.style.left = (rect.right + 10) + 'px';
-            popover.style.top = rect.top + 'px';
+            popover.style.left = (rect.right + 15) + 'px';
+            popover.style.top = (rect.bottom + 5) + 'px';
+            popover.style.display = 'block';
+        });
+
+        el.addEventListener('mouseenter', function(e) {
+            // Optional: auto-show on hover for desktop
+            const phone = this.dataset.phone;
+            if (!phone) return;
+            const rect = e.target.getBoundingClientRect();
+            popover.style.left = (rect.right + 15) + 'px';
+            popover.style.top = (rect.bottom + 5) + 'px';
             popover.style.display = 'block';
         });
 
@@ -673,13 +683,22 @@ $(document).ready(function() {
             ico: $('#inline_ico_input').val() || '',
             company_name: $('#inline_ares_name').val() || '',
             dic: $('#inline_ares_dic').val() || '',
-            csrf_token: $('input[name="csrf_token"]').first().val()
+            response_format: 'json',
+            csrf_token: $panel.closest('form').find('input[name="csrf_token"]').val()
         };
 
-        $.post('api/add_customer.php', formData, function(res) {
-            btn.prop('disabled', false).html('<i class="fas fa-check me-2"></i><?php echo __('save'); ?>');
-            if (res.success) {
-                const id = res.id;
+        $.ajax({
+            url: 'api/add_customer.php',
+            method: 'POST',
+            dataType: 'json',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            data: formData
+        }).done(function(res) {
+            const id = Number(res && res.id);
+            if (res && res.success && Number.isInteger(id) && id > 0) {
                 const label = (lastName + ' ' + firstName).trim() + (phone ? ' (' + phone + ')' : '');
                 const $select = $('.select2-customer');
                 if ($select.length) {
@@ -694,14 +713,17 @@ $(document).ready(function() {
                 $panel.find('#inline_type_private').prop('checked', true);
                 // Collapse the panel
                 const collapseEl = document.getElementById('inlineNewCustomerPanel');
-                const bsCollapse = bootstrap.Collapse.getInstance(collapseEl);
-                if (bsCollapse) bsCollapse.hide();
+                if (collapseEl && window.bootstrap) {
+                    bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false }).hide();
+                }
             } else {
                 showAlert(res.message || '<?php echo __('add_client_error'); ?>');
             }
-        }, 'json').fail(function() {
+        }).fail(function(xhr) {
+            const message = xhr.responseJSON && xhr.responseJSON.message;
+            showAlert(message || '<?php echo __('network_error_client'); ?>');
+        }).always(function() {
             btn.prop('disabled', false).html('<i class="fas fa-check me-2"></i><?php echo __('save'); ?>');
-            showAlert('<?php echo __('network_error_client'); ?>');
         });
     });
 
@@ -882,4 +904,3 @@ function deleteOrder(id) {
     });
 }
 </script>
-
