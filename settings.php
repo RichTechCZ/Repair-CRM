@@ -252,7 +252,7 @@ require_once 'includes/header.php';
         </div>
         <?php if (isset($_GET['updated'])): ?>
             <div class="page-actions">
-                <span class="badge bg-success-glow"><?php echo __('updated_success'); ?></span>
+                <span class="status-pill status-pill--stock-ok"><?php echo __('updated_success'); ?></span>
             </div>
         <?php endif; ?>
     </div>

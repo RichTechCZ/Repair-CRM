@@ -311,11 +311,9 @@ $user_initial = mb_strtoupper(mb_substr((string)($_SESSION['full_name'] ?? 'U'),
         </div>
         <div class="brand-copy">
             <strong><?php echo e($company_name); ?></strong>
-            <span>Service operations</span>
         </div>
     </div>
 
-    <div class="sidebar-section-label">Workspace</div>
     <nav class="nav flex-column app-nav">
         <?php foreach ($nav_items as $item): ?>
             <?php if (!$item['visible']) continue; ?>
@@ -332,7 +330,7 @@ $user_initial = mb_strtoupper(mb_substr((string)($_SESSION['full_name'] ?? 'U'),
             <span class="sidebar-user__avatar" aria-hidden="true"><?php echo e($user_initial); ?></span>
             <div class="sidebar-user__copy">
                 <strong><?php echo e($_SESSION['full_name'] ?? __('technician')); ?></strong>
-                <span><?php echo e((($_SESSION['role'] ?? '') === 'admin') ? 'Admin access' : __('technician')); ?></span>
+                <span><?php echo e((($_SESSION['role'] ?? '') === 'admin') ? __('administrator') : __('technician')); ?></span>
             </div>
         </div>
         <a href="logout.php" class="btn btn-outline-secondary btn-sm w-100"><?php echo __('logout'); ?></a>
@@ -354,7 +352,7 @@ $user_initial = mb_strtoupper(mb_substr((string)($_SESSION['full_name'] ?? 'U'),
                 <div class="search-shell">
                     <span class="search-shell__icon" aria-hidden="true"></span>
                     <input id="globalSearch" type="text" name="search" class="form-control" placeholder="<?php echo e($search_placeholder); ?>" value="<?php echo e($_GET['search'] ?? ''); ?>">
-                    <button class="btn btn-primary btn-sm px-3" type="submit">Go</button>
+                    <button class="btn btn-primary btn-sm px-3" type="submit" aria-label="<?php echo e($search_placeholder); ?>"><i class="fas fa-arrow-right" aria-hidden="true"></i></button>
                 </div>
             </form>
             <?php elseif (!$show_search): ?>

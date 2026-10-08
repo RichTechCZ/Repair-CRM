@@ -239,7 +239,7 @@ if (isset($_SESSION['user_id'])) {
                 </div>
                 <div class="login-brand__copy">
                     <strong>Repair CRM</strong>
-                    <span>Service operations</span>
+                    <span><?php echo e(__('login_title')); ?></span>
                 </div>
             </div>
 

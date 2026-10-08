@@ -867,5 +867,13 @@ assertTrue(
     'mobile.js must stay a plain external script (CSP nonce is applied by the template)'
 );
 
+$styleCss = (string)file_get_contents(__DIR__ . '/../assets/css/style.css');
+assertTrue(strpos($styleCss, 'gradient') === false, 'UI surfaces and buttons must stay flat (no gradients)');
+assertTrue(strpos($styleCss, '-glow') === false, 'glow badge helpers must not return');
+assertTrue(
+    strpos($headerSource, 'Service operations') === false && strpos($headerSource, '>Go<') === false,
+    'shell must not ship stock English filler labels'
+);
+
 echo "OK: security and financial regression checks passed\n";
 
