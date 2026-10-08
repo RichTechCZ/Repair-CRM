@@ -49,7 +49,90 @@ final class OrderStatusService
     }
 
     /**
-     * Issued requires positive final cost; optionally shipping method.
+     * Customer collected the device in person — no carrier and no delivery expense.
+     */
+    public static function isSelfPickupShippingMethod($shippingMethod): bool
+    {
+        $normalized = mb_strtolower(preg_replace('/\s+/', ' ', trim((string)$shippingMethod)), 'UTF-8');
+        if ($normalized === '') {
+            return false;
+        }
+        $normalized = strtr($normalized, [
+            'á' => 'a', 'í' => 'i', 'é' => 'e', 'ý' => 'y', 'ů' => 'u', 'ú' => 'u', 'ě' => 'e',
+            'č' => 'c', 'ř' => 'r', 'š' => 's', 'ž' => 'z', 'ň' => 'n', 'ť' => 't', 'ď' => 'd',
+        ]);
+        $aliases = [
+            'self pickup',
+            'self_pickup',
+            'selfpickup',
+            'pickup',
+            'клиент забрал сам',
+            'забрал сам',
+            'самовывоз',
+            'osobni odber',
+            'osobniodeber',
+        ];
+        return in_array($normalized, $aliases, true);
+    }
+
+    /**
+     * Issued needs a handover method. Self Pickup counts; an empty value does not.
+     */
+    public static function issuedShippingSatisfied($shippingMethod): bool
+    {
+        return trim((string)$shippingMethod) !== '';
+    }
+
+    /**
+     * Delivery expense applies only to carrier/courier handover, never Self Pickup.
+     */
+    public static function issuedRequiresDeliveryExpense($shippingMethod): bool
+    {
+        return self::issuedShippingSatisfied($shippingMethod)
+            && !self::isSelfPickupShippingMethod($shippingMethod);
+    }
+
+    /**
+     * Warranty / reclamation jobs are not billed a final customer charge.
+     */
+    public static function isReclamationOrderType($orderType): bool
+    {
+        $normalized = mb_strtolower(preg_replace('/\s+/', ' ', trim((string)$orderType)), 'UTF-8');
+        if ($normalized === '') {
+            return false;
+        }
+        $normalized = strtr($normalized, [
+            'á' => 'a', 'í' => 'i', 'é' => 'e', 'ý' => 'y', 'ů' => 'u', 'ú' => 'u', 'ě' => 'e',
+            'č' => 'c', 'ř' => 'r', 'š' => 's', 'ž' => 'z', 'ň' => 'n', 'ť' => 't', 'ď' => 'd',
+        ]);
+        return in_array($normalized, [
+            'warranty',
+            'reclamation',
+            'reklamace',
+            'рекламация',
+            'гарантия',
+            'гарантийный',
+        ], true);
+    }
+
+    /**
+     * Paid repairs need a positive final cost unless handover is Self Pickup
+     * or the job is a reclamation/warranty order.
+     */
+    public static function issuedRequiresFinalCost($orderType, $shippingMethod = null): bool
+    {
+        if (self::isReclamationOrderType($orderType)) {
+            return false;
+        }
+        if (self::isSelfPickupShippingMethod($shippingMethod)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Issued requires a handover method. Reclamation/warranty and Self Pickup
+     * skip the positive final-cost gate. Paid carrier handover still needs it.
      *
      * @throws Exception
      */
@@ -57,17 +140,107 @@ final class OrderStatusService
         string $canonicalNew,
         $finalCost,
         ?string $shippingMethod = null,
-        bool $requireShipping = true
+        bool $requireShipping = true,
+        $orderType = null
     ): void {
         if ($canonicalNew !== 'Issued') {
             return;
         }
+        if ($requireShipping && !self::issuedShippingSatisfied($shippingMethod)) {
+            throw new Exception(__('required_for_issue'));
+        }
+        if (!self::issuedRequiresFinalCost($orderType, $shippingMethod)) {
+            return;
+        }
         if ($finalCost === null || $finalCost === '' || (float)$finalCost <= 0) {
-            throw new Exception(__('required_for_issue'));
+            throw new Exception(__('required_final_cost_for_issue'));
         }
-        if ($requireShipping && ($shippingMethod === null || trim((string)$shippingMethod) === '')) {
-            throw new Exception(__('required_for_issue'));
+    }
+
+    /**
+     * Normalize a datetime-local / SQL datetime from the Status date editor.
+     */
+    public static function parseManualStatusDate($raw): ?string
+    {
+        $value = trim(str_replace('T', ' ', (string)$raw));
+        if ($value === '') {
+            return null;
         }
+        if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/', $value)) {
+            return null;
+        }
+        if (strlen($value) === 16) {
+            $value .= ':00';
+        }
+        $date = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $value);
+        if (!$date || $date->format('Y-m-d H:i:s') !== $value) {
+            return null;
+        }
+        $year = (int)$date->format('Y');
+        if ($year < 2000 || $year > 2100) {
+            return null;
+        }
+        return $value;
+    }
+
+    /**
+     * Move the current status-history row to the date shown in the Status editor.
+     * Older history rows stay put.
+     *
+     * @return 'updated'|'inserted'
+     */
+    public static function syncStatusHistoryDate(
+        PDO $pdo,
+        int $orderId,
+        string $currentStatus,
+        string $changedAt
+    ): string {
+        $canonical = function_exists('canonicalOrderStatus')
+            ? canonicalOrderStatus($currentStatus)
+            : $currentStatus;
+        $legacy = function_exists('getLegacyEquivalentStatus')
+            ? getLegacyEquivalentStatus($canonical)
+            : null;
+        $statuses = array_values(array_unique(array_filter([
+            $currentStatus,
+            $canonical,
+            $legacy,
+        ], static function ($status) {
+            return $status !== null && $status !== '';
+        })));
+        if ($statuses === []) {
+            $statuses = [$currentStatus];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($statuses), '?'));
+        $stmt = $pdo->prepare(
+            "SELECT id FROM order_status_log
+             WHERE order_id = ? AND new_status IN ({$placeholders})
+             ORDER BY changed_at DESC, id DESC
+             LIMIT 1"
+        );
+        $stmt->execute(array_merge([$orderId], $statuses));
+        $logId = $stmt->fetchColumn();
+
+        if ($logId) {
+            $update = $pdo->prepare('UPDATE order_status_log SET changed_at = ? WHERE id = ? AND order_id = ?');
+            $update->execute([$changedAt, $logId, $orderId]);
+            return 'updated';
+        }
+
+        $insert = $pdo->prepare(
+            'INSERT INTO order_status_log (order_id, old_status, new_status, changed_by, changed_role, changed_at)
+             VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        $insert->execute([
+            $orderId,
+            '',
+            $canonical !== '' ? $canonical : $currentStatus,
+            null,
+            null,
+            $changedAt,
+        ]);
+        return 'inserted';
     }
 
     /**
@@ -204,13 +377,13 @@ final class OrderStatusService
         $msg = sprintf(__('tg_new_order'), $orderId) . "\n";
         $msg .= sprintf(
             __('tg_device'),
-            trim(($orderSnapshot['device_brand'] ?? '') . ' ' . ($orderSnapshot['device_model'] ?? ''))
+            telegramHtml(trim(($orderSnapshot['device_brand'] ?? '') . ' ' . ($orderSnapshot['device_model'] ?? '')))
         ) . "\n";
         $msg .= sprintf(
             __('tg_problem'),
-            mb_substr((string)($orderSnapshot['problem_description'] ?? ''), 0, 100)
+            telegramHtml(mb_substr((string)($orderSnapshot['problem_description'] ?? ''), 0, 100))
         ) . "\n";
-        $msg .= sprintf(__('tg_open_link'), $link);
+        $msg .= sprintf(__('tg_open_link'), telegramHtml($link));
         sendTelegramNotification($techTelegram, $msg);
     }
 }

@@ -12,30 +12,60 @@ $invoice_number = $_POST['invoice_number'] ?? null;
 $item_name = $_POST['item_name'] ?? '';
 $date_issue = $_POST['date_issue'] ?? date('Y-m-d');
 $date_due = $_POST['date_due'] ?? date('Y-m-d', strtotime('+14 days'));
-$total_amount = floatval($_POST['total_amount'] ?? 0);
+$total_amount_raw = $_POST['total_amount'] ?? null;
 
-if (!$order_id) {
+if (
+    !$order_id ||
+    !is_numeric($total_amount_raw) ||
+    !is_finite((float)$total_amount_raw) ||
+    (float)$total_amount_raw < 0 ||
+    trim((string)$item_name) === ''
+) {
     echo json_encode(['success' => false, 'message' => 'Не указан заказ']);
+    exit;
+}
+$total_amount = (float)$total_amount_raw;
+
+$isValidDate = static function (string $value): bool {
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+    return $date !== false && $date->format('Y-m-d') === $value;
+};
+if (!$isValidDate((string)$date_issue) || !$isValidDate((string)$date_due) || $date_due < $date_issue) {
+    echo json_encode(['success' => false, 'message' => __('missing_data')]);
     exit;
 }
 
 try {
+    $pdo->beginTransaction();
+
     // Get order and customer data
-    $stmt = $pdo->prepare("SELECT o.*, c.* FROM orders o JOIN customers c ON o.customer_id = c.id WHERE o.id = ?");
+    $stmt = $pdo->prepare("SELECT o.*, c.* FROM orders o JOIN customers c ON o.customer_id = c.id WHERE o.id = ? FOR UPDATE");
     $stmt->execute([$order_id]);
     $order = $stmt->fetch();
     
     if (!$order) {
-        echo json_encode(['success' => false, 'message' => 'Заказ не найден']);
-        exit;
+        throw new RuntimeException('Order not found.');
     }
-    
-    $pdo->beginTransaction();
 
     $is_vat_payer = get_setting('acc_is_vat_payer', '0') == '1';
     $vat_rate = $is_vat_payer ? get_setting('acc_vat_rate', '21') : 0;
     
     if (!empty($invoice_id)) {
+        $status = $_POST['status'] ?? 'issued';
+        $payment_method = $_POST['payment_method'] ?? 'bank_transfer';
+        if (!in_array($status, ['draft', 'issued', 'paid', 'overdue', 'cancelled'], true)) {
+            throw new InvalidArgumentException('Invalid invoice status.');
+        }
+        if (!in_array($payment_method, ['bank_transfer', 'cash', 'card'], true)) {
+            throw new InvalidArgumentException('Invalid payment method.');
+        }
+
+        $ownership_check = $pdo->prepare('SELECT id FROM invoices WHERE id = ? AND order_id = ? FOR UPDATE');
+        $ownership_check->execute([$invoice_id, $order_id]);
+        if (!$ownership_check->fetchColumn()) {
+            throw new RuntimeException('Invoice does not belong to this order.');
+        }
+
         // UPDATE existing invoice
         $stmt = $pdo->prepare("UPDATE invoices SET 
             invoice_number = ?, 
@@ -50,7 +80,6 @@ try {
             payment_date = ?
             WHERE id = ?");
         
-        $status = $_POST['status'] ?? 'issued';
         $payment_date = ($status == 'paid') ? date('Y-m-d') : null;
 
         $stmt->execute([
@@ -62,7 +91,7 @@ try {
             $total_amount,
             $item_name,
             $status,
-            $_POST['payment_method'] ?? 'bank_transfer',
+            $payment_method,
             $payment_date,
             $invoice_id
         ]);
@@ -80,11 +109,9 @@ try {
                 ->execute([$invoice_id, $item_name, $total_amount, $vat_rate]);
         }
         
-        $pdo->commit();
-        
-        // ← Always sync orders.final_cost with invoice total
         $pdo->prepare("UPDATE orders SET final_cost = ? WHERE id = ?")
             ->execute([$total_amount, $order_id]);
+        $pdo->commit();
 
         echo json_encode([
             'success' => true, 
@@ -133,11 +160,9 @@ try {
         $pdo->prepare("INSERT INTO invoice_items (invoice_id, item_name, quantity, unit, price, vat_rate) VALUES (?, ?, 1, 'ks', ?, ?)")
             ->execute([$invoice_id, $item_name, $total_amount, $vat_rate]);
         
-        $pdo->commit();
-        
-        // ← Always sync orders.final_cost with invoice total
         $pdo->prepare("UPDATE orders SET final_cost = ? WHERE id = ?")
             ->execute([$total_amount, $order_id]);
+        $pdo->commit();
 
         echo json_encode([
             'success' => true, 

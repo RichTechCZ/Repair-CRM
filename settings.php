@@ -1,6 +1,7 @@
 <?php
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+require_once 'includes/telegram_webhook_security.php';
 
 // Processing before header to avoid header already sent
 $is_admin_check = (($_SESSION['role'] ?? '') == 'admin') || (hasPermission('admin_access'));
@@ -25,21 +26,50 @@ if (isset($_POST['update_company']) && $is_admin_check) {
 
 if (isset($_POST['update_integrations']) && $is_admin_check) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
-    set_setting('tg_bot_token', trim($_POST['tg_bot_token']));
-    set_setting('ai_provider', $_POST['ai_provider']);
-    set_setting('ai_api_key', trim($_POST['ai_api_key']));
-    set_setting('ai_model', $_POST['ai_model']);
+    $incoming_tg = trim((string)($_POST['tg_bot_token'] ?? ''));
+    $incoming_ai = trim((string)($_POST['ai_api_key'] ?? ''));
+    // Never echo secrets back into HTML; update only when a non-empty value is submitted.
+    if ($incoming_tg !== '') {
+        set_setting('tg_bot_token', $incoming_tg);
+    }
+    set_setting('ai_provider', $_POST['ai_provider'] ?? '');
+    if ($incoming_ai !== '') {
+        set_setting('ai_api_key', $incoming_ai);
+    }
+    set_setting('ai_model', $_POST['ai_model'] ?? '');
 
-    if (!empty($_POST['tg_bot_token'])) {
-        $token = trim($_POST['tg_bot_token']);
-        $webhook_url = "https://app.servis.expert/tg_webhook.php";
-        $api_url = "https://api.telegram.org/bot" . $token . "/setWebhook?url=" . urlencode($webhook_url) . "&drop_pending_updates=true";
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $api_url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-        curl_exec($ch);
-        unset($ch);
+    if ($incoming_tg !== '') {
+        // The webhook must be registered with the same secret_token that tg_webhook.php
+        // enforces; otherwise Telegram stops sending the header and every update is rejected.
+        $webhook_url = trim((string)(getenv('TELEGRAM_WEBHOOK_URL') ?: ''));
+        $webhook_secret = trim((string)(getenv('TELEGRAM_WEBHOOK_SECRET') ?: ''));
+        if (
+            function_exists('curl_init')
+            && isValidTelegramWebhookUrl($webhook_url)
+            && isValidTelegramWebhookSecretFormat($webhook_secret)
+        ) {
+            $ch = curl_init('https://api.telegram.org/bot' . $incoming_tg . '/setWebhook');
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => http_build_query([
+                    'url' => $webhook_url,
+                    'secret_token' => $webhook_secret,
+                    'allowed_updates' => json_encode(['message', 'callback_query']),
+                ]),
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT => 10,
+                CURLOPT_TIMEOUT => 20,
+                CURLOPT_SSL_VERIFYPEER => true,
+            ]);
+            $tg_response = curl_exec($ch);
+            unset($ch);
+            $tg_result = is_string($tg_response) ? json_decode($tg_response, true) : null;
+            if (!is_array($tg_result) || empty($tg_result['ok'])) {
+                error_log('settings.php: Telegram setWebhook failed.');
+            }
+        } else {
+            error_log('settings.php: Telegram webhook not re-registered; TELEGRAM_WEBHOOK_URL/SECRET are not configured.');
+        }
     }
     header("Location: settings.php?tab=integrations&updated=1");
     exit;
@@ -51,7 +81,9 @@ if (isset($_POST['add_tech']) && $is_admin_check) {
     $email = $_POST['tech_email'] ?? '';
     $phone = $_POST['tech_phone'] ?? '';
     $spec = $_POST['tech_spec'];
-    $role = $_POST['role'] ?? 'engineer';
+    $role = in_array($_POST['role'] ?? '', ['engineer', 'manager'], true)
+        ? $_POST['role']
+        : 'engineer';
     $tg_id = $_POST['tech_tg'] ?? '';
     $username = trim($_POST['tech_username'] ?? '');
     $password = $_POST['tech_password'] ?? '';
@@ -83,7 +115,9 @@ if (isset($_POST['edit_tech'])) {
     $email = $_POST['tech_email'] ?? '';
     $phone = $_POST['tech_phone'] ?? '';
     $spec = $_POST['tech_spec'];
-    $role = $_POST['role'] ?? 'engineer';
+    $role = in_array($_POST['role'] ?? '', ['engineer', 'manager'], true)
+        ? $_POST['role']
+        : 'engineer';
     $tg_id = $_POST['tech_tg'] ?? '';
     $active = isset($_POST['is_active']) ? 1 : 0;
     $username = trim($_POST['tech_username'] ?? '');
@@ -131,8 +165,15 @@ if (isset($_POST['delete_tech']) && $is_admin_check) {
         header("Location: settings.php?tab=staff&error=csrf");
         exit;
     }
+    $techOrders = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE technician_id = ?");
+    $techOrders->execute([(int)$_POST['delete_tech']]);
+    if ((int)$techOrders->fetchColumn() > 0) {
+        // Deleting would orphan orders (technician_id -> NULL) and erase payroll history; deactivate instead.
+        header("Location: settings.php?tab=staff&error=tech_has_orders");
+        exit;
+    }
     $stmt = $pdo->prepare("DELETE FROM technicians WHERE id = ?");
-    $stmt->execute([$_POST['delete_tech']]);
+    $stmt->execute([(int)$_POST['delete_tech']]);
     header("Location: settings.php?tab=staff");
     exit;
 }
@@ -146,7 +187,7 @@ if (isset($_POST['save_permissions']) && $is_admin_check) {
 
 if (isset($_POST['change_admin_password']) && hasPermission('manage_passwords')) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
-    if (strlen($_POST['new_password']) >= 8) {
+    if (strlen((string)($_POST['new_password'] ?? '')) >= 8 && (int)($_POST['admin_id'] ?? 0) > 0) {
         $hashed = password_hash($_POST['new_password'], PASSWORD_DEFAULT);
         $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
         $stmt->execute([$hashed, $_POST['admin_id']]);
@@ -215,6 +256,16 @@ require_once 'includes/header.php';
             </div>
         <?php endif; ?>
     </div>
+    <?php
+    $settings_error_keys = [
+        'username_taken' => 'settings_err_username_taken',
+        'short_password' => 'settings_err_short_password',
+        'tech_has_orders' => 'settings_err_tech_has_orders',
+    ];
+    $settings_error = $settings_error_keys[$_GET['error'] ?? ''] ?? null;
+    if ($settings_error): ?>
+        <div class="alert alert-danger" role="alert"><?php echo e(__($settings_error)); ?></div>
+    <?php endif; ?>
 
     <!-- Tab Navigation -->
     <ul class="nav nav-pills mb-4 glass-panel p-2 border-secondary ui-ready" id="settingsTabs">
@@ -285,7 +336,7 @@ require_once 'includes/header.php';
                         <h5 class="mb-3 text-info"><i class="fab fa-telegram-plane me-2"></i>Telegram Bot</h5>
                         <div class="mb-3">
                             <label class="form-label small text-white-75">API Bot Token</label>
-                            <input type="password" name="tg_bot_token" class="form-control" value="<?php echo htmlspecialchars(get_setting('tg_bot_token')); ?>">
+                            <input type="password" name="tg_bot_token" class="form-control" value="" autocomplete="new-password" placeholder="<?php echo !empty(get_setting('tg_bot_token')) ? '********' : ''; ?>">
                         </div>
                         <div class="glass-panel p-3 border-secondary mb-3">
                             <h6 class="small fw-bold mb-2 text-white"><?php echo __('webhook_status'); ?></h6>
@@ -323,7 +374,7 @@ require_once 'includes/header.php';
                         </div>
                         <div class="mb-3">
                             <label class="form-label small text-white-75">API Key</label>
-                            <input type="password" name="ai_api_key" class="form-control" value="<?php echo htmlspecialchars(get_setting('ai_api_key')); ?>" placeholder="sk-...">
+                            <input type="password" name="ai_api_key" class="form-control" value="" autocomplete="new-password" placeholder="<?php echo !empty(get_setting('ai_api_key')) ? '********' : 'sk-...'; ?>">
                         </div>
                         <div class="mb-3">
                             <label class="form-label small text-white-75">AI Model</label>
@@ -360,21 +411,20 @@ require_once 'includes/header.php';
                             <td>
                                 <?php 
                                 $r = $t['role'] ?? 'engineer';
-                                if($r == 'admin') echo '<span class="badge bg-danger">'.__('role_admin').'</span>';
-                                elseif($r == 'manager') echo '<span class="badge bg-primary">'.__('role_manager').'</span>';
-                                else echo '<span class="badge bg-info-glow">'.__('role_engineer').'</span>';
+                                if($r == 'manager' || $r == 'admin') echo '<span class="status-pill status-pill--diagnostics">'.__('role_manager').'</span>';
+                                else echo '<span class="status-pill status-pill--closed">'.__('role_engineer').'</span>';
                                 ?>
                             </td>
                             <td><span class="badge glass-panel text-white border-secondary"><?php echo htmlspecialchars($t['specialization']); ?></span></td>
                             <td>
                                 <?php if (!empty($t['telegram_id'])): ?>
                                     <code class="small"><?php echo htmlspecialchars($t['telegram_id']); ?></code>
-                                    <button class="btn btn-link btn-sm p-0 ms-1 text-info" title="Тест уведомления" onclick="testTechTG(<?php echo $t['id']; ?>)"><i class="fab fa-telegram-plane"></i></button>
+                                    <button class="btn btn-link btn-sm p-0 ms-1 text-info" title="Тест уведомления" data-crm-action="test-technician-telegram" data-crm-id="<?php echo (int)$t['id']; ?>"><i class="fab fa-telegram-plane"></i></button>
                                 <?php else: ?>
                                     <span class="text-muted small"><?php echo __('not_linked'); ?></span>
                                 <?php endif; ?>
                             </td>
-                            <td><?php echo ($t['is_active'] ?? 1) ? '<span class="badge bg-success">'.__('active_status').'</span>' : '<span class="badge bg-secondary">'.__('inactive_status').'</span>'; ?></td>
+                            <td><?php echo ($t['is_active'] ?? 1) ? '<span class="status-pill status-pill--stock-ok">'.__('active_status').'</span>' : '<span class="status-pill status-pill--closed">'.__('inactive_status').'</span>'; ?></td>
                             <td class="text-end">
                                 <div class="btn-group btn-group-sm">
                                     <?php if ($is_admin_user): ?>
@@ -403,7 +453,7 @@ require_once 'includes/header.php';
                 <div class="col-md-6 border-end border-secondary">
                     <h5 class="mb-3 text-white"><i class="fas fa-database me-2 text-secondary"></i><?php echo __('database_header'); ?></h5>
                     <div class="d-grid gap-2 mb-4">
-                        <button type="button" class="btn btn-success" onclick="runBackup()"><i class="fas fa-file-download me-2"></i><?php echo __('create_backup'); ?></button>
+                        <button type="button" class="btn btn-success" data-crm-action="run-backup"><i class="fas fa-file-download me-2"></i><?php echo __('create_backup'); ?></button>
                         <div id="backupResult" class="small"></div>
                     </div>
                     <h5 class="mb-3 text-white"><i class="fas fa-globe me-2 text-info"></i><?php echo __('system_langs'); ?></h5>
@@ -490,7 +540,7 @@ require_once 'includes/header.php';
                         <tr>
                             <td><strong><?php echo htmlspecialchars($admin['username']); ?></strong></td>
                             <td><?php echo htmlspecialchars($admin['full_name']); ?></td>
-                            <td><span class="badge bg-danger">Admin</span></td>
+                            <td><span class="status-pill status-pill--priority-high">Admin</span></td>
                             <td class="text-end"><button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#adminPwdModal<?php echo $admin['id']; ?>"><i class="fas fa-key me-1"></i> <?php echo __('password_btn'); ?></button></td>
                         </tr>
                         <?php endforeach; ?>
@@ -545,16 +595,15 @@ require_once 'includes/header.php';
 
                         <!-- Action buttons -->
                         <div class="d-flex gap-2 flex-wrap">
-                            <button type="button" class="btn btn-primary" id="btnCheckUpdates" onclick="checkForUpdates(true)">
+                            <button type="button" class="btn btn-primary" id="btnCheckUpdates" data-crm-action="check-updates">
                                 <i class="fas fa-sync-alt me-2"></i><?php echo __('check_updates'); ?>
-                            </button>
-                            <button type="button" class="btn btn-success" id="btnInstallUpdate" style="display:none;" onclick="installUpdate()">
-                                <i class="fas fa-cloud-download-alt me-2"></i><?php echo __('install_update'); ?>
                             </button>
                         </div>
 
                         <div class="alert alert-warning border-0 bg-warning bg-opacity-10 mt-3 mb-0 small">
-                            <i class="fas fa-exclamation-triangle me-2 text-warning"></i><?php echo __('update_warning'); ?>
+                            <i class="fas fa-shield-alt me-2 text-warning"></i>
+                            Web installation is disabled. Deploy a verified immutable release outside the CRM, then run
+                            <code>php run_migrations.php</code>.
                         </div>
                     </div>
                 </div>
@@ -587,7 +636,6 @@ require_once 'includes/header.php';
                     <select name="role" class="form-select">
                         <option value="engineer"><?php echo __('role_engineer'); ?></option>
                         <option value="manager"><?php echo __('role_manager'); ?></option>
-                        <option value="admin"><?php echo __('role_admin'); ?></option>
                     </select>
                 </div>
                 <div class="col-md-6 mb-3">
@@ -629,12 +677,11 @@ require_once 'includes/header.php';
                     <?php if ($is_admin_user): ?>
                     <select name="role" class="form-select">
                         <option value="engineer" <?php echo ($t['role'] ?? 'engineer') == 'engineer' ? 'selected' : ''; ?>><?php echo __('role_engineer'); ?></option>
-                        <option value="manager" <?php echo ($t['role'] ?? 'engineer') == 'manager' ? 'selected' : ''; ?>><?php echo __('role_manager'); ?></option>
-                        <option value="admin" <?php echo ($t['role'] ?? 'engineer') == 'admin' ? 'selected' : ''; ?>><?php echo __('role_admin'); ?></option>
+                        <option value="manager" <?php echo in_array(($t['role'] ?? 'engineer'), ['manager', 'admin'], true) ? 'selected' : ''; ?>><?php echo __('role_manager'); ?></option>
                     </select>
                     <?php else: ?>
-                        <div class="form-control bg-dark bg-opacity-25 border-secondary text-white"><?php echo ($t['role'] ?? 'engineer') == 'admin' ? __('role_admin') : (($t['role'] ?? 'engineer') == 'manager' ? __('role_manager') : __('role_engineer')); ?></div>
-                        <input type="hidden" name="role" value="<?php echo htmlspecialchars($t['role'] ?? 'engineer'); ?>">
+                        <div class="form-control bg-dark bg-opacity-25 border-secondary text-white"><?php echo in_array(($t['role'] ?? 'engineer'), ['manager', 'admin'], true) ? __('role_manager') : __('role_engineer'); ?></div>
+                        <input type="hidden" name="role" value="<?php echo in_array(($t['role'] ?? 'engineer'), ['manager', 'admin'], true) ? 'manager' : 'engineer'; ?>">
                     <?php endif; ?>
                 </div>
                 <div class="col-md-6 mb-3">
@@ -660,7 +707,7 @@ require_once 'includes/header.php';
                 <label class="form-label">Telegram ID / Username</label>
                 <div class="input-group">
                     <input type="text" name="tech_tg" class="form-control" value="<?php echo htmlspecialchars($t['telegram_id'] ?? ''); ?>" placeholder="123456789 или @username">
-                    <button class="btn btn-outline-info" type="button" onclick="testTechTG(<?php echo $t['id']; ?>)"><i class="fab fa-telegram-plane"></i></button>
+                    <button class="btn btn-outline-info" type="button" data-crm-action="test-technician-telegram" data-crm-id="<?php echo (int)$t['id']; ?>"><i class="fab fa-telegram-plane"></i></button>
                 </div>
             </div>
             <div class="mb-3"><label class="form-label"><?php echo __('new_password_label'); ?></label><input type="password" name="tech_password" class="form-control" placeholder="<?php echo __('password_placeholder'); ?>"></div>
@@ -718,21 +765,71 @@ require_once 'includes/header.php';
 <?php endforeach; ?>
 <?php endif; ?>
 
-<script>
+<script nonce="<?php echo e(crmCspNonce()); ?>">
 function testTechTG(id) { if (!id) return; $.post('api/test_tech_tg.php', {id: id, csrf_token: $('meta[name="csrf-token"]').attr('content')}, function(res) { if (res.success) { showAlert('OK'); } else { showAlert(res.message); } }); }
+
+function triggerBackupDownload(path, filename) {
+    var csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    var url = String(path || '');
+    if (!url) return;
+    if (url.indexOf('csrf_token=') === -1) {
+        url += (url.indexOf('?') === -1 ? '?' : '&') + 'csrf_token=' + encodeURIComponent(csrf);
+    }
+    if (filename && url.indexOf('file=') === -1) {
+        url += '&file=' + encodeURIComponent(filename);
+    }
+    triggerDownload(url);
+}
+
 function runBackup() {
-    const btn = event.target.closest('button'); const resultDiv = document.getElementById('backupResult');
-    btn.disabled = true; btn.innerHTML = '...';
-    $.post('api/backup_db.php', {csrf_token: $('meta[name="csrf-token"]').attr('content')}, function(res) {
-        btn.disabled = false; btn.innerHTML = '<?php echo __('create_backup'); ?>';
-        if (res.success) { resultDiv.innerHTML = `<div class="alert alert-success p-2 mt-2"><?php echo __('done_js'); ?><a href="javascript:void(0)" onclick="triggerDownload('${res.path}')">${res.filename}</a></div>`; triggerDownload(res.path); }
-        else { resultDiv.innerHTML = `<div class="alert alert-danger p-2 mt-2"><?php echo __('error_js'); ?></div>`; }
-    });
+    const btn = document.querySelector('[data-crm-action="run-backup"]');
+    const resultDiv = document.getElementById('backupResult');
+    if (!btn || !resultDiv) return;
+
+    const label = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '...';
+
+    $.post('api/backup_db.php', {csrf_token: $('meta[name="csrf-token"]').attr('content')})
+        .done(function(res) {
+            resultDiv.replaceChildren();
+            const alert = document.createElement('div');
+            alert.className = res.success
+                ? 'alert alert-success p-2 mt-2'
+                : 'alert alert-danger p-2 mt-2';
+            alert.append(document.createTextNode(res.success ? '<?php echo __('done_js'); ?>' : (res.message || '<?php echo __('error_js'); ?>')));
+            if (res.success) {
+                const link = document.createElement('a');
+                link.href = '#';
+                link.className = 'ms-2';
+                link.textContent = String(res.filename || '');
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    triggerBackupDownload(String(res.path || res.download_url || ''), String(res.filename || ''));
+                });
+                alert.appendChild(link);
+                triggerBackupDownload(String(res.path || res.download_url || ''), String(res.filename || ''));
+            }
+            resultDiv.appendChild(alert);
+        })
+        .fail(function(xhr) {
+            resultDiv.replaceChildren();
+            const alert = document.createElement('div');
+            alert.className = 'alert alert-danger p-2 mt-2';
+            alert.textContent = (xhr.responseJSON && xhr.responseJSON.message)
+                ? xhr.responseJSON.message
+                : '<?php echo __('error_js'); ?>';
+            resultDiv.appendChild(alert);
+        })
+        .always(function() {
+            btn.disabled = false;
+            btn.innerHTML = label;
+        });
 }
 </script>
 
 <?php if ($is_admin_user): ?>
-<script>
+<script nonce="<?php echo e(crmCspNonce()); ?>">
 const UPDATE_TRANSLATIONS = {
     check_updates:     '<?php echo __('check_updates'); ?>',
     checking_updates:  '<?php echo __('checking_updates'); ?>',
@@ -789,7 +886,7 @@ function checkForUpdates(force = false) {
             if (!data.success) {
                 statusArea.style.display = 'block';
                 statusArea.innerHTML = `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 small mb-0">
-                    <i class="fas fa-exclamation-circle me-2"></i>${data.message || UPDATE_TRANSLATIONS.update_error}
+                    <i class="fas fa-exclamation-circle me-2"></i>${escapeHtml(data.message || UPDATE_TRANSLATIONS.update_error)}
                 </div>`;
                 return;
             }
@@ -822,20 +919,18 @@ function checkForUpdates(force = false) {
             if (data.has_update) {
                 statusArea.innerHTML = `<div class="alert alert-info border-0 bg-info bg-opacity-10 small mb-0">
                     <i class="fas fa-arrow-circle-up me-2 text-info"></i>
-                    <strong>${UPDATE_TRANSLATIONS.update_available}</strong> ${localLabel} → ${remoteLabel}
-                    <div class="mt-1 text-white-75">${UPDATE_TRANSLATIONS.update_available_desc}</div>
+                    <strong>${UPDATE_TRANSLATIONS.update_available}</strong> ${escapeHtml(localLabel)} → ${escapeHtml(remoteLabel)}
+                    <div class="mt-1 text-white-75">Deploy this release through the external deployment process.</div>
                 </div>`;
-                document.getElementById('btnInstallUpdate').style.display = 'inline-block';
                 // Show badge
                 const badge = document.getElementById('updateBadgeNav');
                 if (badge) badge.style.display = 'inline';
             } else {
                 statusArea.innerHTML = `<div class="alert alert-success border-0 bg-success bg-opacity-10 small mb-0">
                     <i class="fas fa-check-circle me-2 text-success"></i>
-                    <strong>${UPDATE_TRANSLATIONS.up_to_date}</strong> (${localLabel})
+                    <strong>${UPDATE_TRANSLATIONS.up_to_date}</strong> (${escapeHtml(localLabel)})
                     <div class="mt-1 text-white-75">${UPDATE_TRANSLATIONS.up_to_date_desc}</div>
                 </div>`;
-                document.getElementById('btnInstallUpdate').style.display = 'none';
             }
 
             // Cache info
@@ -852,7 +947,7 @@ function checkForUpdates(force = false) {
             btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>' + UPDATE_TRANSLATIONS.check_updates;
             statusArea.style.display = 'block';
             statusArea.innerHTML = `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 small mb-0">
-                <i class="fas fa-exclamation-circle me-2"></i>${err.message || UPDATE_TRANSLATIONS.update_error}
+                <i class="fas fa-exclamation-circle me-2"></i>${escapeHtml(err.message || UPDATE_TRANSLATIONS.update_error)}
             </div>`;
         });
 }
@@ -876,10 +971,10 @@ function renderChangelog(commits) {
         const date = c.date ? new Date(c.date).toLocaleString() : '';
         const msg = (c.message || '').split('\n')[0]; // first line only
         html += `<div class="d-flex align-items-start mb-2 pb-2 border-bottom border-secondary">
-            <code class="text-info me-2 flex-shrink-0" style="font-size:0.75rem;">${c.sha}</code>
+            <code class="text-info me-2 flex-shrink-0" style="font-size:0.75rem;">${escapeHtml(c.sha || '')}</code>
             <div class="flex-grow-1">
                 <div class="text-white small">${escapeHtml(msg)}</div>
-                <div class="text-muted" style="font-size:0.7rem;">${date} · ${escapeHtml(c.author || '')}</div>
+                <div class="text-muted" style="font-size:0.7rem;">${escapeHtml(date)} · ${escapeHtml(c.author || '')}</div>
             </div>
         </div>`;
     });
@@ -890,81 +985,6 @@ function escapeHtml(s) {
     const div = document.createElement('div');
     div.textContent = s;
     return div.innerHTML;
-}
-
-function installUpdate() {
-    if (!confirm('<?php echo __('update_warning'); ?>  \n\nContinue?')) return;
-    
-    const btn = document.getElementById('btnInstallUpdate');
-    const statusArea = document.getElementById('updateStatusArea');
-    
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>' + UPDATE_TRANSLATIONS.installing_update;
-
-    const csrf = $('meta[name="csrf-token"]').attr('content') || '<?php echo generateCsrfToken(); ?>';
-    
-    fetch('api/run_update.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'csrf_token=' + encodeURIComponent(csrf)
-    })
-    .then(r => r.json())
-    .then(data => {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-cloud-download-alt me-2"></i>' + UPDATE_TRANSLATIONS.install_update;
-        
-        statusArea.style.display = 'block';
-        if (data.success) {
-            let migrationsHtml = '';
-            if (data.migrations && data.migrations.length > 0) {
-                migrationsHtml = `<div class="mt-2"><strong>${UPDATE_TRANSLATIONS.migrations_ran}:</strong><ul class="mb-0">`;
-                data.migrations.forEach(m => {
-                    migrationsHtml += `<li>${escapeHtml(m.file || '')} — ${m.status}</li>`;
-                });
-                migrationsHtml += '</ul></div>';
-            }
-            let updateMetaHtml = '';
-            if (data.method) {
-                updateMetaHtml += `<div class="mt-2 small text-white-75">Method: ${escapeHtml(data.method)}</div>`;
-            }
-            if (data.summary && Array.isArray(data.summary.warnings) && data.summary.warnings.length > 0) {
-                updateMetaHtml += `<div class="mt-2"><strong>Warnings:</strong><ul class="mb-0">`;
-                data.summary.warnings.forEach(w => {
-                    updateMetaHtml += `<li>${escapeHtml(w || '')}</li>`;
-                });
-                updateMetaHtml += '</ul></div>';
-            }
-            statusArea.innerHTML = `<div class="alert alert-success border-0 bg-success bg-opacity-10 small mb-0">
-                <i class="fas fa-check-circle me-2 text-success"></i>
-                <strong>${UPDATE_TRANSLATIONS.update_success}</strong>
-                <div class="mt-1">v${data.previous_version} → v${data.new_version}</div>
-                ${migrationsHtml}
-                ${updateMetaHtml}
-                <div class="mt-2"><a href="settings.php?tab=updates" class="btn btn-sm btn-outline-light"><i class="fas fa-redo me-1"></i> Reload</a></div>
-            </div>`;
-            document.getElementById('btnInstallUpdate').style.display = 'none';
-            const badge = document.getElementById('updateBadgeNav');
-            if (badge) badge.style.display = 'none';
-            // Update local version display
-            document.getElementById('localVersion').textContent = data.new_version;
-        } else {
-            statusArea.innerHTML = `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 small mb-0">
-                <i class="fas fa-exclamation-circle me-2"></i>
-                <strong>${UPDATE_TRANSLATIONS.update_error}</strong>
-                <div class="mt-1">${escapeHtml(data.message || '')}</div>
-                ${data.output ? '<pre class="mt-2 mb-0 text-white-75 small">' + escapeHtml(data.output) + '</pre>' : ''}
-                ${data.hint ? '<div class="mt-2 text-info"><i class="fas fa-lightbulb me-1"></i>' + escapeHtml(data.hint) + '</div>' : ''}
-            </div>`;
-        }
-    })
-    .catch(err => {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-cloud-download-alt me-2"></i>' + UPDATE_TRANSLATIONS.install_update;
-        statusArea.style.display = 'block';
-        statusArea.innerHTML = `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 small mb-0">
-            <i class="fas fa-exclamation-circle me-2"></i>${err.message || UPDATE_TRANSLATIONS.update_error}
-        </div>`;
-    });
 }
 
 // Auto-check on page load (use cache, no force)

@@ -30,7 +30,12 @@ class AccountingExporter {
         $inv->addAttribute('version', '2.0');
 
         $header = $inv->addChild('inv:invoiceHeader');
-        $header->addChild('inv:invoiceType', 'issuedInvoice');
+        $header->addChild(
+            'inv:invoiceType',
+            ($invoice['invoice_type'] ?? 'invoice') === 'credit_note'
+                ? 'issuedCreditNotice'
+                : 'issuedInvoice'
+        );
         $header->addChild('inv:number', $invoice['invoice_number']);
         $header->addChild('inv:date', $invoice['date_issue']);
         $header->addChild('inv:dateTax', $invoice['date_tax']);

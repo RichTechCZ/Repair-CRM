@@ -14,6 +14,14 @@ function normalizeMyInvoicePaymentMethod(string $method): string {
     return in_array($method, ['bank_transfer', 'card', 'cash', 'other'], true) ? $method : 'other';
 }
 
+/**
+ * Invoice total is the customer charge recorded on the order. Parts are never
+ * added here: their selling price may already be included in final_cost.
+ */
+function resolveInvoiceTotal($finalCost, $estimatedCost): float {
+    return (float)(($finalCost !== null && $finalCost !== '') ? $finalCost : $estimatedCost);
+}
+
 function myInvoiceConfig(string $envKey, string $settingKey, string $default = ''): string {
     $envValue = getenv($envKey);
     if ($envValue !== false && $envValue !== '') {
@@ -23,7 +31,7 @@ function myInvoiceConfig(string $envKey, string $settingKey, string $default = '
 }
 
 function createLocalInvoiceForCompletedOrder(PDO $pdo, int $orderId, $finalCost = null): array {
-    $existing = $pdo->prepare('SELECT id FROM invoices WHERE order_id = ? LIMIT 1');
+    $existing = $pdo->prepare("SELECT id FROM invoices WHERE order_id = ? AND status <> 'cancelled' AND (invoice_type IS NULL OR invoice_type <> 'credit_note') ORDER BY id DESC LIMIT 1");
     $existing->execute([$orderId]);
     $existingId = $existing->fetchColumn();
     if ($existingId) {
@@ -37,18 +45,10 @@ function createLocalInvoiceForCompletedOrder(PDO $pdo, int $orderId, $finalCost 
         return ['success' => false, 'error' => 'Order not found'];
     }
 
-    $price = $finalCost;
-    if ($price === null || $price === '') {
-        $price = ($order['final_cost'] !== null && $order['final_cost'] !== '') ? $order['final_cost'] : $order['estimated_cost'];
-    }
-    $price = (float)$price;
-
-    // final_cost is the work charge only ("without parts"). Add the parts revenue
-    // (order_items.price * quantity) so the invoice reflects the full amount due.
-    $partsStmt = $pdo->prepare("SELECT COALESCE(SUM(quantity * price), 0) FROM order_items WHERE order_id = ?");
-    $partsStmt->execute([$orderId]);
-    $partsRevenue = (float)$partsStmt->fetchColumn();
-    $price += $partsRevenue;
+    $orderFinalCost = ($finalCost === null || $finalCost === '')
+        ? ($order['final_cost'] ?? null)
+        : $finalCost;
+    $price = resolveInvoiceTotal($orderFinalCost, $order['estimated_cost'] ?? 0);
 
     if ($price <= 0) {
         return ['success' => false, 'error' => 'Final cost is missing or zero'];

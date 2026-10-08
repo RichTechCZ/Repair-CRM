@@ -18,7 +18,8 @@ function hasPermission($permission) {
 
     // Technicians/Staff – use session-level cache
     if (($_SESSION['role'] ?? '') === 'technician' && isset($_SESSION['tech_id'])) {
-        if (!isset($_SESSION['_perms'])) {
+        // Re-read permissions at most once a minute so revoked rights do not outlive the session.
+        if (!isset($_SESSION['_perms']) || (time() - (int)($_SESSION['_perms_at'] ?? 0)) > 60) {
             $stmt = $pdo->prepare('SELECT permission FROM tech_permissions WHERE technician_id = ?');
             $stmt->execute([$_SESSION['tech_id']]);
             $raw = $stmt->fetchAll(PDO::FETCH_COLUMN);
@@ -26,6 +27,7 @@ function hasPermission($permission) {
             $_SESSION['_perms'] = array_values(array_filter($raw, static function ($p) use ($allowed) {
                 return isset($allowed[$p]);
             }));
+            $_SESSION['_perms_at'] = time();
         }
 
         // admin_access grants everything
@@ -104,6 +106,47 @@ function currentUserCanViewCustomer($customer_id): bool {
     return (bool)$stmt->fetchColumn();
 }
 
+function grantCustomerForOrderCreation(int $customerId): void
+{
+    if (isTechnicianScoped() && $customerId > 0) {
+        $_SESSION['_new_customer_order_grants'][(string)$customerId] = time();
+    }
+}
+
+function currentUserCanCreateOrderForCustomer(int $customerId): bool
+{
+    if ($customerId <= 0 || empty($_SESSION['user_id'])) {
+        return false;
+    }
+    if (hasPermission('admin_access')) {
+        return true;
+    }
+    if (!isTechnicianScoped()) {
+        return false;
+    }
+    if (currentUserCanViewCustomer($customerId)) {
+        return true;
+    }
+
+    $now = time();
+    $grants = is_array($_SESSION['_new_customer_order_grants'] ?? null)
+        ? $_SESSION['_new_customer_order_grants']
+        : [];
+    foreach ($grants as $grantedCustomerId => $grantedAt) {
+        if (($now - (int)$grantedAt) > 15 * 60) {
+            unset($grants[$grantedCustomerId]);
+        }
+    }
+    $_SESSION['_new_customer_order_grants'] = $grants;
+
+    return isset($grants[(string)$customerId]);
+}
+
+function consumeCustomerOrderCreationGrant(int $customerId): void
+{
+    unset($_SESSION['_new_customer_order_grants'][(string)$customerId]);
+}
+
 /**
  * True when the current user must only see data tied to their own technician_id.
  * Users with admin_access are not scoped.
@@ -157,7 +200,7 @@ function publicExceptionMessage(Throwable $e): string {
  * Call after setTechPermissions() or on logout.
  */
 function invalidatePermissionsCache(): void {
-    unset($_SESSION['_perms']);
+    unset($_SESSION['_perms'], $_SESSION['_perms_at']);
 }
 
 /**
@@ -286,38 +329,64 @@ function purgeObsoleteTechPermissions(): void {
 }
 
 function getDeviceIcon($type) {
-    switch ($type) {
-        case 'Phone': return '📱';
-        case 'Notebook': return '💻';
-        case 'PC': return '🖥️';
-        case 'Tablet': return '📟';
-        case 'HDD': return '💾';
-        case 'Computer': return '🖥️';
-        default: return '🛠️';
-    }
+    $icons = [
+        'Phone' => 'fa-mobile-alt',
+        'Notebook' => 'fa-laptop',
+        'PC' => 'fa-desktop',
+        'Computer' => 'fa-desktop',
+        'Tablet' => 'fa-tablet-alt',
+        'HDD' => 'fa-hdd',
+    ];
+
+    $icon = $icons[$type] ?? 'fa-tools';
+    return '<i class="fas ' . $icon . ' device-row-icon" aria-hidden="true"></i>';
 }
 
 function getStatusBadge($status) {
-    $classes = [
-        'Accepted' => 'bg-primary',
-        'Diagnostics' => 'bg-info text-dark',
-        'Approval' => 'bg-warning text-dark',
-        'In Repair' => 'bg-warning',
-        'Ready' => 'bg-success',
-        'Issued' => 'bg-secondary',
-        'Issued Without Repair' => 'bg-dark',
-        'Repair Cancelled' => 'bg-danger',
-        'New' => 'bg-primary',
-        'Pending Approval' => 'bg-warning text-dark',
-        'In Progress' => 'bg-warning',
-        'Waiting for Parts' => 'bg-secondary',
-        'Completed' => 'bg-success',
-        'Collected' => 'bg-secondary',
-        'Cancelled' => 'bg-danger',
+    $variants = [
+        'Accepted' => 'accepted',
+        'New' => 'accepted',
+        'Diagnostics' => 'diagnostics',
+        'Approval' => 'approval',
+        'Pending Approval' => 'approval',
+        'In Repair' => 'repair',
+        'In Progress' => 'repair',
+        'Waiting for Parts' => 'waiting',
+        'Ready' => 'ready',
+        'Completed' => 'ready',
+        'Issued' => 'issued',
+        'Collected' => 'issued',
+        'Issued Without Repair' => 'closed',
+        'Repair Cancelled' => 'cancelled',
+        'Cancelled' => 'cancelled',
     ];
 
-    $class = $classes[$status] ?? 'bg-dark';
-    return '<span class="badge ' . $class . '">' . htmlspecialchars(getStatusLabel($status)) . '</span>';
+    $variant = $variants[$status] ?? 'closed';
+    return '<span class="status-pill status-pill--' . $variant . '">' . htmlspecialchars(getStatusLabel($status)) . '</span>';
+}
+
+/**
+ * Localized tonal status pill for invoice lifecycle (draft / issued / paid / overdue / cancelled).
+ */
+function getInvoiceStatusBadge($status) {
+    $variants = [
+        'draft' => 'draft',
+        'issued' => 'inv-issued',
+        'paid' => 'paid',
+        'overdue' => 'overdue',
+        'cancelled' => 'cancelled',
+    ];
+    $labels = [
+        'draft' => __('status_draft'),
+        'issued' => __('status_invoice_issued'),
+        'paid' => __('status_paid'),
+        'overdue' => __('status_overdue'),
+        'cancelled' => __('status_cancelled'),
+    ];
+    $key = (string)$status;
+    $variant = $variants[$key] ?? 'closed';
+    $label = $labels[$key] ?? $key;
+    return '<span class="status-pill status-pill--' . htmlspecialchars($variant) . '">' . htmlspecialchars($label) . '</span>';
 }
 
 function getAllStatuses(): array {
@@ -573,7 +642,87 @@ function normalizeSearchQuery(string $search): string {
     return is_string($normalized) ? $normalized : trim($search);
 }
 
-function buildOrderSearchQueryParts(string $search, string $orderAlias = 'o', string $customerAlias = 'c', string $techAlias = 't'): array {
+function normalizePhoneForSearch(string $phone): string
+{
+    $digits = preg_replace('/\D+/', '', $phone);
+    return is_string($digits) ? substr($digits, 0, 32) : '';
+}
+
+/**
+ * Parse the date formats shown in the Orders UI into an index-friendly range.
+ *
+ * Supported formats are YYYY-MM-DD, DD.MM.YYYY (also '/' and '-'),
+ * YYYY-MM, MM.YYYY, and a four-digit year.
+ */
+function parseOrderSearchDateRange(string $token): ?array
+{
+    $token = trim($token);
+    $year = $month = $day = null;
+    $precision = null;
+
+    if (preg_match('/^(\d{4})[-.]?(\d{2})[-.]?(\d{2})$/u', $token, $matches)) {
+        $year = (int)$matches[1];
+        $month = (int)$matches[2];
+        $day = (int)$matches[3];
+        $precision = 'day';
+    } elseif (preg_match('/^(\d{2})[-.\/]?(\d{2})[-.\/](\d{4})$/u', $token, $matches)) {
+        $day = (int)$matches[1];
+        $month = (int)$matches[2];
+        $year = (int)$matches[3];
+        $precision = 'day';
+    } elseif (preg_match('/^(\d{4})-(\d{2})$/u', $token, $matches)) {
+        $year = (int)$matches[1];
+        $month = (int)$matches[2];
+        $precision = 'month';
+    } elseif (preg_match('/^(\d{2})[-.\/](\d{4})$/u', $token, $matches)) {
+        $month = (int)$matches[1];
+        $year = (int)$matches[2];
+        $precision = 'month';
+    } elseif (preg_match('/^(\d{4})$/u', $token, $matches)) {
+        $year = (int)$matches[1];
+        $month = 1;
+        $day = 1;
+        $precision = 'year';
+    }
+
+    if ($year === null || $month === null || ($precision === 'day' && $day === null)) {
+        return null;
+    }
+    if ($precision === 'day' && !checkdate((int)$month, (int)$day, (int)$year)) {
+        return null;
+    }
+    if ($precision === 'month' && ($year < 1000 || $year > 9999 || $month < 1 || $month > 12)) {
+        return null;
+    }
+    if ($precision === 'year' && ($year < 1000 || $year > 9999)) {
+        return null;
+    }
+
+    $start = new DateTimeImmutable(sprintf('%04d-%02d-%02d 00:00:00', $year, $month, $day ?? 1));
+    $end = $precision === 'year'
+        ? $start->modify('+1 year')
+        : ($precision === 'month' ? $start->modify('+1 month') : $start->modify('+1 day'));
+
+    return [
+        'start' => $start->format('Y-m-d H:i:s'),
+        'end' => $end->format('Y-m-d H:i:s'),
+        'precision' => $precision,
+    ];
+}
+
+function buildOrderSearchQueryParts(
+    string $search,
+    string $orderAlias = 'o',
+    string $customerAlias = 'c',
+    string $techAlias = 't',
+    bool $useIndexedSearch = true
+): array {
+    foreach ([$orderAlias, $customerAlias, $techAlias] as $alias) {
+        if (!preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $alias)) {
+            throw new InvalidArgumentException('Invalid search table alias.');
+        }
+    }
+
     $search = normalizeSearchQuery($search);
     $parts = [
         'search' => $search,
@@ -582,126 +731,301 @@ function buildOrderSearchQueryParts(string $search, string $orderAlias = 'o', st
         'score_sql' => '0',
         'score_params' => [],
         'exact_id' => 0,
+        'uses_optional_indexes' => false,
     ];
-
     if ($search === '') {
         return $parts;
     }
 
-    $raw_tokens = preg_split('/[\s,;]+/u', $search) ?: [];
-    $tokens = array_values(array_unique(array_filter(array_map('trim', $raw_tokens), static function ($token) {
-        return $token !== '';
-    })));
-    $tokens = array_slice($tokens, 0, 6);
-
-    $full_name_expr = "TRIM(CONCAT_WS(' ', COALESCE({$customerAlias}.first_name, ''), COALESCE({$customerAlias}.last_name, '')))";
-    $reverse_name_expr = "TRIM(CONCAT_WS(' ', COALESCE({$customerAlias}.last_name, ''), COALESCE({$customerAlias}.first_name, '')))";
-    $brand_model_expr = "TRIM(CONCAT_WS(' ', COALESCE({$orderAlias}.device_brand, ''), COALESCE({$orderAlias}.device_model, '')))";
-    $company_expr = "COALESCE({$customerAlias}.company, '')";
-    $phone_expr = "COALESCE({$customerAlias}.phone, '')";
-    $phone_digits_expr = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE($phone_expr, ' ', ''), '+', ''), '-', ''), '(', ''), ')', ''), '.', '')";
-    $tech_name_expr = "COALESCE({$techAlias}.name, '')";
-
-    $searchable_fields = [
-        ['expr' => "CAST({$orderAlias}.id AS CHAR)", 'mode' => 'id'],
-        ['expr' => $company_expr, 'mode' => 'text'],
-        ['expr' => "COALESCE({$customerAlias}.first_name, '')", 'mode' => 'text'],
-        ['expr' => "COALESCE({$customerAlias}.last_name, '')", 'mode' => 'text'],
-        ['expr' => $full_name_expr, 'mode' => 'text'],
-        ['expr' => $reverse_name_expr, 'mode' => 'text'],
-        ['expr' => $phone_expr, 'mode' => 'text'],
-        ['expr' => $phone_digits_expr, 'mode' => 'digits'],
-        ['expr' => "COALESCE({$orderAlias}.device_brand, '')", 'mode' => 'text'],
-        ['expr' => "COALESCE({$orderAlias}.device_model, '')", 'mode' => 'text'],
-        ['expr' => $brand_model_expr, 'mode' => 'text'],
-        ['expr' => "COALESCE({$orderAlias}.problem_description, '')", 'mode' => 'text'],
-        ['expr' => "COALESCE({$orderAlias}.serial_number, '')", 'mode' => 'text'],
-        ['expr' => "COALESCE({$orderAlias}.serial_number_2, '')", 'mode' => 'text'],
-        ['expr' => "COALESCE({$orderAlias}.pin_code, '')", 'mode' => 'text'],
-        ['expr' => "COALESCE({$orderAlias}.status, '')", 'mode' => 'text'],
-        ['expr' => $tech_name_expr, 'mode' => 'text'],
-    ];
-
-    foreach ($tokens as $token) {
-        $token_like = '%' . $token . '%';
-        $digit_token = preg_replace('/\D+/', '', $token);
-        $digit_like = $digit_token !== '' ? '%' . $digit_token . '%' : $token_like;
-        $token_clause_parts = [];
-
-        foreach ($searchable_fields as $field) {
-            $token_clause_parts[] = $field['expr'] . ' LIKE ?';
-            if ($field['mode'] === 'digits') {
-                $parts['where_params'][] = $digit_like;
-            } elseif ($field['mode'] === 'id') {
-                $parts['where_params'][] = preg_match('/^#?\d+$/u', $token) ? ('%' . ltrim($token, '#') . '%') : $token_like;
-            } else {
-                $parts['where_params'][] = $token_like;
-            }
-        }
-
-        $parts['where_clauses'][] = '(' . implode(' OR ', $token_clause_parts) . ')';
+    // An explicit # prefix unambiguously means an order ID. Bare numeric
+    // searches must continue through the serial fields because IMEI/IMEI2
+    // values are commonly digits only.
+    if (preg_match('/^\s*#\s*(\d+)\s*$/u', $search, $matches)) {
+        $parts['exact_id'] = (int)$matches[1];
+        $parts['where_clauses'][] = "{$orderAlias}.id = ?";
+        $parts['where_params'][] = $parts['exact_id'];
+        $parts['score_sql'] = '1400';
+        return $parts;
     }
 
-    if (preg_match('/^\s*#?\s*(\d+)\s*$/u', $search, $matches)) {
+    if (preg_match('/^\s*(\d{1,10})\s*$/u', $search, $matches)) {
         $parts['exact_id'] = (int)$matches[1];
     }
 
-    $search_like = '%' . $search . '%';
-    $search_digits = preg_replace('/\D+/', '', $search);
-    $score_parts = [];
+    $rawTokens = preg_split('/[\s,;]+/u', $search) ?: [];
+    $tokens = [];
+    foreach ($rawTokens as $rawToken) {
+        $token = preg_replace('/[^\p{L}\p{N}@._+\/\-]+/u', '', trim($rawToken));
+        if (is_string($token) && $token !== '') {
+            $tokens[$token] = true;
+        }
+    }
+    $tokens = array_slice(array_keys($tokens), 0, 6);
+    if ($tokens === []) {
+        return $parts;
+    }
+
+    $fullNameExpr = "TRIM(CONCAT_WS(' ', COALESCE({$customerAlias}.first_name, ''), COALESCE({$customerAlias}.last_name, '')))";
+    $reverseNameExpr = "TRIM(CONCAT_WS(' ', COALESCE({$customerAlias}.last_name, ''), COALESCE({$customerAlias}.first_name, '')))";
+    $brandModelExpr = "TRIM(CONCAT_WS(' ', COALESCE({$orderAlias}.device_brand, ''), COALESCE({$orderAlias}.device_model, '')))";
+    $companyExpr = "COALESCE({$customerAlias}.company, '')";
+    $emailExpr = "COALESCE({$customerAlias}.email, '')";
+    $phoneExpr = "COALESCE({$customerAlias}.phone, '')";
+    $phoneDigitsExpr = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({$phoneExpr}, ' ', ''), '+', ''), '-', ''), '(', ''), ')', ''), '.', ''), '/', ''), ',', '')";
+    $techNameExpr = "COALESCE({$techAlias}.name, '')";
+    $orderMatch = "MATCH({$orderAlias}.device_brand, {$orderAlias}.device_model, {$orderAlias}.problem_description, {$orderAlias}.serial_number, {$orderAlias}.serial_number_2)";
+    $customerMatch = "MATCH({$customerAlias}.first_name, {$customerAlias}.last_name, {$customerAlias}.company, {$customerAlias}.phone)";
+    $technicianMatch = "MATCH({$techAlias}.name)";
+    $searchDigits = normalizePhoneForSearch($search);
+    $scoreParts = [];
 
     if ($parts['exact_id'] > 0) {
-        $score_parts[] = "CASE WHEN {$orderAlias}.id = ? THEN 1400 ELSE 0 END";
+        $scoreParts[] = "CASE WHEN {$orderAlias}.id = ? THEN 1400 ELSE 0 END";
         $parts['score_params'][] = $parts['exact_id'];
     }
 
-    $phrase_scores = [
-        [$full_name_expr, $search_like, 320],
-        [$reverse_name_expr, $search_like, 320],
-        [$company_expr, $search_like, 300],
-        [$brand_model_expr, $search_like, 280],
-        ["COALESCE({$orderAlias}.device_model, '')", $search_like, 240],
-        ["COALESCE({$orderAlias}.device_brand, '')", $search_like, 190],
-        ["COALESCE({$orderAlias}.serial_number, '')", $search_like, 430],
-        ["COALESCE({$orderAlias}.serial_number_2, '')", $search_like, 410],
-        ["COALESCE({$orderAlias}.pin_code, '')", $search_like, 260],
-        ["COALESCE({$orderAlias}.problem_description, '')", $search_like, 120],
-        ["COALESCE({$orderAlias}.status, '')", $search_like, 130],
-        [$tech_name_expr, $search_like, 120],
-    ];
+    foreach ($tokens as $tokenIndex => $token) {
+        $escapedToken = addcslashes($token, "\\%_");
+        // Serial/IMEI values are identifiers, not words: users often paste
+        // a middle fragment or a value containing separators/spaces.
+        $serialLike = '%' . $escapedToken . '%';
+        $textLike = $serialLike;
+        $digitToken = preg_replace('/\D+/', '', $token);
+        $booleanWord = preg_replace('/[^\p{L}\p{N}]+/u', '', $token);
+        $dateRange = parseOrderSearchDateRange($token);
+        // Identifier-shaped queries (IMEI/S/N fragments) must work even when
+        // an older production database has not yet built optional full-text
+        // or phone-search indexes. The direct serial LIKE clauses below use
+        // only the baseline orders columns.
+        $isIdentifierToken = is_string($digitToken) && strlen($digitToken) >= 4;
+        $isPhoneLikeToken = is_string($digitToken)
+            && strlen($digitToken) >= 4
+            && strlen($digitToken) <= 14
+            && $dateRange === null
+            && preg_match('/^[+\d().\/ -]+$/u', $token) === 1;
+        $tokenClauses = [
+            "{$orderAlias}.serial_number LIKE ?",
+            "{$orderAlias}.serial_number_2 LIKE ?",
+            "{$orderAlias}.device_brand LIKE ?",
+            "{$orderAlias}.device_model LIKE ?",
+            "{$customerAlias}.first_name LIKE ?",
+            "{$customerAlias}.last_name LIKE ?",
+            "{$customerAlias}.company LIKE ?",
+            "{$customerAlias}.email LIKE ?",
+            "{$customerAlias}.phone LIKE ?",
+            "{$phoneDigitsExpr} LIKE ?",
+            "{$orderAlias}.problem_description LIKE ?",
+            "{$orderAlias}.status LIKE ?",
+            "{$techAlias}.name LIKE ?",
+        ];
+        array_push(
+            $parts['where_params'],
+            $serialLike,
+            $serialLike,
+            $textLike,
+            $textLike,
+            $textLike,
+            $textLike,
+            $textLike,
+            $textLike,
+            $textLike,
+            $textLike,
+            $textLike,
+            $textLike,
+            $textLike
+        );
 
-    foreach ($phrase_scores as [$expr, $value, $weight]) {
-        $score_parts[] = "CASE WHEN {$expr} LIKE ? THEN {$weight} ELSE 0 END";
-        $parts['score_params'][] = $value;
+        if (preg_match('/^\d{1,10}$/u', $token)) {
+            $tokenClauses[] = "{$orderAlias}.id = ?";
+            $parts['where_params'][] = (int)$token;
+        }
+
+        if (is_string($digitToken) && $digitToken !== '') {
+            $tokenClauses[] = "{$phoneDigitsExpr} LIKE ?";
+            $parts['where_params'][] = '%' . addcslashes($digitToken, "\\%_") . '%';
+        }
+
+        if ($dateRange !== null) {
+            $tokenClauses[] = "({$orderAlias}.created_at >= ? AND {$orderAlias}.created_at < ?)";
+            $parts['where_params'][] = $dateRange['start'];
+            $parts['where_params'][] = $dateRange['end'];
+        }
+
+        // A multi-word name, company, or device phrase is a useful boost while
+        // the per-token clauses below keep partial and mixed-field searches
+        // working (for example: "Apple iPhone 13").
+        if ($tokenIndex === 0 && count($tokens) > 1) {
+            $phraseLike = '%' . addcslashes(implode(' ', $tokens), "\\%_") . '%';
+            $tokenClauses[] = "{$fullNameExpr} LIKE ?";
+            $tokenClauses[] = "{$reverseNameExpr} LIKE ?";
+            $tokenClauses[] = "{$brandModelExpr} LIKE ?";
+            $tokenClauses[] = "{$companyExpr} LIKE ?";
+            $tokenClauses[] = "{$emailExpr} LIKE ?";
+            array_push($parts['where_params'], $phraseLike, $phraseLike, $phraseLike, $phraseLike, $phraseLike);
+        }
+
+        // Use the normalized expression as the reliable path for every
+        // formatted or partially entered phone number. The optional indexed
+        // column is only an acceleration path and never the sole match path.
+        if ($tokenIndex === 0 && strlen($searchDigits) >= 4) {
+            $tokenClauses[] = "{$phoneDigitsExpr} LIKE ?";
+            $parts['where_params'][] = '%' . addcslashes($searchDigits, "\\%_") . '%';
+        }
+
+        $scoreParts[] = "CASE WHEN {$orderAlias}.serial_number LIKE ? OR {$orderAlias}.serial_number_2 LIKE ? THEN 600 ELSE 0 END";
+        array_push($parts['score_params'], $serialLike, $serialLike);
+
+        $booleanWordLength = is_string($booleanWord)
+            ? (function_exists('mb_strlen') ? mb_strlen($booleanWord) : strlen($booleanWord))
+            : 0;
+        if ($useIndexedSearch && !$isIdentifierToken && $booleanWordLength >= 3) {
+            $booleanToken = '+' . $booleanWord . '*';
+            array_push(
+                $tokenClauses,
+                "{$orderMatch} AGAINST (? IN BOOLEAN MODE)",
+                "{$customerMatch} AGAINST (? IN BOOLEAN MODE)",
+                "{$technicianMatch} AGAINST (? IN BOOLEAN MODE)"
+            );
+            array_push($parts['where_params'], $booleanToken, $booleanToken, $booleanToken);
+            $scoreParts[] = "({$orderMatch} AGAINST (? IN BOOLEAN MODE) * 8)";
+            $scoreParts[] = "({$customerMatch} AGAINST (? IN BOOLEAN MODE) * 6)";
+            $scoreParts[] = "({$technicianMatch} AGAINST (? IN BOOLEAN MODE) * 3)";
+            array_push($parts['score_params'], $booleanToken, $booleanToken, $booleanToken);
+            $parts['uses_optional_indexes'] = true;
+        }
+
+        if ($useIndexedSearch && $isPhoneLikeToken) {
+            $tokenClauses[] = "{$customerAlias}.phone_search LIKE ?";
+            $parts['where_params'][] = $digitToken . '%';
+            $scoreParts[] = "CASE WHEN {$customerAlias}.phone_search LIKE ? THEN 300 ELSE 0 END";
+            $parts['score_params'][] = $digitToken . '%';
+            $parts['uses_optional_indexes'] = true;
+        }
+
+        $parts['where_clauses'][] = '(' . implode(' OR ', $tokenClauses) . ')';
     }
 
-    if ($search_digits !== '' && strlen($search_digits) >= 4) {
-        $score_parts[] = "CASE WHEN {$phone_digits_expr} LIKE ? THEN 260 ELSE 0 END";
-        $parts['score_params'][] = '%' . $search_digits . '%';
+    if (strlen($searchDigits) >= 4) {
+        $scoreParts[] = "CASE WHEN {$phoneDigitsExpr} LIKE ? THEN 520 ELSE 0 END";
+        $parts['score_params'][] = '%' . addcslashes($searchDigits, "\\%_") . '%';
     }
 
-    foreach ($tokens as $token) {
-        $token_like = '%' . $token . '%';
-        $digit_token = preg_replace('/\D+/', '', $token);
+    if (count($tokens) > 1) {
+        $phraseLike = '%' . addcslashes(implode(' ', $tokens), "\\%_") . '%';
+        $scoreParts[] = "CASE WHEN {$fullNameExpr} LIKE ? OR {$reverseNameExpr} LIKE ? THEN 420 ELSE 0 END";
+        $scoreParts[] = "CASE WHEN {$brandModelExpr} LIKE ? OR {$companyExpr} LIKE ? OR {$emailExpr} LIKE ? THEN 320 ELSE 0 END";
+        array_push($parts['score_params'], $phraseLike, $phraseLike, $phraseLike, $phraseLike, $phraseLike);
+    }
 
-        $score_parts[] = "CASE WHEN {$full_name_expr} LIKE ? OR {$reverse_name_expr} LIKE ? OR {$company_expr} LIKE ? THEN 70 ELSE 0 END";
-        array_push($parts['score_params'], $token_like, $token_like, $token_like);
+    $parts['score_sql'] = $scoreParts !== [] ? '(' . implode(' + ', $scoreParts) . ')' : '1';
+    return $parts;
+}
 
-        $score_parts[] = "CASE WHEN {$brand_model_expr} LIKE ? OR COALESCE({$orderAlias}.device_brand, '') LIKE ? OR COALESCE({$orderAlias}.device_model, '') LIKE ? THEN 58 ELSE 0 END";
-        array_push($parts['score_params'], $token_like, $token_like, $token_like);
+/**
+ * Shared order list search used by Dashboard topbar and Orders page search.
+ *
+ * FULLTEXT / phone_search are optional accelerators. When production schema
+ * lacks those indexes, the same request is retried on the portable LIKE/date
+ * path so both search shells return identical results.
+ *
+ * @return array{orders: array<int, array<string, mixed>>, total: int, search: string, search_parts: array<string, mixed>}
+ */
+function searchOrdersList(
+    PDO $pdo,
+    string $search,
+    ?int $technicianId = null,
+    ?string $filterStatus = null,
+    int $limit = 50,
+    int $offset = 0,
+    bool $includeTotal = true
+): array {
+    $search = normalizeSearchQuery($search);
+    $limit = max(1, min(500, $limit));
+    $offset = max(0, $offset);
+    $dashboard_status_groups = getDashboardStatusGroups();
+    $canonical_filter_status = canonicalOrderStatus($filterStatus ?? '');
 
-        $score_parts[] = "CASE WHEN COALESCE({$orderAlias}.problem_description, '') LIKE ? OR COALESCE({$orderAlias}.serial_number, '') LIKE ? OR COALESCE({$orderAlias}.serial_number_2, '') LIKE ? OR COALESCE({$orderAlias}.pin_code, '') LIKE ? OR COALESCE({$orderAlias}.status, '') LIKE ? OR {$tech_name_expr} LIKE ? THEN 24 ELSE 0 END";
-        array_push($parts['score_params'], $token_like, $token_like, $token_like, $token_like, $token_like, $token_like);
+    $search_parts = buildOrderSearchQueryParts($search, 'o', 'c', 't');
+    $search_candidates = [$search_parts];
+    if (!empty($search_parts['uses_optional_indexes'])) {
+        $search_candidates[] = buildOrderSearchQueryParts($search, 'o', 'c', 't', false);
+    }
 
-        if ($digit_token !== '' && strlen($digit_token) >= 4) {
-            $score_parts[] = "CASE WHEN {$phone_digits_expr} LIKE ? THEN 48 ELSE 0 END";
-            $parts['score_params'][] = '%' . $digit_token . '%';
+    $orders = [];
+    $total = 0;
+    $used_parts = $search_parts;
+
+    foreach ($search_candidates as $candidate_index => $candidate_parts) {
+        $used_parts = $candidate_parts;
+        $where_clauses = [];
+        $sql_params = [];
+
+        if ($technicianId !== null) {
+            $where_clauses[] = 'o.technician_id = ?';
+            $sql_params[] = (int)$technicianId;
+        }
+
+        if (!empty($candidate_parts['where_clauses'])) {
+            $where_clauses = array_merge($where_clauses, $candidate_parts['where_clauses']);
+            $sql_params = array_merge($sql_params, $candidate_parts['where_params']);
+        }
+
+        if ($canonical_filter_status === 'Ready') {
+            $where_clauses[] = buildStatusInCondition('o.status', $dashboard_status_groups['ready'], $sql_params);
+        } elseif ($canonical_filter_status === 'In Repair') {
+            $where_clauses[] = buildStatusInCondition('o.status', $dashboard_status_groups['progress'], $sql_params);
+        } elseif ($filterStatus) {
+            $where_clauses[] = buildStatusInCondition('o.status', [$filterStatus], $sql_params);
+        }
+
+        $where_sql = $where_clauses ? (' WHERE ' . implode(' AND ', $where_clauses)) : '';
+
+        try {
+            if ($includeTotal) {
+                $count_stmt = $pdo->prepare(
+                    'SELECT COUNT(*) FROM orders o'
+                    . ' JOIN customers c ON o.customer_id = c.id'
+                    . ' LEFT JOIN technicians t ON o.technician_id = t.id'
+                    . $where_sql
+                );
+                $count_stmt->execute($sql_params);
+                $total = (int)$count_stmt->fetchColumn();
+            }
+
+            $fetch_params = array_merge($candidate_parts['score_params'], $sql_params);
+            $stmt = $pdo->prepare(
+                'SELECT o.*, c.first_name, c.last_name, c.phone, t.name as tech_name, '
+                . $candidate_parts['score_sql'] . ' AS search_relevance'
+                . ' FROM orders o'
+                . ' JOIN customers c ON o.customer_id = c.id'
+                . ' LEFT JOIN technicians t ON o.technician_id = t.id'
+                . $where_sql
+                . ' ORDER BY search_relevance DESC, o.created_at DESC'
+                . ' LIMIT ' . (int)$limit . ' OFFSET ' . (int)$offset
+            );
+            $stmt->execute($fetch_params);
+            $orders = $stmt->fetchAll();
+            if (!$includeTotal) {
+                $total = count($orders);
+            }
+            break;
+        } catch (PDOException $searchException) {
+            if ($candidate_index === 0 && isset($search_candidates[1])) {
+                error_log('order search indexed fallback: ' . $searchException->getMessage());
+                $orders = [];
+                $total = 0;
+                continue;
+            }
+            throw $searchException;
         }
     }
 
-    $parts['score_sql'] = $score_parts ? '(' . implode(' + ', $score_parts) . ')' : '0';
-
-    return $parts;
+    return [
+        'orders' => $orders,
+        'total' => $total,
+        'search' => $search,
+        'search_parts' => $used_parts,
+    ];
 }
 
 function get_setting($key, $default = '') {
@@ -732,6 +1056,46 @@ function set_setting($key, $value) {
     return $stmt->execute([$key, $value]);
 }
 
+/**
+ * Absolute path to the SQL backup directory (trailing separator).
+ * Default: <app>/backup_db/  (never outside the application root).
+ * Override with CRM_BACKUP_DIR only when the host requires a non-web path.
+ *
+ * @param bool $create Create the directory (and deny-web guards) when missing.
+ */
+function crmBackupDirectory(bool $create = false): string
+{
+    $configured = trim((string)(getenv('CRM_BACKUP_DIR') ?: ''));
+    if ($configured !== '') {
+        $dir = rtrim($configured, "/\\") . DIRECTORY_SEPARATOR;
+    } else {
+        $dir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'backup_db' . DIRECTORY_SEPARATOR;
+    }
+
+    if ($create) {
+        if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+            throw new RuntimeException('Unable to create backup directory.');
+        }
+        // Defense in depth: block direct HTTP even if root rewrite rules are missing.
+        $htaccess = $dir . '.htaccess';
+        if (!is_file($htaccess)) {
+            @file_put_contents(
+                $htaccess,
+                "# Deny all direct web access to SQL dumps\n"
+                . "<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n"
+                . "<IfModule !mod_authz_core.c>\n    Order allow,deny\n    Deny from all\n</IfModule>\n"
+                . "Options -Indexes\n"
+            );
+        }
+        $indexGuard = $dir . 'index.html';
+        if (!is_file($indexGuard)) {
+            @file_put_contents($indexGuard, '');
+        }
+    }
+
+    return $dir;
+}
+
 function getDeviceBrands() {
     global $pdo;
     try {
@@ -755,30 +1119,48 @@ function log_error($message, $type = 'system', $details = '') {
     }
 }
 
+function telegramHtml($value): string {
+    return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
 function sendTelegramNotification($chatId, $message) {
     if (!defined('TG_BOT_TOKEN') || empty($chatId)) return false;
-    
-    $url = "https://api.telegram.org/bot" . TG_BOT_TOKEN . "/sendMessage";
-    $data = [
-        'chat_id' => $chatId,
-        'text' => $message,
-        'parse_mode' => 'HTML'
-    ];
-    
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-    $response = curl_exec($ch);
-    unset($ch);
-    
-    if ($response === false) return false;
-    
-    $result = json_decode($response, true);
-    return isset($result['ok']) && $result['ok'];
+
+    if (!function_exists('curl_init')) {
+        error_log('Telegram notification skipped: cURL extension is unavailable.');
+        return false;
+    }
+
+    try {
+        $url = "https://api.telegram.org/bot" . TG_BOT_TOKEN . "/sendMessage";
+        $data = [
+            'chat_id' => $chatId,
+            'text' => $message,
+            'parse_mode' => 'HTML'
+        ];
+
+        $ch = curl_init();
+        if ($ch === false) {
+            return false;
+        }
+
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        $response = curl_exec($ch);
+        unset($ch);
+
+        if ($response === false) return false;
+
+        $result = json_decode($response, true);
+        return isset($result['ok']) && $result['ok'];
+    } catch (Throwable $e) {
+        error_log('Telegram notification error: ' . $e->getMessage());
+        return false;
+    }
 }
 
 function getStatusChangeAdminTelegramId(): string {
@@ -799,26 +1181,22 @@ function sendOrderStatusAdminNotification($order_id, string $canonical_status, $
     }
 
     $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
-    $host = $_SERVER['HTTP_HOST'] ?? 'app.servis.expert';
+    $host = preg_replace('/[^A-Za-z0-9.:-]/', '', (string)($_SERVER['HTTP_HOST'] ?? 'app.servis.expert'));
+    if ($host === '') {
+        $host = 'app.servis.expert';
+    }
     $link = $protocol . $host . '/view_order.php?id=' . (int)$order_id;
-    $msg .= sprintf(__('tg_open_crm'), $link);
+    $msg .= sprintf(__('tg_open_crm'), telegramHtml($link));
 
     return sendTelegramNotification($chatId, $msg);
 }
 
 function ensureOrderStatusLogTable() {
     global $pdo;
-    $pdo->exec(
-        "CREATE TABLE IF NOT EXISTS order_status_log (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            order_id INT NOT NULL,
-            old_status VARCHAR(50) NOT NULL,
-            new_status VARCHAR(50) NOT NULL,
-            changed_by INT NULL,
-            changed_role VARCHAR(20) NULL,
-            changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )"
-    );
+    $stmt = $pdo->query("SHOW TABLES LIKE 'order_status_log'");
+    if (!$stmt || !$stmt->fetchColumn()) {
+        throw new RuntimeException('Required migration is missing: order_status_log.');
+    }
 }
 
 function logOrderStatusChange($order_id, $old_status, $new_status) {
@@ -836,7 +1214,8 @@ function logOrderStatusChange($order_id, $old_status, $new_status) {
         );
         $stmt->execute([$order_id, $old_status, $new_status, $changed_by, $changed_role]);
     } catch (Exception $e) {
-        // ignore logging errors
+        // Reports are built from this history; never lose a failure silently.
+        error_log('logOrderStatusChange failed for order #' . (int)$order_id . ': ' . $e->getMessage());
     }
 }
 
@@ -886,5 +1265,158 @@ function processOrderInventoryChange($order_id, $is_finishing, $was_finished) {
             changeInventoryQuantity($item['inventory_id'], $item['quantity']);
         }
     }
+}
+
+/**
+ * Alphabet for public status tokens (8 chars). Excludes ambiguous 0/O/1/I/L.
+ */
+function crmPublicStatusTokenAlphabet(): string
+{
+    return 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+}
+
+/**
+ * Generate a cryptographically random 8-character public status token.
+ */
+function crmGeneratePublicStatusToken(): string
+{
+    $alphabet = crmPublicStatusTokenAlphabet();
+    $len = strlen($alphabet);
+    $token = '';
+    $bytes = random_bytes(8);
+    for ($i = 0; $i < 8; $i++) {
+        $token .= $alphabet[ord($bytes[$i]) % $len];
+    }
+    return $token;
+}
+
+/**
+ * Normalize a public status token from a query string.
+ */
+function crmNormalizePublicStatusToken(?string $token): string
+{
+    $token = strtoupper(trim((string)$token));
+    if ($token === '' || !preg_match('/^[A-Z2-9]{8}$/', $token)) {
+        return '';
+    }
+    // Reject characters outside the chosen alphabet (I, L, O, 0, 1 excluded).
+    if (strspn($token, crmPublicStatusTokenAlphabet()) !== 8) {
+        return '';
+    }
+    return $token;
+}
+
+/**
+ * Public customer-facing status URL on the CRM host (app.servis.expert).
+ */
+function crmOrderPublicStatusUrl(string $token): string
+{
+    $base = 'https://app.servis.expert/status.php';
+    $token = crmNormalizePublicStatusToken($token);
+    if ($token === '') {
+        return $base;
+    }
+    return $base . '?id=' . rawurlencode($token);
+}
+
+/**
+ * Ensure the order has a unique public_status_token; create one if missing.
+ * Returns the 8-char token, or '' when the column is unavailable.
+ */
+function crmEnsureOrderPublicStatusToken(PDO $pdo, int $orderId): string
+{
+    if ($orderId <= 0) {
+        return '';
+    }
+
+    try {
+        $stmt = $pdo->prepare('SELECT public_status_token FROM orders WHERE id = ? LIMIT 1');
+        $stmt->execute([$orderId]);
+        $existing = $stmt->fetchColumn();
+        if (is_string($existing) && crmNormalizePublicStatusToken($existing) !== '') {
+            return strtoupper($existing);
+        }
+    } catch (Throwable $e) {
+        // Column may not exist yet before migration 005.
+        error_log('crmEnsureOrderPublicStatusToken read failed: ' . $e->getMessage());
+        return '';
+    }
+
+    $update = $pdo->prepare(
+        'UPDATE orders SET public_status_token = ? WHERE id = ? AND (public_status_token IS NULL OR public_status_token = \'\')'
+    );
+
+    for ($attempt = 0; $attempt < 12; $attempt++) {
+        $token = crmGeneratePublicStatusToken();
+        try {
+            $update->execute([$token, $orderId]);
+            if ($update->rowCount() > 0) {
+                return $token;
+            }
+            // Another writer may have set it; re-read.
+            $stmt = $pdo->prepare('SELECT public_status_token FROM orders WHERE id = ? LIMIT 1');
+            $stmt->execute([$orderId]);
+            $existing = $stmt->fetchColumn();
+            if (is_string($existing) && crmNormalizePublicStatusToken($existing) !== '') {
+                return strtoupper($existing);
+            }
+        } catch (PDOException $e) {
+            // Unique collision — try another token.
+            if ((int)($e->errorInfo[1] ?? 0) !== 1062) {
+                error_log('crmEnsureOrderPublicStatusToken write failed: ' . $e->getMessage());
+                return '';
+            }
+        }
+    }
+
+    return '';
+}
+
+/**
+ * Load a minimal public status payload by opaque token (no secrets).
+ *
+ * @return array<string,mixed>|null
+ */
+function crmGetPublicOrderStatusByToken(PDO $pdo, string $token): ?array
+{
+    $token = crmNormalizePublicStatusToken($token);
+    if ($token === '') {
+        return null;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT o.id, o.public_status_token, o.status, o.device_type, o.device_brand, o.device_model,
+                    o.created_at, o.updated_at, o.order_type
+             FROM orders o
+             WHERE o.public_status_token = ?
+             LIMIT 1"
+        );
+        $stmt->execute([$token]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        error_log('crmGetPublicOrderStatusByToken failed: ' . $e->getMessage());
+        return null;
+    }
+
+    if (!$row) {
+        return null;
+    }
+
+    $status = canonicalOrderStatus($row['status'] ?? '');
+    $device = trim(($row['device_brand'] ?? '') . ' ' . ($row['device_model'] ?? ''));
+
+    // Minimal public payload: status + device context only. No customer PII.
+    return [
+        'public_id' => strtoupper((string)$row['public_status_token']),
+        'order_number' => (int)$row['id'],
+        'status' => $status,
+        'status_label' => getStatusLabel($status),
+        'device' => $device !== '' ? $device : '—',
+        'device_type' => (string)($row['device_type'] ?? ''),
+        'order_type' => (string)($row['order_type'] ?? ''),
+        'created_at' => (string)($row['created_at'] ?? ''),
+        'updated_at' => (string)($row['updated_at'] ?? ''),
+    ];
 }
 ?>

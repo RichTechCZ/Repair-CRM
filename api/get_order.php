@@ -1,35 +1,32 @@
 <?php
 /**
- * API: Get Order by ID (for "Copy Order" feature)
+ * API: Get Order by ID (legacy alias used by copy-order UI paths).
  * Returns order data as JSON for pre-filling the New Order form.
+ * Device PIN is intentionally omitted.
  */
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
-require_once '../includes/rate_limit.php';
-header('Content-Type: application/json');
+require_once __DIR__ . '/../includes/api_bootstrap.php';
 
-checkApiRateLimit('get_order', 30, 60);
-
-if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['success' => false, 'message' => __('unauthorized')]);
-    exit;
-}
+api_bootstrap([
+    'auth' => true,
+    'post' => false,
+    'csrf' => false,
+    'rate' => ['action' => 'get_order', 'max' => 30, 'window' => 60],
+    'json' => true,
+]);
 
 $order_id = intval($_GET['id'] ?? 0);
 if (!$order_id) {
-    echo json_encode(['success' => false, 'message' => __('missing_id')]);
-    exit;
+    api_json_exit(['success' => false, 'message' => __('missing_id')], 400);
 }
 
 if (!currentUserCanViewOrder($order_id)) {
-    echo json_encode(['success' => false, 'message' => __('access_denied_msg')]);
-    exit;
+    api_json_exit(['success' => false, 'message' => __('access_denied_msg')], 403);
 }
 
 try {
     $stmt = $pdo->prepare('
         SELECT o.id, o.customer_id, o.device_type, o.order_type, o.device_model, o.device_brand,
-               o.serial_number, o.serial_number_2, o.appearance, o.pin_code, o.priority,
+               o.serial_number, o.serial_number_2, o.appearance, o.priority,
                o.problem_description, o.technician_notes, o.estimated_cost, o.technician_id,
                c.first_name, c.last_name, c.phone, c.email, c.company
         FROM orders o
@@ -40,12 +37,11 @@ try {
     $order = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$order) {
-        echo json_encode(['success' => false, 'message' => __('copy_order_not_found')]);
-        exit;
+        api_json_exit(['success' => false, 'message' => __('copy_order_not_found')], 404);
     }
 
-    echo json_encode(['success' => true, 'order' => $order]);
+    unset($order['pin_code']);
+    api_json_exit(['success' => true, 'order' => $order]);
 } catch (Exception $e) {
-    echo json_encode(['success' => false, 'message' => publicExceptionMessage($e)]);
+    api_exception_exit($e, 500);
 }
-?>

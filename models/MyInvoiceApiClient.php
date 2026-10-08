@@ -25,7 +25,7 @@ class MyInvoiceApiClient {
     private ?int $supplierId;
 
     public function __construct(?string $baseUrl = null, ?string $token = null, ?int $supplierId = null) {
-        $configuredBaseUrl = $baseUrl ?: (getenv('MYINVOICE_API_BASE_URL') ?: get_setting('myinvoice_api_base_url', 'http://fakturace.43.157.31.121.sslip.io'));
+        $configuredBaseUrl = $baseUrl ?: (getenv('MYINVOICE_API_BASE_URL') ?: get_setting('myinvoice_api_base_url', 'https://fakturace.43.157.31.121.sslip.io'));
         $this->baseUrl = rtrim($configuredBaseUrl, '/');
         $this->token = $token ?: (getenv('MYINVOICE_API_TOKEN') ?: '');
         $supplier = $supplierId ?? (getenv('MYINVOICE_SUPPLIER_ID') ?: null);
@@ -75,6 +75,12 @@ class MyInvoiceApiClient {
         if (!$this->isConfigured()) {
             throw new MyInvoiceApiException('MyInvoice API token is not configured.');
         }
+        $scheme = strtolower((string)parse_url($this->baseUrl, PHP_URL_SCHEME));
+        $host = strtolower((string)parse_url($this->baseUrl, PHP_URL_HOST));
+        $localDevelopmentHost = in_array($host, ['localhost', '127.0.0.1', '::1'], true);
+        if ($scheme !== 'https' && !$localDevelopmentHost) {
+            throw new MyInvoiceApiException('MyInvoice API requires HTTPS.');
+        }
 
         $url = $this->baseUrl . $path;
         $headers = [
@@ -110,6 +116,8 @@ class MyInvoiceApiClient {
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_TIMEOUT => 20,
             CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
         ]);
 
         if ($body !== null) {
@@ -136,6 +144,10 @@ class MyInvoiceApiClient {
                 'content' => $body ?? '',
                 'ignore_errors' => true,
                 'timeout' => 20,
+            ],
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true,
             ],
         ]);
 

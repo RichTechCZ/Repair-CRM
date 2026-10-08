@@ -16,58 +16,28 @@ $canonical_filter_status = canonicalOrderStatus($filter_status ?? '');
 
 $orders       = [];
 $total_orders = 0;
+$imei_counts  = [];
+$order_parts  = [];
 
 if (isset($pdo)) {
     try {
-        $search = normalizeSearchQuery($_GET['search'] ?? '');
-        $search_parts = buildOrderSearchQueryParts($search, 'o', 'c', 't');
-
-        $where_clauses = [];
-        $sql_params    = []; // FIX #9: renamed from $params to avoid collision with pagination block
-
-        // Technicians always see only orders assigned to them.
+        // Shared search path with Dashboard topbar: same scoring, same
+        // optional-index fallback, same technician scoping.
+        $orders_technician_id = null;
         if (($_SESSION['role'] ?? '') === 'technician') {
-            $where_clauses[] = 'o.technician_id = ?';
-            $sql_params[]    = (int)($_SESSION['tech_id'] ?? 0);
+            $orders_technician_id = (int)($_SESSION['tech_id'] ?? 0);
         }
-
-        if (!empty($search_parts['where_clauses'])) {
-            $where_clauses = array_merge($where_clauses, $search_parts['where_clauses']);
-            $sql_params = array_merge($sql_params, $search_parts['where_params']);
-        }
-
-        if ($canonical_filter_status === 'Ready') {
-            $where_clauses[] = buildStatusInCondition('o.status', $dashboard_status_groups['ready'], $sql_params);
-        } elseif ($canonical_filter_status === 'In Repair') {
-            $where_clauses[] = buildStatusInCondition('o.status', $dashboard_status_groups['progress'], $sql_params);
-        } elseif ($filter_status) {
-            $where_clauses[] = buildStatusInCondition('o.status', [$filter_status], $sql_params);
-        }
-
-        $where_sql = $where_clauses ? ' WHERE ' . implode(' AND ', $where_clauses) : '';
-
-        // Count
-        $count_stmt = $pdo->prepare(
-            'SELECT COUNT(*) FROM orders o JOIN customers c ON o.customer_id = c.id LEFT JOIN technicians t ON o.technician_id = t.id' . $where_sql
+        $search_result = searchOrdersList(
+            $pdo,
+            (string)($_GET['search'] ?? ''),
+            $orders_technician_id,
+            $filter_status,
+            $limit,
+            $offset,
+            true
         );
-        $count_stmt->execute($sql_params);
-        $total_orders = (int)$count_stmt->fetchColumn();
-
-        // Fetch orders
-        $fetch_params = array_merge($search_parts['score_params'], $sql_params);
-
-        $stmt = $pdo->prepare(
-            'SELECT o.*, c.first_name, c.last_name, c.phone, t.name as tech_name, '
-            . $search_parts['score_sql'] . ' AS search_relevance
-             FROM orders o
-             JOIN customers c ON o.customer_id = c.id
-             LEFT JOIN technicians t ON o.technician_id = t.id'
-            . $where_sql
-            . ' ORDER BY search_relevance DESC, o.created_at DESC
-              LIMIT ' . (int)$limit . ' OFFSET ' . (int)$offset
-        );
-        $stmt->execute($fetch_params);
-        $orders = $stmt->fetchAll();
+        $orders = $search_result['orders'];
+        $total_orders = $search_result['total'];
 
         // FIX #4: Pre-load media flags in one query instead of N+1 in loop
         $has_media_ids = [];
@@ -81,8 +51,7 @@ if (isset($pdo)) {
             $has_media_ids = array_flip($m_stmt->fetchAll(PDO::FETCH_COLUMN));
         }
 
-        // Pre-load IMEI/Serial duplicate counts (one query, no N+1)
-        $imei_counts = [];
+        // Pre-load IMEI/Serial duplicate counts and parts for the page (no N+1)
         if (!empty($orders)) {
             $serials = [];
             foreach ($orders as $ord) {
@@ -104,6 +73,41 @@ if (isset($pdo)) {
                 $dup_stmt->execute(array_merge($serials, $serials));
                 foreach ($dup_stmt->fetchAll() as $dup_row) {
                     $imei_counts[$dup_row['sn']] = (int)$dup_row['cnt'];
+                }
+            }
+
+            // Financial breakdown (parts + extra expenses) is admin-only.
+            // Covers users-table admin and technicians with admin_access
+            // (e.g. Shaydovskyy Andriy).
+            if (hasPermission('admin_access')) {
+                $order_ids = array_map('intval', array_column($orders, 'id'));
+                $parts_ph = implode(',', array_fill(0, count($order_ids), '?'));
+                $parts_stmt = $pdo->prepare(
+                    "SELECT oi.order_id,
+                            oi.quantity,
+                            oi.price,
+                            COALESCE(NULLIF(TRIM(oi.part_name), ''), NULLIF(TRIM(i.part_name), ''), '—') AS part_label
+                     FROM order_items oi
+                     LEFT JOIN inventory i ON i.id = oi.inventory_id
+                     WHERE oi.order_id IN ($parts_ph)
+                     ORDER BY oi.id ASC"
+                );
+                $parts_stmt->execute($order_ids);
+                foreach ($parts_stmt->fetchAll(PDO::FETCH_ASSOC) as $part_row) {
+                    $oid = (int)$part_row['order_id'];
+                    $qty = max(1, (int)($part_row['quantity'] ?? 1));
+                    $unit = (float)($part_row['price'] ?? 0);
+                    $line_total = $qty * $unit;
+                    if (!isset($order_parts[$oid])) {
+                        $order_parts[$oid] = ['total' => 0.0, 'lines' => []];
+                    }
+                    $order_parts[$oid]['total'] += $line_total;
+                    $order_parts[$oid]['lines'][] = sprintf(
+                        '%s ×%d — %s',
+                        (string)$part_row['part_label'],
+                        $qty,
+                        formatMoney($line_total)
+                    );
                 }
             }
         }
@@ -151,65 +155,90 @@ if (isset($pdo)) {
         )->fetchAll();
     } catch (PDOException $e) {}
 }
+
+$order_form_error = trim((string)($_SESSION['order_form_error'] ?? ''));
+unset($_SESSION['order_form_error']);
 ?>
 
-<div class="page-header">
-    <div class="page-header__copy">
-        <div class="page-kicker"><?php echo e(get_setting('company_name', 'Repair CRM')); ?></div>
-        <h1><?php echo __('orders'); ?></h1>
-        <p class="page-subtitle">
-            <?php echo __('all_orders'); ?>: <strong class="financial-number"><?php echo $total_orders; ?></strong>
-        </p>
+<section class="workspace-overview workspace-overview--orders ui-ready" aria-labelledby="orders-overview-title">
+    <div class="workspace-overview__head">
+        <div class="workspace-overview__copy">
+            <h1 id="orders-overview-title"><?php echo __('orders'); ?></h1>
+            <p class="workspace-overview__total">
+                <?php echo __('all_orders'); ?>: <strong class="financial-number"><?php echo $total_orders; ?></strong>
+            </p>
+        </div>
+        <form action="<?php echo e($search_action); ?>" method="GET" class="workspace-overview__search" role="search">
+            <label for="ordersSearch" class="visually-hidden"><?php echo e(__('search_placeholder')); ?></label>
+            <div class="search-shell">
+                <span class="search-shell__icon" aria-hidden="true"></span>
+                <input id="ordersSearch" type="text" name="search" class="form-control" placeholder="<?php echo e($search_placeholder); ?>" value="<?php echo e($_GET['search'] ?? ''); ?>">
+                <button class="btn btn-primary btn-sm px-3" type="submit">Go</button>
+            </div>
+        </form>
+        <div class="page-actions">
+            <?php if(!empty($_GET['search'])): ?>
+                <a href="orders.php" class="btn btn-outline-secondary"><?php echo __('cancel'); ?></a>
+            <?php endif; ?>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newOrderModal">
+                <i class="fas fa-plus" aria-hidden="true"></i>
+                <span><?php echo __('new_order'); ?></span>
+            </button>
+        </div>
     </div>
-    <div class="page-actions">
-        <?php if(!empty($_GET['search'])): ?>
-            <a href="orders.php" class="btn btn-outline-secondary"><?php echo __('cancel'); ?></a>
-        <?php endif; ?>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newOrderModal">
-            <i class="fas fa-plus"></i>
-            <span><?php echo __('new_order'); ?></span>
-        </button>
-    </div>
-</div>
 
-<div class="row g-3 mb-4 ui-ready">
-    <div class="col-12 col-sm-6 col-md-3">
-        <a href="?filter=Accepted" class="text-decoration-none">
-            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'Accepted' ? 'ring-2 text-primary' : ''; ?>">
-                <span class="metric-label"><?php echo __('new_orders'); ?></span>
-                <div class="metric-value financial-number"><?php echo $s_new; ?></div>
-                <div class="metric-meta"><?php echo e(__('status')); ?>: Accepted</div>
-            </div>
+    <div class="workspace-overview__metrics workspace-overview__metrics--four" aria-label="<?php echo e(__('status')); ?>">
+        <a href="?filter=Accepted" class="workspace-overview__metric <?php echo $canonical_filter_status == 'Accepted' ? 'is-active' : ''; ?>">
+            <span class="workspace-overview__metric-label"><?php echo __('new_orders'); ?></span>
+            <span class="workspace-overview__metric-data">
+                <strong class="workspace-overview__metric-value financial-number"><?php echo $s_new; ?></strong>
+                <?php echo getStatusBadge('Accepted'); ?>
+            </span>
+        </a>
+        <a href="?filter=Approval" class="workspace-overview__metric <?php echo $canonical_filter_status == 'Approval' ? 'is-active' : ''; ?>">
+            <span class="workspace-overview__metric-label"><?php echo __('pending_approval_orders'); ?></span>
+            <span class="workspace-overview__metric-data">
+                <strong class="workspace-overview__metric-value financial-number"><?php echo $s_pending; ?></strong>
+                <?php echo getStatusBadge('Approval'); ?>
+            </span>
+        </a>
+        <a href="?filter=In%20Repair" class="workspace-overview__metric <?php echo $canonical_filter_status == 'In Repair' ? 'is-active' : ''; ?>">
+            <span class="workspace-overview__metric-label"><?php echo __('in_progress_orders'); ?></span>
+            <span class="workspace-overview__metric-data">
+                <strong class="workspace-overview__metric-value financial-number"><?php echo $s_progress; ?></strong>
+                <?php echo getStatusBadge('In Repair'); ?>
+            </span>
+        </a>
+        <a href="?filter=Ready" class="workspace-overview__metric <?php echo $canonical_filter_status == 'Ready' ? 'is-active' : ''; ?>">
+            <span class="workspace-overview__metric-label"><?php echo __('completed_orders'); ?></span>
+            <span class="workspace-overview__metric-data">
+                <strong class="workspace-overview__metric-value financial-number"><?php echo $s_ready; ?></strong>
+                <?php echo getStatusBadge('Ready'); ?>
+            </span>
         </a>
     </div>
-    <div class="col-12 col-sm-6 col-md-3">
-        <a href="?filter=Approval" class="text-decoration-none">
-            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'Approval' ? 'ring-2 text-info' : ''; ?>">
-                <span class="metric-label"><?php echo __('pending_approval_orders'); ?></span>
-                <div class="metric-value financial-number"><?php echo $s_pending; ?></div>
-                <div class="metric-meta"><?php echo e(__('status')); ?>: Approval</div>
-            </div>
-        </a>
+</section>
+
+<?php if ($order_form_error !== ''): ?>
+<div class="alert alert-danger order-created-feedback" role="alert">
+    <?php echo e($order_form_error); ?>
+</div>
+<?php endif; ?>
+
+<?php $created_order_id = filter_input(INPUT_GET, 'created_order_id', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]); ?>
+<?php if ($created_order_id): ?>
+<div class="alert alert-success order-created-feedback d-flex flex-wrap align-items-center justify-content-between gap-3" role="status">
+    <div>
+        <strong><?php echo e(sprintf(__('order_created'), $created_order_id)); ?></strong>
+        <div class="small text-white-75 mt-1"><?php echo e(__('order_created_hint')); ?></div>
     </div>
-    <div class="col-12 col-sm-6 col-md-3">
-        <a href="?filter=In Repair" class="text-decoration-none">
-            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'In Repair' ? 'ring-2 text-warning' : ''; ?>">
-                <span class="metric-label"><?php echo __('in_progress_orders'); ?></span>
-                <div class="metric-value financial-number"><?php echo $s_progress; ?></div>
-                <div class="metric-meta"><?php echo e(__('status')); ?>: In Repair</div>
-            </div>
-        </a>
-    </div>
-    <div class="col-12 col-sm-6 col-md-3">
-        <a href="?filter=Ready" class="text-decoration-none">
-            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'Ready' ? 'ring-2 text-success' : ''; ?>">
-                <span class="metric-label"><?php echo __('completed_orders'); ?></span>
-                <div class="metric-value financial-number"><?php echo $s_ready; ?></div>
-                <div class="metric-meta"><?php echo e(__('status')); ?>: Ready</div>
-            </div>
-        </a>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="view_order.php?id=<?php echo (int)$created_order_id; ?>" class="btn btn-outline-secondary btn-sm"><?php echo __('open_btn'); ?></a>
+        <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#newOrderModal"><?php echo __('new_order'); ?></button>
     </div>
 </div>
+<?php endif; ?>
+
 <?php if($filter_status): ?>
     <?php $status_label = getStatusLabel($filter_status); ?>
     <div class="mb-4">
@@ -219,8 +248,8 @@ if (isset($pdo)) {
 
 <div class="card glass-card shadow-sm ui-ready">
     <div class="card-body p-0">
-        <div class="table-responsive" style="max-height: 700px; overflow-y: auto;">
-            <table class="table table-hover align-middle mb-0">
+        <div class="table-responsive table-scroll-touch orders-table-wrap">
+            <table class="table table-hover align-middle mb-0 table-mobile-cards">
                 <thead class="bg-transparent sticky-top" style="z-index: 10;">
                     <tr>
                         <th class="ps-4">ID / <?php echo __('created'); ?></th>
@@ -250,8 +279,8 @@ if (isset($pdo)) {
                             $phone_clean  = preg_replace('/[^0-9+]/', '', $client_phone);
                         ?>
                         <tr <?php echo (($order['priority'] ?? '') === 'High') ? 'class="priority-high-row"' : ''; ?>>
-                            <td class="ps-4">
-                                <a href="view_order.php?id=<?php echo (int)$order['id']; ?>" class="fw-bold text-decoration-none">#<?php echo (int)$order['id']; ?></a>
+                            <td class="ps-4" data-label="ID">
+                                <a href="view_order.php?id=<?php echo (int)$order['id']; ?>" class="fw-bold text-decoration-none mobile-order-link">#<?php echo (int)$order['id']; ?></a>
                                 <?php if($has_media): ?>
                                     <i class="fas fa-camera text-info ms-1" title="<?php echo __('media_files'); ?>"></i>
                                 <?php endif; ?>
@@ -263,17 +292,24 @@ if (isset($pdo)) {
                                     </div>
                                 <?php endif; ?>
                             </td>
-                            <td>
+                            <td data-label="<?php echo e(__('client')); ?>">
                                 <div><?php echo e($order['first_name'] . ' ' . $order['last_name']); ?></div>
                                 <?php if($client_phone): ?>
-                                <div class="phone-qr-trigger small text-white-75" 
+                                <div class="phone-qr-trigger small text-white-75"
                                      data-phone="<?php echo e($phone_clean); ?>"
-                                     style="cursor: pointer;">
-                                    <i class="fas fa-phone me-1 text-success"></i><?php echo e($client_phone); ?>
+                                     role="button"
+                                     tabindex="0"
+                                     aria-expanded="false"
+                                     aria-controls="phoneQrPopover"
+                                     aria-haspopup="dialog"
+                                     aria-label="<?php echo e($client_phone . ' — ' . __('phone_show_qr')); ?>">
+                                    <i class="fas fa-phone text-success" aria-hidden="true"></i>
+                                    <span><?php echo e($client_phone); ?></span>
+                                    <i class="fas fa-qrcode phone-qr-trigger__hint" aria-hidden="true"></i>
                                 </div>
                                 <?php endif; ?>
                             </td>
-                            <td>
+                            <td data-label="<?php echo e(__('device_model')); ?>">
                                 <div class="fw-medium text-primary"><?php echo $device_icon; ?> <?php echo htmlspecialchars($order['device_brand']); ?></div>
                                 <div class="small text-white-75"><?php echo htmlspecialchars($order['device_model']); ?></div>
                                 <?php if(!empty($order['serial_number'])): ?>
@@ -293,18 +329,15 @@ if (isset($pdo)) {
                                     </div>
                                 <?php endif; ?>
                             </td>
-                            <td>
-                                <div class="small text-truncate" style="max-width: 200px;" title="<?php echo htmlspecialchars($order['problem_description']); ?>">
+                            <td data-label="<?php echo e(__('problem')); ?>">
+                                <div class="small problem-snippet" title="<?php echo htmlspecialchars($order['problem_description']); ?>">
                                     <?php echo htmlspecialchars($order['problem_description']); ?>
                                 </div>
                             </td>
-                            <td>
+                            <td data-label="<?php echo e(__('status')); ?>">
                                 <?php echo getStatusBadge($order['status']); ?>
                                 <?php if(!empty($order['shipping_method'])): ?>
                                     <div class="mt-1 small text-info"><i class="fas fa-truck me-1"></i><?php echo htmlspecialchars($order['shipping_method']); ?></div>
-                                <?php endif; ?>
-                                <?php if($_SESSION['role'] == 'admin' && $order['extra_expenses'] > 0): ?>
-                                    <div class="mt-1 small text-danger"><i class="fas fa-minus-circle me-1"></i><?php echo __('extra_expenses'); ?>: <?php echo e($order['extra_expenses']); ?></div>
                                 <?php endif; ?>
                                 <div class="small text-white-75 mt-1">
                                     <i class="far fa-clock me-1"></i><?php echo date('d.m.Y H:i', strtotime($order['updated_at'])); ?>
@@ -315,8 +348,40 @@ if (isset($pdo)) {
                                 </div>
                                 <?php endif; ?>
                             </td>
-                            <td class="fw-bold text-white"><?php echo formatMoney($order['final_cost'] ?: $order['estimated_cost']); ?></td>
-                            <td class="text-end pe-4">
+                            <td class="order-amount-cell" data-label="<?php echo e(__('amount')); ?>">
+                                <?php
+                                    $repair_total = (float)($order['final_cost'] ?: $order['estimated_cost'] ?: 0);
+                                    $show_amount_breakdown = hasPermission('admin_access');
+                                ?>
+                                <div class="order-amount-cell__total financial-number fw-bold text-white" title="<?php echo e(__('amount')); ?>">
+                                    <?php echo formatMoney($repair_total); ?>
+                                </div>
+                                <?php if ($show_amount_breakdown):
+                                    $parts_meta = $order_parts[(int)$order['id']] ?? ['total' => 0.0, 'lines' => []];
+                                    $parts_total = (float)$parts_meta['total'];
+                                    $parts_tip = implode("\n", $parts_meta['lines']);
+                                    $extra_exp = (float)($order['extra_expenses'] ?? 0);
+                                ?>
+                                    <?php if ($parts_total > 0): ?>
+                                    <div class="order-amount-cell__parts small text-white-75"
+                                         title="<?php echo e($parts_tip); ?>"
+                                         tabindex="0"
+                                         role="note"
+                                         aria-label="<?php echo e(__('parts_cost') . ': ' . $parts_tip); ?>">
+                                        <span class="order-amount-cell__label"><?php echo e(__('parts_cost')); ?></span>
+                                        <span class="financial-number"><?php echo formatMoney($parts_total); ?></span>
+                                    </div>
+                                    <?php endif; ?>
+                                    <?php if ($extra_exp > 0): ?>
+                                    <div class="order-amount-cell__extra small text-danger"
+                                         title="<?php echo e(__('extra_expenses')); ?>">
+                                        <span class="order-amount-cell__label"><?php echo e(__('extra_expenses')); ?></span>
+                                        <span class="financial-number"><?php echo formatMoney($extra_exp); ?></span>
+                                    </div>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                            </td>
+                            <td class="text-end pe-4 mobile-row-actions" data-label="">
                                 <?php
                                     $can_quick = hasPermission('admin_access')
                                         || (($_SESSION['role'] ?? '') === 'technician'
@@ -331,39 +396,42 @@ if (isset($pdo)) {
                                     );
                                 ?>
                                 <?php // inline quick-status buttons removed; using dropdown only ?>
-                                <div class="btn-group btn-group-sm shadow-sm">
+                                <div class="btn-group btn-group-sm shadow-sm order-row-actions">
+                                    <a href="view_order.php?id=<?php echo (int)$order['id']; ?>" class="btn btn-outline-primary d-md-none" title="<?php echo e(__('open_btn')); ?>" aria-label="<?php echo e(__('open_btn')); ?>">
+                                        <i class="fas fa-eye" aria-hidden="true"></i>
+                                    </a>
                                     <?php if ($show_quick): ?>
                                     <div class="dropdown">
-                                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" title="<?php echo __('quick_status'); ?>">
+                                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' title="<?php echo e(__('quick_status')); ?>" aria-label="<?php echo e(__('quick_status')); ?>">
                                             <i class="fas fa-bolt text-primary"></i>
                                         </button>
-                                        <ul class="dropdown-menu shadow">
+                                        <ul class="dropdown-menu dropdown-menu-end shadow">
                                             <?php if ($canonical_status === 'Accepted'): ?>
-                                                <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="Diagnostics"><i class="fas fa-stethoscope me-2 text-primary"></i><?php echo getStatusLabel('Diagnostics'); ?></a></li>
+                                                <li><a class="dropdown-item quick-status-btn" href="#" data-id="<?php echo (int)$order['id']; ?>" data-status="Diagnostics"><i class="fas fa-stethoscope me-2 text-primary"></i><?php echo getStatusLabel('Diagnostics'); ?></a></li>
                                             <?php elseif (in_array($canonical_status, ['Diagnostics', 'Approval'], true)): ?>
-                                                <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="In Repair"><i class="fas fa-tools me-2 text-warning"></i><?php echo getStatusLabel('In Repair'); ?></a></li>
+                                                <li><a class="dropdown-item quick-status-btn" href="#" data-id="<?php echo (int)$order['id']; ?>" data-status="In Repair"><i class="fas fa-tools me-2 text-warning"></i><?php echo getStatusLabel('In Repair'); ?></a></li>
                                             <?php elseif ($canonical_status === 'In Repair'): ?>
-                                                <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="Ready"><i class="fas fa-check me-2 text-success"></i><?php echo getStatusLabel('Ready'); ?></a></li>
+                                                <li><a class="dropdown-item quick-status-btn" href="#" data-id="<?php echo (int)$order['id']; ?>" data-status="Ready"><i class="fas fa-check me-2 text-success"></i><?php echo getStatusLabel('Ready'); ?></a></li>
                                             <?php endif; ?>
                                             <?php if ($can_cancel): ?>
-                                                <li><a class="dropdown-item quick-status-btn" href="javascript:void(0)" data-id="<?php echo (int)$order['id']; ?>" data-status="Repair Cancelled"><i class="fas fa-ban me-2 text-danger"></i><?php echo getStatusLabel('Repair Cancelled'); ?></a></li>
+                                                <li><a class="dropdown-item quick-status-btn" href="#" data-id="<?php echo (int)$order['id']; ?>" data-status="Repair Cancelled"><i class="fas fa-ban me-2 text-danger"></i><?php echo getStatusLabel('Repair Cancelled'); ?></a></li>
                                             <?php endif; ?>
                                         </ul>
                                     </div>
                                     <?php endif; ?>
                                     <div class="dropdown">
-                                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" title="<?php echo __('print'); ?>">
+                                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' title="<?php echo e(__('print')); ?>" aria-label="<?php echo e(__('print')); ?>">
                                             <i class="fas fa-print text-white-75"></i>
                                         </button>
-                                        <ul class="dropdown-menu shadow">
-                                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="openUniversalPreview('print_order.php?id=<?php echo $order['id']; ?>', 'Order #<?php echo $order['id']; ?>')"><i class="fas fa-file-invoice me-2 text-primary"></i> <?php echo __('a4_invoice'); ?></a></li>
-                                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="openReceptionLangModal(<?php echo $order['id']; ?>)"><i class="fas fa-file-import me-2 text-info"></i> <?php echo __('reception_act_thermal'); ?></a></li>
-                                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="openUniversalPreview('print_workshop.php?id=<?php echo $order['id']; ?>', 'Workshop Order #<?php echo $order['id']; ?>')"><i class="fas fa-tools me-2 text-warning"></i> <?php echo __('work_order'); ?></a></li>
-                                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="openUniversalPreview('print_thermal.php?id=<?php echo $order['id']; ?>', 'Receipt #<?php echo $order['id']; ?>')"><i class="fas fa-receipt me-2 text-success"></i> <?php echo __('thermal_receipt'); ?></a></li>
+                                        <ul class="dropdown-menu dropdown-menu-end shadow">
+                                            <li><a class="dropdown-item" href="#" data-crm-action="open-preview" data-preview-url="print_order.php?id=<?php echo (int)$order['id']; ?>" data-preview-title="Order #<?php echo (int)$order['id']; ?>"><i class="fas fa-file-invoice me-2 text-primary"></i> <?php echo __('a4_invoice'); ?></a></li>
+                                            <li><a class="dropdown-item" href="#" data-crm-action="open-reception-language" data-crm-id="<?php echo (int)$order['id']; ?>"><i class="fas fa-file-import me-2 text-info"></i> <?php echo __('reception_act_thermal'); ?></a></li>
+                                            <li><a class="dropdown-item" href="#" data-crm-action="open-preview" data-preview-url="print_workshop.php?id=<?php echo (int)$order['id']; ?>" data-preview-title="Workshop Order #<?php echo (int)$order['id']; ?>"><i class="fas fa-tools me-2 text-warning"></i> <?php echo __('work_order'); ?></a></li>
+                                            <li><a class="dropdown-item" href="#" data-crm-action="open-preview" data-preview-url="print_thermal.php?id=<?php echo (int)$order['id']; ?>" data-preview-title="Receipt #<?php echo (int)$order['id']; ?>"><i class="fas fa-receipt me-2 text-success"></i> <?php echo __('thermal_receipt'); ?></a></li>
                                         </ul>
                                     </div>
                                     <?php if (hasPermission('admin_access')): ?>
-                                    <button type="button" class="btn btn-outline-secondary accounting-btn" data-id="<?php echo $order['id']; ?>" title="<?php echo __('accounting'); ?>">
+                                    <button type="button" class="btn btn-outline-secondary accounting-btn" data-id="<?php echo (int)$order['id']; ?>" title="<?php echo e(__('accounting')); ?>" aria-label="<?php echo e(__('accounting')); ?>">
                                         <i class="fas fa-file-invoice-dollar text-success"></i>
                                     </button>
                                     <?php endif; ?>
@@ -432,11 +500,11 @@ if (isset($pdo)) {
 
 
 <!-- QR Popover Container -->
-<div class="qr-popover" id="phoneQrPopover">
+<div class="qr-popover" id="phoneQrPopover" role="dialog" aria-modal="false" aria-hidden="true" aria-label="<?php echo e(__('phone_show_qr')); ?>">
     <div class="qr-phone-label" id="qrPhoneLabel"></div>
     <div id="qrContainer"></div>
-    <a href="#" class="btn btn-sm btn-success qr-call-btn" id="qrCallBtn">
-        <i class="fas fa-phone me-1"></i><?php echo __('call'); ?>
+    <a href="#" class="btn btn-success qr-call-btn" id="qrCallBtn">
+        <i class="fas fa-phone" aria-hidden="true"></i><?php echo __('call'); ?>
     </a>
 </div>
 
@@ -503,22 +571,34 @@ if (isset($pdo)) {
 
 
 <!-- New Order Modal -->
-<div class="modal fade" id="newOrderModal" tabindex="-1" data-bs-focus="false">
+<div class="modal fade" id="newOrderModal" tabindex="-1" data-bs-focus="false" aria-labelledby="newOrderModalTitle">
     <div class="modal-dialog modal-lg">
         <div class="modal-content border-0 shadow">
             <form action="api/add_order.php" method="POST" enctype="multipart/form-data">
                 <?php echo csrfField(); ?> <!-- FIX #6: CSRF protection -->
-                <div class="modal-header bg-dark bg-opacity-25 border-secondary">
-                    <h5 class="modal-title"><?php echo __('new_order'); ?></h5>
-                    <div class="ms-auto me-3">
-                        <div class="input-group input-group-sm" style="width: 260px;">
-                            <input type="number" id="copyOrderIdInput" class="form-control" placeholder="<?php echo __('copy_order_id_placeholder'); ?>" min="1">
-                            <button type="button" class="btn btn-outline-info" id="copyOrderBtn" title="<?php echo __('copy_order_btn'); ?>">
-                                <i class="fas fa-copy me-1"></i><?php echo __('copy_order_btn'); ?>
-                            </button>
-                        </div>
+                <div class="modal-header new-order-modal__header">
+                    <div class="new-order-modal__heading">
+                        <h5 class="modal-title" id="newOrderModalTitle"><?php echo __('new_order'); ?></h5>
                     </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <div class="new-order-copy" role="group" aria-label="<?php echo e(__('copy_order')); ?>">
+                        <label class="visually-hidden" for="copyOrderIdInput"><?php echo e(__('copy_order_placeholder')); ?></label>
+                        <span class="new-order-copy__prefix" aria-hidden="true">#</span>
+                        <input type="number"
+                               id="copyOrderIdInput"
+                               class="form-control new-order-copy__input"
+                               placeholder="<?php echo e(__('copy_order_id_placeholder')); ?>"
+                               aria-label="<?php echo e(__('copy_order_placeholder')); ?>"
+                               inputmode="numeric"
+                               autocomplete="off"
+                               min="1">
+                        <button type="button" class="btn new-order-copy__button" id="copyOrderBtn" title="<?php echo e(__('copy_order_btn')); ?>">
+                            <i class="fas fa-copy" aria-hidden="true"></i>
+                            <span><?php echo __('copy_order_btn'); ?></span>
+                        </button>
+                    </div>
+                    <button type="button" class="new-order-modal__close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>">
+                        <i class="fas fa-times" aria-hidden="true"></i>
+                    </button>
                 </div>
                 <div class="modal-body">
                     <!-- ═══ 1. КЛИЕНТ ═══ -->
@@ -621,16 +701,52 @@ if (isset($pdo)) {
                             <span class="fw-semibold small text-uppercase"><?php echo __('section_device'); ?></span>
                         </div>
                         <div class="row g-3">
-                            <div class="col-12 col-sm-6 col-md-3">
-                                <label class="form-label"><?php echo __('device_type'); ?></label>
-                                <select name="device_type" class="form-select" required>
-                                    <option value="Phone">📱 <?php echo __('Phone'); ?></option>
-                                    <option value="Notebook">💻 <?php echo __('Notebook'); ?></option>
-                                    <option value="PC">🖥️ <?php echo __('PC'); ?></option>
-                                    <option value="Tablet">📟 <?php echo __('Tablet'); ?></option>
-                                    <option value="HDD">💾 <?php echo __('HDD'); ?></option>
-                                    <option value="Other">❓ <?php echo __('Other'); ?></option>
-                                </select>
+                            <div class="col-12">
+                                <span class="form-label device-type-picker__label" id="new-order-device-type-label"><?php echo __('device_type'); ?></span>
+                                <div class="device-type-picker" role="radiogroup" aria-labelledby="new-order-device-type-label">
+                                    <label class="device-type-option">
+                                        <input type="radio" name="device_type" value="Phone" checked required>
+                                        <span class="device-type-option__surface">
+                                            <span class="device-type-icon device-type-icon--phone" aria-hidden="true"></span>
+                                            <span class="device-type-option__title"><?php echo __('Phone'); ?></span>
+                                        </span>
+                                    </label>
+                                    <label class="device-type-option">
+                                        <input type="radio" name="device_type" value="Notebook">
+                                        <span class="device-type-option__surface">
+                                            <span class="device-type-icon device-type-icon--notebook" aria-hidden="true"></span>
+                                            <span class="device-type-option__title"><?php echo __('Notebook'); ?></span>
+                                        </span>
+                                    </label>
+                                    <label class="device-type-option">
+                                        <input type="radio" name="device_type" value="PC">
+                                        <span class="device-type-option__surface">
+                                            <span class="device-type-icon device-type-icon--pc" aria-hidden="true"></span>
+                                            <span class="device-type-option__title">PC</span>
+                                        </span>
+                                    </label>
+                                    <label class="device-type-option">
+                                        <input type="radio" name="device_type" value="Tablet">
+                                        <span class="device-type-option__surface">
+                                            <span class="device-type-icon device-type-icon--tablet" aria-hidden="true"></span>
+                                            <span class="device-type-option__title"><?php echo __('Tablet'); ?></span>
+                                        </span>
+                                    </label>
+                                    <label class="device-type-option">
+                                        <input type="radio" name="device_type" value="HDD">
+                                        <span class="device-type-option__surface">
+                                            <span class="device-type-icon device-type-icon--hdd" aria-hidden="true"></span>
+                                            <span class="device-type-option__title"><?php echo __('HDD'); ?></span>
+                                        </span>
+                                    </label>
+                                    <label class="device-type-option">
+                                        <input type="radio" name="device_type" value="Other">
+                                        <span class="device-type-option__surface">
+                                            <span class="device-type-icon device-type-icon--other" aria-hidden="true"></span>
+                                            <span class="device-type-option__title"><?php echo __('Other'); ?></span>
+                                        </span>
+                                    </label>
+                                </div>
                             </div>
                             <div class="col-12 col-sm-6 col-md-3">
                                 <label class="form-label"><?php echo __('warranty_type'); ?></label>
@@ -805,10 +921,10 @@ if (isset($pdo)) {
                             <i class="fas fa-print me-2"></i> <?php echo __('print'); ?>
                         </button>
                         <ul class="dropdown-menu shadow">
-                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="openUniversalPreview('print_order.php?id=${o.id}', '<?php echo __('order_header'); ?> #' + o.id)"><i class="fas fa-file-invoice me-2 text-primary"></i> <?php echo __('a4_invoice'); ?></a></li>
-                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="openReceptionLangModal(${o.id})"><i class="fas fa-file-import me-2 text-info"></i> <?php echo __('reception_act_thermal'); ?></a></li>
-                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="openUniversalPreview('print_workshop.php?id=${o.id}', 'Workshop #' + o.id)"><i class="fas fa-tools me-2 text-warning"></i> <?php echo __('work_order'); ?></a></li>
-                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="openUniversalPreview('print_thermal.php?id=${o.id}', '<?php echo __('thermal_receipt'); ?> #' + o.id)"><i class="fas fa-receipt me-2 text-success"></i> <?php echo __('thermal_receipt'); ?></a></li>
+                            <li><a class="dropdown-item" href="#" data-crm-action="open-preview" data-preview-url="print_order.php?id=${o.id}" data-preview-title="<?php echo e(__('order_header')); ?> #${o.id}"><i class="fas fa-file-invoice me-2 text-primary"></i> <?php echo __('a4_invoice'); ?></a></li>
+                            <li><a class="dropdown-item" href="#" data-crm-action="open-reception-language" data-crm-id="${o.id}"><i class="fas fa-file-import me-2 text-info"></i> <?php echo __('reception_act_thermal'); ?></a></li>
+                            <li><a class="dropdown-item" href="#" data-crm-action="open-preview" data-preview-url="print_workshop.php?id=${o.id}" data-preview-title="Workshop #${o.id}"><i class="fas fa-tools me-2 text-warning"></i> <?php echo __('work_order'); ?></a></li>
+                            <li><a class="dropdown-item" href="#" data-crm-action="open-preview" data-preview-url="print_thermal.php?id=${o.id}" data-preview-title="<?php echo e(__('thermal_receipt')); ?> #${o.id}"><i class="fas fa-receipt me-2 text-success"></i> <?php echo __('thermal_receipt'); ?></a></li>
                         </ul>
                     </div>
                     <a href="#" id="fullViewBtn" class="btn btn-outline-primary"><?php echo __('open_full_view'); ?></a>
@@ -825,6 +941,7 @@ if (isset($pdo)) {
     <div class="modal-dialog">
         <div class="modal-content">
             <form id="invoiceForm">
+                <?php echo csrfField(); ?>
                 <input type="hidden" name="order_id" id="invoiceOrderId">
                 <div class="modal-header">
                     <h5 class="modal-title"><?php echo __('invoice'); ?></h5>

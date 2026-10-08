@@ -11,14 +11,32 @@ api_bootstrap([
 $order_id = $_POST['order_id'] ?? $_REQUEST['order_id'] ?? null;
 $new_status = $_POST['status'] ?? $_REQUEST['status'] ?? null;
 $final_cost = $_POST['final_cost'] ?? $_REQUEST['final_cost'] ?? null;
-if ($final_cost !== null && $final_cost !== '' && (float)$final_cost < 0) {
-    api_json_exit(['success' => false, 'message' => __('required_for_issue')]);
+$shipping_method = trim((string)($_POST['shipping_method'] ?? $_REQUEST['shipping_method'] ?? ''));
+if (
+    $final_cost !== null &&
+    $final_cost !== '' &&
+    (!is_numeric($final_cost) || !is_finite((float)$final_cost) || (float)$final_cost < 0)
+) {
+    $postedOrderType = trim((string)($_POST['order_type'] ?? $_REQUEST['order_type'] ?? ''));
+    $issuedNeedsFinalCost = canonicalOrderStatus((string)$new_status) === 'Issued'
+        && OrderStatusService::issuedRequiresFinalCost($postedOrderType, $shipping_method);
+    api_json_exit([
+        'success' => false,
+        'message' => $issuedNeedsFinalCost ? __('required_final_cost_for_issue') : __('missing_data'),
+    ]);
 }
 
 $is_admin = hasPermission('admin_access');
 $technician_id = $is_admin ? ($_POST['technician_id'] ?? $_REQUEST['technician_id'] ?? null) : null;
 $cancellation_reason = $_POST['cancellation_reason'] ?? $_REQUEST['cancellation_reason'] ?? null;
-$shipping_method = trim((string)($_POST['shipping_method'] ?? $_REQUEST['shipping_method'] ?? ''));
+$extra_expenses = $_POST['extra_expenses'] ?? $_REQUEST['extra_expenses'] ?? null;
+if (
+    $extra_expenses !== null &&
+    $extra_expenses !== '' &&
+    (!is_numeric($extra_expenses) || !is_finite((float)$extra_expenses) || (float)$extra_expenses < 0)
+) {
+    api_json_exit(['success' => false, 'message' => __('missing_data')]);
+}
 
 $can_store_cancellation_reason = tableColumnExists('orders', 'cancellation_reason');
 
@@ -45,8 +63,8 @@ try {
     $pdo->beginTransaction();
 
     $stmt = $pdo->prepare(
-        'SELECT status, technician_id, estimated_cost, final_cost, shipping_method, device_brand, device_model, problem_description
-         FROM orders WHERE id = ?'
+        'SELECT status, technician_id, estimated_cost, final_cost, shipping_method, order_type, device_brand, device_model, problem_description
+         FROM orders WHERE id = ? FOR UPDATE'
     );
     $stmt->execute([$order_id]);
     $order_data = $stmt->fetch();
@@ -71,13 +89,19 @@ try {
         $is_admin
     );
 
-    $effective_final = ($final_cost !== null && $final_cost !== '') ? $final_cost : $current_final;
+    $effective_final = ($final_cost !== null && $final_cost !== '') ? (float)$final_cost : $current_final;
+    if ($effective_final === null || $effective_final === '' || (float)$effective_final <= 0) {
+        if ($current_estimated !== null && $current_estimated !== '' && (float)$current_estimated > 0) {
+            $effective_final = (float)$current_estimated;
+        }
+    }
     $effective_shipping = $shipping_method !== '' ? $shipping_method : ($order_data['shipping_method'] ?? null);
     OrderStatusService::assertIssuedRequirements(
         $canonical_new_status,
         $effective_final,
         $effective_shipping,
-        true
+        true,
+        $order_data['order_type'] ?? null
     );
 
     $sql = 'UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP';
@@ -103,9 +127,9 @@ try {
     $sql .= ', technician_id = ?';
     $params[] = ($technician_id && $technician_id !== '') ? $technician_id : $current_tech_id;
 
-    if (isset($_REQUEST['extra_expenses']) && (hasPermission('admin_access') || ($_SESSION['role'] ?? '') === 'admin')) {
+    if ($extra_expenses !== null && $extra_expenses !== '' && $is_admin) {
         $sql .= ', extra_expenses = ?';
-        $params[] = $_REQUEST['extra_expenses'];
+        $params[] = (float)$extra_expenses;
     }
 
     if ($can_store_cancellation_reason && in_array($canonical_new_status, OrderStatusService::REASON_REQUIRED, true)) {

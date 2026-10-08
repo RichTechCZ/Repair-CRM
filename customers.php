@@ -93,7 +93,7 @@ if (isset($pdo)) {
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><?php echo __('customers_db'); ?></h2>
+    <h1><?php echo __('customers_db'); ?></h1>
     <div class="d-flex gap-2">
         <?php if(!empty($_GET['search'])): ?>
             <a href="customers.php" class="btn btn-outline-secondary"><?php echo __('reset_search'); ?></a>
@@ -110,8 +110,8 @@ if (isset($pdo)) {
 
 <div class="card">
     <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle">
+        <div class="table-responsive table-scroll-touch">
+            <table class="table table-hover align-middle table-mobile-cards">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -131,8 +131,8 @@ if (isset($pdo)) {
                     <?php else: ?>
                         <?php foreach ($customers as $customer): ?>
                         <tr>
-                            <td>#<?php echo $customer['id']; ?></td>
-                            <td>
+                            <td data-label="ID">#<?php echo $customer['id']; ?></td>
+                            <td data-label="<?php echo e(__('name_col')); ?>">
                                 <strong>
                                     <?php 
                                     if ($customer['customer_type'] == 'company') {
@@ -147,23 +147,24 @@ if (isset($pdo)) {
                                     <div class="small text-muted">IČO: <?php echo htmlspecialchars($customer['ico']); ?></div>
                                 <?php endif; ?>
                             </td>
-                            <td><?php echo htmlspecialchars($customer['phone']); ?></td>
-                            <td><?php echo htmlspecialchars($customer['email']); ?></td>
-                            <td><?php echo htmlspecialchars($customer['address']); ?></td>
-                            <td>
+                            <td data-label="<?php echo e(__('phone')); ?>"><?php echo htmlspecialchars($customer['phone']); ?></td>
+                            <td data-label="Email"><?php echo htmlspecialchars($customer['email']); ?></td>
+                            <td data-label="<?php echo e(__('address')); ?>"><?php echo htmlspecialchars($customer['address']); ?></td>
+                            <td data-label="<?php echo e(__('orders')); ?>">
                                 <?php 
                                 $count = $order_counts[$customer['id']] ?? 0;
                                 ?>
                                 <button class="btn btn-sm <?php echo $count > 0 ? 'btn-primary' : 'btn-outline-secondary'; ?> rounded-pill px-3"
                                         data-customer-name="<?php echo htmlspecialchars(trim(($customer['first_name'] ?? '') . ' ' . ($customer['last_name'] ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'); ?>"
-                                        onclick="showCustomerOrders(<?php echo (int)$customer['id']; ?>, this.dataset.customerName)"
+                                        data-crm-action="show-customer-orders"
+                                        data-crm-id="<?php echo (int)$customer['id']; ?>"
                                         <?php echo $count == 0 ? 'disabled' : ''; ?>>
                                     <?php echo $count; ?>
                                 </button>
                             </td>
-                            <td>
+                            <td class="mobile-row-actions" data-label="">
                                 <div class="btn-group btn-group-sm">
-                                    <a href="edit_customer.php?id=<?php echo $customer['id']; ?>" class="btn btn-outline-primary"><i class="fas fa-edit"></i></a>
+                                    <a href="edit_customer.php?id=<?php echo $customer['id']; ?>" class="btn btn-outline-primary" aria-label="<?php echo e(__('edit')); ?>"><i class="fas fa-edit"></i></a>
                                 </div>
                             </td>
                         </tr>
@@ -243,7 +244,7 @@ if (isset($pdo)) {
     </div>
 </div>
 
-<script>
+<script nonce="<?php echo e(crmCspNonce()); ?>">
 function showCustomerOrders(id, name) {
     $('#modalCustomerName').text(name);
     $('#customerOrdersList').html('<tr><td colspan="5" class="text-center py-4"><div class="spinner-border spinner-border-sm text-primary"></div> <?php echo __('loading_text'); ?></td></tr>');
@@ -361,7 +362,7 @@ function showCustomerOrders(id, name) {
     </div>
 </div>
 
-<script>
+<script nonce="<?php echo e(crmCspNonce()); ?>">
 $(document).ready(function() {
     $('input[name="customer_type"]').on('change', function() {
         if ($(this).val() === 'company') {

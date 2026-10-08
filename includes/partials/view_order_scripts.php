@@ -2,7 +2,56 @@
 /** View-order page scripts (PHP-rendered i18n). Included from view_order.php */
 if (!isset($order)) { return; }
 ?>
-<script>
+<script<?php
+    $crmScriptNonce = function_exists('crmCspNonce') ? (string)crmCspNonce() : '';
+    echo $crmScriptNonce !== '' ? ' nonce="' . e($crmScriptNonce) . '"' : '';
+?>>
+function normalizeShippingMethod(value) {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/[áíéýůú]/g, function(ch) {
+            return ({á:'a',í:'i',é:'e',ý:'y',ů:'u',ú:'u'})[ch] || ch;
+        });
+}
+
+function isSelfPickupShipping(value) {
+    const normalized = normalizeShippingMethod(value);
+    return [
+        'self pickup',
+        'self_pickup',
+        'selfpickup',
+        'pickup',
+        'клиент забрал сам',
+        'забрал сам',
+        'самовывоз',
+        'osobni odber',
+        'osobniodeber'
+    ].indexOf(normalized) !== -1;
+}
+
+function isReclamationOrderType(value) {
+    const fromForm = $('#editOrderFullForm select[name="order_type"]').val();
+    const normalized = normalizeShippingMethod(value || fromForm);
+    return [
+        'warranty',
+        'reclamation',
+        'reklamace',
+        'рекламация',
+        'гарантия',
+        'гарантийный'
+    ].indexOf(normalized) !== -1;
+}
+
+function effectiveShippingMethod(form) {
+    const $form = form && form.jquery ? form : $(form);
+    const fromStatus = $form.find('#statusShippingMethodWrap select[name="shipping_method"]').val();
+    const fromShippingCard = $('#shippingForm select[name="shipping_method"]').val();
+    const fromSaved = $form.attr('data-current-shipping');
+    return fromStatus || fromShippingCard || fromSaved || '';
+}
+
 $(document).ready(function() {
     // Express Invoice Form
     $('#expressInvoiceForm').on('submit', function(e) {
@@ -29,12 +78,19 @@ $(document).ready(function() {
         e.preventDefault();
         const form = $(this);
         const status = form.find('select[name="status"]').val();
-        const shippingMethod = form.find('select[name="shipping_method"]').val();
+        const shippingMethod = effectiveShippingMethod(form);
         const finalCost = parseFloat(form.find('input[name="final_cost"]').val() || '0');
         const cancellationReason = form.find('textarea[name="cancellation_reason"]').val() || '';
-        
-        if (status === 'Issued' && (isNaN(finalCost) || finalCost <= 0 || !shippingMethod)) {
+        const isSelfPickup = isSelfPickupShipping(shippingMethod);
+        const isReclamation = isReclamationOrderType(form.attr('data-order-type'));
+
+        if (status === 'Issued' && !shippingMethod) {
             showShippingRequiredModal();
+            return false;
+        }
+
+        if (status === 'Issued' && !isSelfPickup && !isReclamation && (isNaN(finalCost) || finalCost <= 0)) {
+            showAlert('<?php echo __('required_final_cost_for_issue'); ?>');
             return false;
         }
 
@@ -94,31 +150,75 @@ $(document).ready(function() {
         });
     }
 
-    // Initialize Select2
-    $('.select2-customer').select2({
-        placeholder: "<?php echo __('search_client_placeholder'); ?>",
-        allowClear: true,
-        width: '100%'
+    // Select2 is optional: a missing/broken plugin must not kill mode toggle or form submit.
+    if (typeof $.fn.select2 === 'function') {
+        $('.select2-customer').select2({
+            placeholder: "<?php echo __('search_client_placeholder'); ?>",
+            allowClear: true,
+            width: '100%'
+        });
+    }
+
+    // ── Add part modal: inventory vs manual ─────────────────────────────
+    const $addPartForm = $('#addPartForm');
+    const $addPartModal = $('#addPartModal');
+    const $inventoryPartFields = $('#inventoryPartFields');
+    const $manualPartFields = $('#manualPartFields');
+    const $inventorySelect = $('#addPartInventoryId');
+    const $manualPartInputs = $manualPartFields.find('input[name="part_name"], input[name="source"], input[name="price"]');
+
+    function addPartIsManual() {
+        return $addPartForm.find('input[name="mode"]:checked').val() === 'manual';
+    }
+
+    function syncAddPartMode() {
+        const isManual = addPartIsManual();
+
+        $inventoryPartFields.toggleClass('d-none', isManual);
+        $manualPartFields.toggleClass('d-none', !isManual);
+
+        // Disabled controls are omitted from serialize() and skip HTML5 validation.
+        $inventorySelect.prop('disabled', isManual).prop('required', false);
+        $manualPartInputs.prop('disabled', !isManual).prop('required', isManual);
+
+        if (typeof $.fn.select2 === 'function' && $inventorySelect.data('select2')) {
+            $inventorySelect.trigger('change.select2');
+            if (isManual) {
+                try { $inventorySelect.select2('close'); } catch (e) { /* ignore */ }
+            }
+        }
+    }
+
+    $addPartForm.find('input[name="mode"]').on('change', syncAddPartMode);
+
+    if (typeof $.fn.select2 === 'function' && $inventorySelect.length) {
+        $inventorySelect.select2({
+            dropdownParent: $addPartModal,
+            placeholder: "<?php echo __('search_part_placeholder'); ?>",
+            allowClear: true,
+            width: '100%'
+        });
+    }
+
+    // Reset UI each time the modal opens so a previous manual session does not stick.
+    $addPartModal.on('show.bs.modal', function() {
+        $addPartForm[0].reset();
+        $('#partModeInventory').prop('checked', true);
+        $inventorySelect.val(null).trigger('change');
+        syncAddPartMode();
     });
 
-    $('select[name="inventory_id"]').select2({
-        dropdownParent: $('#addPartModal'),
-        placeholder: "<?php echo __('search_part_placeholder'); ?>",
-        width: '100%'
-    });
-
-    $('input[name="mode"]').on('change', function() {
-        const isManual = $(this).val() === 'manual';
-        $('#manualPartFields').toggleClass('d-none', !isManual);
-        $('select[name="inventory_id"]').prop('required', !isManual).closest('.mb-3').toggleClass('d-none', isManual);
-        $('input[name="part_name"], input[name="source"], input[name="price"]').prop('required', isManual);
-    });
+    syncAddPartMode();
 
     $('#shippingForm').on('submit', function(e) {
         e.preventDefault();
+        const shippingMethod = $(this).find('select[name="shipping_method"]').val();
+        const isSelfPickup = String(shippingMethod || '').trim().toLowerCase() === 'self pickup';
         $.post('api/update_shipping.php', $(this).serialize(), function(res) {
             if(res.success) {
-                showAlert('<?php echo __('shipping_updated'); ?>');
+                if (!isSelfPickup) {
+                    showAlert('<?php echo __('shipping_updated'); ?>');
+                }
                 location.reload();
             } else {
                 showAlert('<?php echo __('error'); ?>: ' + res.message);
@@ -128,6 +228,7 @@ $(document).ready(function() {
 
     $('select[name="shipping_method"]').on('change', function() {
         const method = $(this).val();
+        $('select[name="shipping_method"]').not(this).val(method);
         if (['Zasilkovna', 'Ceska Posta', 'PPL', 'DPD', 'GLS'].includes(method)) {
             $('#shippingDetails').removeClass('d-none');
         } else {
@@ -135,24 +236,91 @@ $(document).ready(function() {
         }
     });
 
-    $('#addPartForm').on('submit', function(e) {
+    $addPartForm.on('submit', function(e) {
         e.preventDefault();
-        $.post('api/add_order_item.php', $(this).serialize(), function(res) {
-            if(res.success) {
-                location.reload();
-            } else {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
+        const form = this;
+        const isManual = addPartIsManual();
+        const qty = parseInt($addPartForm.find('input[name="quantity"]').val(), 10);
+
+        if (!Number.isFinite(qty) || qty < 1) {
+            showAlert('<?php echo __('missing_data'); ?>');
+            $addPartForm.find('input[name="quantity"]').trigger('focus');
+            return;
+        }
+
+        if (!isManual) {
+            if (!$inventorySelect.val()) {
+                showAlert('<?php echo __('select_part_from_warehouse'); ?>');
+                if (typeof $.fn.select2 === 'function' && $inventorySelect.data('select2')) {
+                    $inventorySelect.select2('open');
+                } else {
+                    $inventorySelect.trigger('focus');
+                }
+                return;
+            }
+        } else {
+            const partName = String($manualPartFields.find('input[name="part_name"]').val() || '').trim();
+            const source = String($manualPartFields.find('input[name="source"]').val() || '').trim();
+            const priceRaw = $manualPartFields.find('input[name="price"]').val();
+            const price = parseFloat(priceRaw);
+            if (!partName || !source || priceRaw === '' || !Number.isFinite(price) || price < 0) {
+                showAlert('<?php echo __('missing_data'); ?>');
+                return;
+            }
+        }
+
+        const $btn = $addPartForm.find('button[type="submit"]');
+        const oldHtml = $btn.html();
+        $btn.prop('disabled', true);
+
+        $.ajax({
+            url: 'api/add_order_item.php',
+            type: 'POST',
+            data: $(form).serialize(),
+            dataType: 'json',
+            success: function(res) {
+                if (res && res.success) {
+                    location.reload();
+                    return;
+                }
+                $btn.prop('disabled', false).html(oldHtml);
+                showAlert('<?php echo __('error'); ?>: ' + ((res && res.message) ? res.message : '<?php echo __('error'); ?>'));
+            },
+            error: function(xhr) {
+                $btn.prop('disabled', false).html(oldHtml);
+                const message = (xhr.responseJSON && xhr.responseJSON.message)
+                    ? xhr.responseJSON.message
+                    : '<?php echo __('network_error'); ?>';
+                showAlert('<?php echo __('error'); ?>: ' + message);
             }
         });
     });
 
     $('#editPartForm').on('submit', function(e) {
         e.preventDefault();
-        $.post('api/update_order_item.php', $(this).serialize(), function(res) {
-            if(res.success) {
-                location.reload();
-            } else {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
+        const $form = $(this);
+        const $btn = $form.find('button[type="submit"]');
+        const oldHtml = $btn.html();
+        $btn.prop('disabled', true);
+        $.ajax({
+            url: 'api/update_order_item.php',
+            type: 'POST',
+            data: $form.serialize(),
+            dataType: 'json',
+            success: function(res) {
+                if (res && res.success) {
+                    location.reload();
+                    return;
+                }
+                $btn.prop('disabled', false).html(oldHtml);
+                showAlert('<?php echo __('error'); ?>: ' + ((res && res.message) ? res.message : '<?php echo __('error'); ?>'));
+            },
+            error: function(xhr) {
+                $btn.prop('disabled', false).html(oldHtml);
+                const message = (xhr.responseJSON && xhr.responseJSON.message)
+                    ? xhr.responseJSON.message
+                    : '<?php echo __('network_error'); ?>';
+                showAlert('<?php echo __('error'); ?>: ' + message);
             }
         });
     });
@@ -195,18 +363,63 @@ $(document).ready(function() {
         const btn = $(this).find('button[type="submit"]');
         const oldHtml = btn.html();
         btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> <?php echo __('saving'); ?>...');
-        
-        $.post('api/update_order_full.php', $(this).serialize(), function(res) {
-            if(res.success) {
-                location.reload();
-            } else {
-                btn.prop('disabled', false).html(oldHtml);
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
+
+        const parseApiPayload = function(text) {
+            if (!text) {
+                return null;
             }
-        }).fail(function(xhr) {
-            btn.prop('disabled', false).html(oldHtml);
-            const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : '<?php echo __('network_error'); ?>';
-            showAlert(msg);
+            try {
+                return JSON.parse(text);
+            } catch (err) {
+                // Tolerate accidental BOM / leading whitespace from older hosts.
+                const cleaned = String(text).replace(/^\uFEFF/, '').trim();
+                const start = cleaned.indexOf('{');
+                const end = cleaned.lastIndexOf('}');
+                if (start >= 0 && end > start) {
+                    try {
+                        return JSON.parse(cleaned.slice(start, end + 1));
+                    } catch (err2) {
+                        return null;
+                    }
+                }
+                return null;
+            }
+        };
+
+        $.ajax({
+            url: 'api/update_order_full.php',
+            type: 'POST',
+            data: $(this).serialize(),
+            dataType: 'text',
+            success: function(text, _status, xhr) {
+                const res = parseApiPayload(text);
+                if (res && res.success) {
+                    location.reload();
+                    return;
+                }
+                btn.prop('disabled', false).html(oldHtml);
+                if (res && res.message) {
+                    showAlert('<?php echo __('error'); ?>: ' + res.message);
+                    return;
+                }
+                const snippet = (text || '').toString().replace(/\s+/g, ' ').slice(0, 180);
+                showAlert('<?php echo __('error'); ?>: <?php echo __('network_error'); ?>'
+                    + (xhr && xhr.status ? ' [' + xhr.status + ']' : '')
+                    + (snippet ? ' — ' + snippet : ''));
+            },
+            error: function(xhr) {
+                btn.prop('disabled', false).html(oldHtml);
+                const text = xhr && xhr.responseText ? xhr.responseText : '';
+                const res = parseApiPayload(text);
+                if (res && res.message) {
+                    showAlert(res.message);
+                    return;
+                }
+                const snippet = text.toString().replace(/\s+/g, ' ').slice(0, 180);
+                showAlert('<?php echo __('network_error'); ?>'
+                    + (xhr && xhr.status ? ' [' + xhr.status + ']' : '')
+                    + (snippet ? ' — ' + snippet : ''));
+            }
         });
     });
 
@@ -364,35 +577,54 @@ function showStatusConfirmModal(form) {
     // Handle confirm button
     $('#confirmStatusBtn').off('click').on('click', function() {
         const btn = $(this);
+        const confirmLabel = '<?php echo __("confirm"); ?>';
+        const restoreBtn = function() {
+            btn.prop('disabled', false).html(confirmLabel);
+        };
         btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> ...');
 
-        $.post('api/update_order_status.php', form.serialize(), function(raw) {
-            let res = null;
-            try {
-                res = (typeof raw === 'string') ? JSON.parse(raw) : raw;
-            } catch (e) {
-                res = null;
+        try {
+            let payload = form.serialize();
+            const shippingMethod = effectiveShippingMethod(form);
+            if (shippingMethod) {
+                if (/(?:^|&)shipping_method=/.test(payload)) {
+                    payload = payload.replace(/(^|&)shipping_method=[^&]*/, '$1shipping_method=' + encodeURIComponent(shippingMethod));
+                } else {
+                    payload += '&shipping_method=' + encodeURIComponent(shippingMethod);
+                }
             }
 
-            if (res && res.success) {
-                modal.modal('hide');
-                location.reload();
-                return;
-            }
+            $.post('api/update_order_status.php', payload, function(raw) {
+                let res = null;
+                try {
+                    res = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+                } catch (e) {
+                    res = null;
+                }
 
-            btn.prop('disabled', false).html('<?php echo __("confirm"); ?>');
-            if (res && res.message) {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
-            } else if (typeof raw === 'string' && raw.trim() !== '') {
-                showAlert('<?php echo __('error'); ?>: ' + raw.trim());
-            } else {
-                showAlert('<?php echo __('error'); ?>');
-            }
-        }).fail(function(xhr) {
-            btn.prop('disabled', false).html('<?php echo __("confirm"); ?>');
-            const text = (xhr && xhr.responseText) ? xhr.responseText : '';
-            showAlert('<?php echo __('error'); ?>' + (text ? ': ' + text : ''));
-        });
+                if (res && res.success) {
+                    modal.modal('hide');
+                    location.reload();
+                    return;
+                }
+
+                restoreBtn();
+                if (res && res.message) {
+                    showAlert('<?php echo __('error'); ?>: ' + res.message);
+                } else if (typeof raw === 'string' && raw.trim() !== '') {
+                    showAlert('<?php echo __('error'); ?>: ' + raw.trim());
+                } else {
+                    showAlert('<?php echo __('error'); ?>');
+                }
+            }).fail(function(xhr) {
+                restoreBtn();
+                const text = (xhr && xhr.responseText) ? xhr.responseText : '';
+                showAlert('<?php echo __('error'); ?>' + (text ? ': ' + text : ''));
+            });
+        } catch (err) {
+            restoreBtn();
+            showAlert('<?php echo __('error'); ?>');
+        }
     });
 }
 
@@ -401,9 +633,14 @@ function goToShipping() {
     $('#shippingRequiredModal').modal('hide');
     const target = $('#statusShippingMethodWrap:visible').length ? $('#statusShippingMethodWrap') : $('#shippingForm');
     if (!target.length) return;
-    $('html, body').animate({
-        scrollTop: target.offset().top - 100
-    }, 500);
+    const scrollTarget = target.offset().top - 100;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        $('html, body').scrollTop(scrollTarget);
+    } else {
+        $('html, body').animate({
+            scrollTop: scrollTarget
+        }, 250);
+    }
     
     target.find('select[name="shipping_method"]').addClass('border-danger border-2');
     setTimeout(function() {

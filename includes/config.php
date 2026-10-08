@@ -4,15 +4,35 @@
  * Secure Configuration
  */
 
+require_once __DIR__ . '/env_loader.php';
+require_once __DIR__ . '/request_security.php';
+require_once __DIR__ . '/content_security_policy.php';
+require_once __DIR__ . '/sensitive_data.php';
+loadEnv(__DIR__ . '/../.env');
+crmStartContentSecurityPolicy();
+
+function crmConfigurationFailure(string $logMessage, string $publicMessage = 'Internal Server Error'): void
+{
+    error_log($logMessage);
+    if (PHP_SAPI === 'cli') {
+        fwrite(STDERR, $publicMessage . PHP_EOL);
+        exit(1);
+    }
+    http_response_code(500);
+    exit($publicMessage);
+}
+
 // ── Security Headers (sent before any output) ────────────────────────────────
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');
-header('X-XSS-Protection: 1; mode=block');
 header('Referrer-Policy: strict-origin-when-cross-origin');
+header('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()');
 
 // ── Session Security (must be set BEFORE session_start) ──────────────────────
+$trustProxyHttps = filter_var(getenv('CRM_TRUST_PROXY_HTTPS') ?: '0', FILTER_VALIDATE_BOOL);
+$sessionUsesHttps = requestUsesHttps($_SERVER, $trustProxyHttps);
 ini_set('session.cookie_httponly', 1);
-ini_set('session.cookie_secure', (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 1 : 0);
+ini_set('session.cookie_secure', $sessionUsesHttps ? 1 : 0);
 ini_set('session.use_strict_mode', 1);
 ini_set('session.gc_maxlifetime', 7200);
 ini_set('session.cookie_samesite', 'Strict');
@@ -20,25 +40,68 @@ ini_set('session.use_only_cookies', 1);
 
 session_start();
 
+$sessionNow = time();
+$idleTimeout = 2 * 60 * 60;
+$absoluteTimeout = 12 * 60 * 60;
+if (!empty($_SESSION['user_id'])) {
+    $lastActivity = (int)($_SESSION['last_activity_at'] ?? $sessionNow);
+    $createdAt = (int)($_SESSION['session_created_at'] ?? $sessionNow);
+    if (($sessionNow - $lastActivity) > $idleTimeout || ($sessionNow - $createdAt) > $absoluteTimeout) {
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $cookie = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000, $cookie['path'], $cookie['domain'], $cookie['secure'], $cookie['httponly']);
+        }
+        session_destroy();
+        session_start();
+    }
+}
+$_SESSION['session_created_at'] = (int)($_SESSION['session_created_at'] ?? $sessionNow);
+$_SESSION['last_activity_at'] = $sessionNow;
+
 // ── CSRF Token (generated once per session) ───────────────────────────────────
 if (empty($_SESSION['csrf_token'])) {
     try {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     } catch (Exception $e) {
-        error_log("CSRF Token Generation Failed: Cryptographically secure entropy source unavailable.");
-        http_response_code(500);
-        die("Internal Server Error: Secure environment requirements not met.");
+        crmConfigurationFailure(
+            'CSRF Token Generation Failed: Cryptographically secure entropy source unavailable.',
+            'Internal Server Error: Secure environment requirements not met.'
+        );
     }
 }
 
-require_once __DIR__ . '/env_loader.php';
-loadEnv(__DIR__ . '/../.env');
-
 // ── Database ──────────────────────────────────────────────────────────────────
-define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
-define('DB_NAME', getenv('DB_NAME') ?: 'repair_crm');
-define('DB_USER', getenv('DB_USER') ?: 'root');
-define('DB_PASS', getenv('DB_PASS') ?: '');
+$crmEnvironment = strtolower(trim((string)(getenv('CRM_ENV') ?: 'development')));
+$crmIsProduction = in_array($crmEnvironment, ['production', 'prod'], true);
+$dbHost = trim((string)(getenv('DB_HOST') ?: ''));
+$dbName = trim((string)(getenv('DB_NAME') ?: ''));
+$dbUser = trim((string)(getenv('DB_USER') ?: ''));
+$dbPass = (string)(getenv('DB_PASS') ?: '');
+
+if ($crmIsProduction) {
+    if ($dbHost === '' || $dbName === '' || $dbUser === '' || $dbPass === '') {
+        crmConfigurationFailure('Production database configuration is incomplete.');
+    }
+    if (in_array(strtolower($dbUser), ['root', 'admin', 'administrator'], true)) {
+        crmConfigurationFailure('Privileged database accounts are forbidden in production.');
+    }
+
+    try {
+        crmSensitiveDataKey();
+    } catch (Throwable $e) {
+        crmConfigurationFailure('Production sensitive-data key is invalid: ' . $e->getMessage());
+    }
+} else {
+    $dbHost = $dbHost !== '' ? $dbHost : 'localhost';
+    $dbName = $dbName !== '' ? $dbName : 'repair_crm';
+    $dbUser = $dbUser !== '' ? $dbUser : 'root';
+}
+
+define('DB_HOST', $dbHost);
+define('DB_NAME', $dbName);
+define('DB_USER', $dbUser);
+define('DB_PASS', $dbPass);
 
 require_once __DIR__ . '/lang.php';
 
@@ -71,43 +134,37 @@ try {
         throw $last_db_exception;
     }
 } catch (PDOException $e) {
-    if ((int)$e->getCode() !== 1049) {
-        error_log("DB Connection Error: " . $e->getMessage());
-        die(sprintf(__('db_error'), ''));
-    }
-
-    $create_host = strtolower(DB_HOST) === 'localhost' ? '127.0.0.1' : DB_HOST;
-    try {
-        $pdo = new PDO(
-            "mysql:host=" . $create_host . ";charset=utf8mb4",
-            DB_USER,
-            DB_PASS,
-            [
-                PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES   => false,
-            ]
-        );
-        $pdo->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-        $pdo->exec("USE `" . DB_NAME . "`");
-    } catch (PDOException $createException) {
-        error_log("DB Connection Error: " . $createException->getMessage());
-        die(sprintf(__('db_error'), ''));
-    }
+    crmConfigurationFailure('DB Connection Error: ' . $e->getMessage(), sprintf(__('db_error'), ''));
 }
 
 try {
     // Update last seen for technicians
-    if (isset($_SESSION['tech_id'])) {
-        $upd_stmt = $pdo->prepare("UPDATE technicians SET last_seen = NOW() WHERE id = ?");
-        $upd_stmt->execute([$_SESSION['tech_id']]);
+    if (!empty($_SESSION['tech_id'])) {
+        // A deactivated or deleted technician must lose access immediately, not at session expiry.
+        $active_stmt = $pdo->prepare("SELECT is_active FROM technicians WHERE id = ?");
+        $active_stmt->execute([$_SESSION['tech_id']]);
+        $tech_is_active = $active_stmt->fetchColumn();
+        if ($tech_is_active === false || (int)$tech_is_active !== 1) {
+            $_SESSION = [];
+            session_regenerate_id(true);
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+            $_SESSION['session_created_at'] = $sessionNow;
+            $_SESSION['last_activity_at'] = $sessionNow;
+        } else {
+            $upd_stmt = $pdo->prepare("UPDATE technicians SET last_seen = NOW() WHERE id = ?");
+            $upd_stmt->execute([$_SESSION['tech_id']]);
+        }
     }
 } catch (PDOException $e) {
     error_log("DB Session Update Error: " . $e->getMessage());
 }
 
 // ── Telegram token ────────────────────────────────────────────────────────────
-if (isset($pdo)) {
+$environmentTelegramToken = trim((string)(getenv('TG_BOT_TOKEN') ?: ''));
+if ($environmentTelegramToken !== '') {
+    define('TG_BOT_TOKEN', $environmentTelegramToken);
+}
+if (!defined('TG_BOT_TOKEN') && isset($pdo)) {
     try {
         $stmt = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'tg_bot_token'");
         $stmt->execute();

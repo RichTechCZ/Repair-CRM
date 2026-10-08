@@ -71,6 +71,19 @@ private function getInvoiceStatusBadge($status) {
             $this->pdo->beginTransaction();
 
             $id = !empty($data['id']) ? (int)$data['id'] : null;
+            $isCreditNote = false;
+            $existingPaymentDate = null;
+            if ($id) {
+                $invoiceLock = $this->pdo->prepare('SELECT invoice_type, payment_date FROM invoices WHERE id = ? FOR UPDATE');
+                $invoiceLock->execute([$id]);
+                $existingInvoice = $invoiceLock->fetch(PDO::FETCH_ASSOC);
+                if ($existingInvoice === false) {
+                    throw new RuntimeException('Invoice not found.');
+                }
+                $existingInvoiceType = $existingInvoice['invoice_type'];
+                $existingPaymentDate = $existingInvoice['payment_date'] ?? null;
+                $isCreditNote = $existingInvoiceType === 'credit_note';
+            }
             $invoice_number = $data['invoice_number'] ?? '';
             $customer_id = (int)($data['customer_id'] ?? 0);
             $date_issue = !empty($data['date_issue']) ? $data['date_issue'] : date('Y-m-d');
@@ -80,7 +93,7 @@ private function getInvoiceStatusBadge($status) {
             $status = !empty($data['status']) ? $data['status'] : 'issued';
             $is_vat_payer = (isset($data['is_vat_payer']) && ($data['is_vat_payer'] == '1' || $data['is_vat_payer'] === true)) ? 1 : 0;
             $payment_method = !empty($data['payment_method']) ? $data['payment_method'] : 'bank_transfer';
-            $payment_date = ($status == 'paid') ? date('Y-m-d') : null;
+            $payment_date = ($status == 'paid') ? ($existingPaymentDate ?: date('Y-m-d')) : null;
             
             $currency = !empty($data['currency']) ? $data['currency'] : 'Kč';
             $notes = $data['notes'] ?? '';
@@ -98,6 +111,63 @@ private function getInvoiceStatusBadge($status) {
             }
             if (!is_array($items)) $items = [];
 
+            if ($invoice_number === '' || mb_strlen($invoice_number) > 64 || $customer_id <= 0) {
+                throw new InvalidArgumentException('Invalid invoice number or customer.');
+            }
+            if (!in_array($status, ['draft', 'issued', 'paid', 'overdue', 'cancelled'], true)) {
+                throw new InvalidArgumentException('Invalid invoice status.');
+            }
+            if (!in_array($payment_method, ['bank_transfer', 'cash', 'card'], true)) {
+                throw new InvalidArgumentException('Invalid payment method.');
+            }
+            foreach ([$date_issue, $date_tax, $date_due] as $dateValue) {
+                $parsedDate = DateTimeImmutable::createFromFormat('!Y-m-d', (string)$dateValue);
+                if ($parsedDate === false || $parsedDate->format('Y-m-d') !== $dateValue) {
+                    throw new InvalidArgumentException('Invalid invoice date.');
+                }
+            }
+            if ($date_due < $date_issue || count($items) < 1 || count($items) > 100) {
+                throw new InvalidArgumentException('Invalid invoice items or due date.');
+            }
+            foreach ($items as $item) {
+                $itemName = trim((string)($item['name'] ?? ($item['item_name'] ?? '')));
+                $qty = $item['quantity'] ?? ($item['qty'] ?? null);
+                $price = $item['price'] ?? null;
+                $vatRate = $item['vat_rate'] ?? ($item['vat'] ?? 0);
+                if (
+                    $itemName === '' ||
+                    !is_numeric($qty) ||
+                    !is_numeric($price) ||
+                    !is_numeric($vatRate) ||
+                    !is_finite((float)$qty) ||
+                    !is_finite((float)$price) ||
+                    !is_finite((float)$vatRate) ||
+                    (float)$qty <= 0 ||
+                    (!$isCreditNote && (float)$price < 0) ||
+                    ($isCreditNote && (float)$price > 0) ||
+                    (float)$vatRate < 0 ||
+                    (float)$vatRate > 100
+                ) {
+                    throw new InvalidArgumentException('Invalid invoice item.');
+                }
+            }
+
+            $customerLock = $this->pdo->prepare('SELECT id FROM customers WHERE id = ? FOR UPDATE');
+            $customerLock->execute([$customer_id]);
+            if (!$customerLock->fetchColumn()) {
+                throw new RuntimeException('Customer not found.');
+            }
+
+            $orderId = !empty($data['order_id']) ? (int)$data['order_id'] : null;
+            if ($orderId !== null) {
+                $orderLock = $this->pdo->prepare('SELECT customer_id FROM orders WHERE id = ? FOR UPDATE');
+                $orderLock->execute([$orderId]);
+                $orderCustomerId = $orderLock->fetchColumn();
+                if ($orderCustomerId === false || (int)$orderCustomerId !== $customer_id) {
+                    throw new InvalidArgumentException('Invoice order/customer mismatch.');
+                }
+            }
+
             // Calculate totals
             $totals = $this->calculateTotals($items, $is_vat_payer);
             $total_amount = (float)$totals['total'];
@@ -113,7 +183,7 @@ private function getInvoiceStatusBadge($status) {
                     WHERE id = ?
                 ");
                 $stmt->execute([
-                    $invoice_number, $variable_symbol, $customer_id, !empty($data['order_id']) ? (int)$data['order_id'] : null, $date_issue, $date_tax, $date_due, 
+                    $invoice_number, $variable_symbol, $customer_id, $orderId, $date_issue, $date_tax, $date_due,
                     $total_amount, $vat_amount, $is_vat_payer, $status, 
                     $payment_method, $payment_date, $currency, $notes,
                     $cust_name, $cust_address, $cust_ico, $cust_dic,
@@ -129,7 +199,7 @@ private function getInvoiceStatusBadge($status) {
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
-                    $invoice_number, $variable_symbol, $customer_id, !empty($data['order_id']) ? (int)$data['order_id'] : null, $date_issue, $date_tax, $date_due, 
+                    $invoice_number, $variable_symbol, $customer_id, $orderId, $date_issue, $date_tax, $date_due,
                     $total_amount, $vat_amount, $is_vat_payer, $status, $payment_method, $payment_date, $currency, $notes,
                     $cust_name, $cust_address, $cust_ico, $cust_dic
                 ]);
@@ -154,9 +224,10 @@ private function getInvoiceStatusBadge($status) {
 
             $this->pdo->commit();
             return ['success' => true, 'id' => $invoice_id];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) $this->pdo->rollBack();
-            return ['success' => false, 'error' => $e->getMessage()];
+            error_log('InvoiceManager::saveInvoice error: ' . $e->getMessage());
+            return ['success' => false, 'error' => publicExceptionMessage($e)];
         }
     }
 
@@ -164,10 +235,15 @@ private function getInvoiceStatusBadge($status) {
      * Update only status and related payment data
      */
     public function updateStatus($id, $status, $payment_method = null) {
-        $payment_date = ($status == 'paid') ? date('Y-m-d') : null;
-        
-        $sql = "UPDATE invoices SET status = ?, payment_date = ?";
-        $params = [$status, $payment_date];
+        if (!in_array($status, ['draft', 'issued', 'paid', 'overdue', 'cancelled'], true)) {
+            throw new InvalidArgumentException('Invalid invoice status.');
+        }
+        if ($payment_method !== null && !in_array($payment_method, ['bank_transfer', 'cash', 'card'], true)) {
+            throw new InvalidArgumentException('Invalid payment method.');
+        }
+        // Re-marking an already paid invoice must not move its original payment date.
+        $sql = "UPDATE invoices SET status = ?, payment_date = " . ($status === 'paid' ? 'COALESCE(payment_date, ?)' : '?');
+        $params = [$status, $status === 'paid' ? date('Y-m-d') : null];
         
         if ($payment_method) {
             $sql .= ", payment_method = ?";
@@ -185,31 +261,91 @@ private function getInvoiceStatusBadge($status) {
      * Create Credit Note (Opravný daňový doklad) from existing invoice
      */
     public function createCreditNote($invoice_id) {
-        $original = $this->getInvoice($invoice_id);
-        if (!$original) return ['success' => false, 'error' => 'Original invoice not found'];
-
         try {
             $this->pdo->beginTransaction();
 
-            // Check if prefix exists in settings
-            $prefix = get_setting('acc_credit_note_prefix', 'ODD' . date('Y'));
-            $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM invoices WHERE invoice_number LIKE ?");
-            $stmt->execute([$prefix . '%']);
-            $count = $stmt->fetchColumn();
-            $new_number = $prefix . str_pad($count + 1, 4, '0', STR_PAD_LEFT);
+            $lock = $this->pdo->prepare(
+                'SELECT id, invoice_type, status FROM invoices WHERE id = ? FOR UPDATE'
+            );
+            $lock->execute([(int)$invoice_id]);
+            $sourceInvoice = $lock->fetch(PDO::FETCH_ASSOC);
+            if (!$sourceInvoice) {
+                throw new RuntimeException('Original invoice not found.');
+            }
+            if (($sourceInvoice['invoice_type'] ?? 'invoice') === 'credit_note') {
+                throw new RuntimeException('A credit note cannot be created from another credit note.');
+            }
+            if (!in_array((string)$sourceInvoice['status'], ['issued', 'paid', 'overdue'], true)) {
+                throw new RuntimeException('Only an issued invoice can be credited.');
+            }
+
+            $existingCredit = $this->pdo->prepare(
+                "SELECT id FROM invoices
+                 WHERE parent_id = ? AND invoice_type = 'credit_note' AND status != 'cancelled'
+                 LIMIT 1 FOR UPDATE"
+            );
+            $existingCredit->execute([(int)$invoice_id]);
+            if ($existingCredit->fetchColumn()) {
+                throw new RuntimeException('A credit note already exists for this invoice.');
+            }
+
+            $original = $this->getInvoice((int)$invoice_id);
+            if (!$original) {
+                throw new RuntimeException('Original invoice not found.');
+            }
+
+            // Lock the numbering setting so concurrent credit notes cannot
+            // calculate the same number.
+            $defaultPrefix = 'ODD' . date('Y');
+            $ensurePrefix = $this->pdo->prepare(
+                "INSERT INTO system_settings (setting_key, setting_value)
+                 VALUES ('acc_credit_note_prefix', ?)
+                 ON DUPLICATE KEY UPDATE setting_key = VALUES(setting_key)"
+            );
+            $ensurePrefix->execute([$defaultPrefix]);
+            $prefixStmt = $this->pdo->prepare(
+                "SELECT setting_value FROM system_settings
+                 WHERE setting_key = 'acc_credit_note_prefix' FOR UPDATE"
+            );
+            $prefixStmt->execute();
+            $prefix = (string)($prefixStmt->fetchColumn() ?: $defaultPrefix);
+
+            $numberStmt = $this->pdo->prepare(
+                'SELECT invoice_number FROM invoices WHERE invoice_number LIKE ?'
+            );
+            $numberStmt->execute([addcslashes($prefix, '\\%_') . '%']);
+            $highestSequence = 0;
+            foreach ($numberStmt->fetchAll(PDO::FETCH_COLUMN) as $existingNumber) {
+                $existingNumber = (string)$existingNumber;
+                if (!str_starts_with($existingNumber, $prefix)) {
+                    continue;
+                }
+                $suffix = substr($existingNumber, strlen($prefix));
+                if ($suffix !== '' && ctype_digit($suffix)) {
+                    $highestSequence = max($highestSequence, (int)$suffix);
+                }
+            }
+            $new_number = $prefix . str_pad($highestSequence + 1, 4, '0', STR_PAD_LEFT);
 
             $stmt = $this->pdo->prepare("
                 INSERT INTO invoices (
-                    invoice_number, customer_id, date_issue, date_tax, date_due, 
+                    invoice_number, customer_id, order_id, date_issue, date_tax, date_due,
                     total_amount, vat_amount, is_vat_payer, status, payment_method, currency, 
                     parent_id, invoice_type, notes,
                     cust_name_override, cust_address_override, cust_ico_override, cust_dic_override
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'issued', ?, ?, ?, 'credit_note', ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'issued', ?, ?, ?, 'credit_note', ?, ?, ?, ?, ?)
             ");
             
             $stmt->execute([
-                $new_number, $original['customer_id'], date('Y-m-d'), date('Y-m-d'), date('Y-m-d'),
-                $original['total_amount'], $original['vat_amount'], $original['is_vat_payer'],
+                $new_number,
+                $original['customer_id'],
+                $original['order_id'] ?: null,
+                date('Y-m-d'),
+                date('Y-m-d'),
+                date('Y-m-d'),
+                -abs((float)$original['total_amount']),
+                -abs((float)$original['vat_amount']),
+                $original['is_vat_payer'],
                 $original['payment_method'], $original['currency'],
                 $original['id'], "Opravný k faktuře " . $original['invoice_number'],
                 $original['cust_name_override'], $original['cust_address_override'], 
@@ -224,18 +360,21 @@ private function getInvoiceStatusBadge($status) {
                 $stmt->execute([
                     $new_id, 
                     $item['item_name'], 
-                    $item['quantity'], 
+                    abs((float)$item['quantity']),
                     $item['unit'], 
-                    $item['price'], 
+                    -abs((float)$item['price']),
                     $item['vat_rate']
                 ]);
             }
 
             $this->pdo->commit();
             return ['success' => true, 'id' => $new_id];
-        } catch (Exception $e) {
-            $this->pdo->rollBack();
-            return ['success' => false, 'error' => $e->getMessage()];
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            error_log('InvoiceManager::createCreditNote error: ' . $e->getMessage());
+            return ['success' => false, 'error' => publicExceptionMessage($e)];
         }
     }
 

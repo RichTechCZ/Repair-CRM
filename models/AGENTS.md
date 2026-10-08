@@ -1,14 +1,19 @@
 # Models Documentation
 
 ## Purpose
-Contains class definitions and object-oriented models for business logic (invoices, order status, AI).
+Contains class definitions and object-oriented models for business logic (invoices, order status, Telegram bot router, AI).
 
 ## Ownership
 Root AGENTS.md -> models/AGENTS.md
 
 ## Local Contracts
 - `InvoiceManager.php` / `InvoiceAutomation.php` / `MyInvoiceApiClient.php` — accounting and MyInvoice sync.
-- `OrderStatusService.php` — shared order status transition rules: terminal lock, Issued validation, inventory consume/return, auto-invoice, admin TG notify, technician reassignment TG.
+- `resolveInvoiceTotal()` in `InvoiceAutomation.php` derives the customer charge from `final_cost` (or `estimated_cost` only when final cost is absent); never add order-item selling prices to an invoice total.
+- `OrderStatusService.php` — shared order status transition rules: terminal lock, Issued validation, inventory consume/return, auto-invoice, admin TG notify, technician reassignment TG. Issued requires a handover method. `Self Pickup` and order type `Warranty` / «Рекламация» skip the final-cost gate. Paid carrier handover still needs a positive final cost. `syncStatusHistoryDate()` applies a manual Status date to the current history row only.
+- `TelegramBotRouter.php` — Telegram Bot routing engine handling inline callback queries, interactive menus, FSM state processing, technician-scoped order management, media upload delegation, notes editing, spare parts addition/removal, and personal/workshop financial reporting.
+- `InvoiceManager.php` validates dates, status/payment allowlists, order/customer linkage, bounded item counts, and finite non-negative line values before persisting under row locks.
+- `InvoiceManager::createCreditNote()` accepts only issued/paid/overdue non-credit source invoices, serializes gap-safe numbering, prevents duplicate active full credit notes, links the source order, and stores negative totals/VAT/unit prices.
+- `MyInvoiceApiClient.php` sends bearer credentials only over verified HTTPS (plain HTTP is allowed solely for loopback development hosts).
 - `nvidia_ai.php` — optional AI helpers.
 
 ## Work Guidance

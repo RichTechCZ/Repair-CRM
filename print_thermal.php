@@ -1,158 +1,243 @@
 <?php
+/**
+ * Order thermal receipt — Czech doklad for neplátce DPH (same layout as invoice thermal).
+ * Menu: Заказы → Чек (Термопринтер)
+ */
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
 
-if (!isset($_SESSION['user_id'])) die(__("unauthorized"));
-if (!isset($_GET['id']) && !isset($_GET['order_id'])) die("ID zakázky není zadáno");
-
-$id = $_GET['id'] ?? $_GET['order_id'];
-if (!currentUserCanViewOrder($id)) {
-    http_response_code(403);
-    die(__("unauthorized"));
+if (!isset($_SESSION['user_id'])) {
+    die(__('unauthorized'));
 }
 
-$stmt = $pdo->prepare("SELECT o.*, c.first_name, c.last_name, c.phone, c.address 
-                       FROM orders o 
-                       JOIN customers c ON o.customer_id = c.id 
-                       WHERE o.id = ?");
-$stmt->execute([$id]);
-$order = $stmt->fetch();
+$id = (int)($_GET['id'] ?? $_GET['order_id'] ?? 0);
+if ($id <= 0) {
+    die(__('order_id_missing'));
+}
+if (!currentUserCanViewOrder($id)) {
+    http_response_code(403);
+    die(__('unauthorized'));
+}
 
-if (!$order) die(__("print_not_found"));
-
-// Fetch items (parts) used
-$stmt = $pdo->prepare("SELECT oi.*, i.part_name FROM order_items oi JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
+$stmt = $pdo->prepare(
+    "SELECT o.*, c.first_name, c.last_name, c.phone, c.address, c.company, c.ico, c.dic
+     FROM orders o
+     JOIN customers c ON o.customer_id = c.id
+     WHERE o.id = ?"
+);
 $stmt->execute([$id]);
-$items = $stmt->fetchAll();
+$order = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$order) {
+    die(__('print_not_found'));
+}
+
+// PIN is not printed on the client payment receipt (security + not required by law).
+try {
+    $stmt = $pdo->prepare(
+        "SELECT oi.*, COALESCE(oi.part_name, i.part_name) AS part_name
+         FROM order_items oi
+         LEFT JOIN inventory i ON oi.inventory_id = i.id
+         WHERE oi.order_id = ?
+         ORDER BY oi.id ASC"
+    );
+    $stmt->execute([$id]);
+    $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $stmt = $pdo->prepare(
+        "SELECT oi.*, i.part_name FROM order_items oi
+         JOIN inventory i ON oi.inventory_id = i.id
+         WHERE oi.order_id = ?"
+    );
+    $stmt->execute([$id]);
+    $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+require_once __DIR__ . '/includes/partials/thermal_receipt_css.php';
+$supplier = crmThermalSupplierProfile();
+$is_vat_payer = $supplier['is_vat'];
 
 $currency = get_setting('currency', 'Kč');
+if (in_array(mb_strtolower((string)$currency), ['kc', 'czk', 'kč'], true)) {
+    $currency = 'Kč';
+}
 
-$target_lang = $_GET['lang'] ?? 'cs';
-function _l($key) { global $target_lang; return __($key, $target_lang); }
+$h = static function ($value): string {
+    return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+};
+$money = static function ($amount) use ($currency): string {
+    return number_format((float)$amount, 2, ',', ' ') . ' ' . $currency;
+};
+
+$cust_name = trim((string)(
+    ($order['company'] ?? '') !== ''
+        ? $order['company']
+        : trim(($order['first_name'] ?? '') . ' ' . ($order['last_name'] ?? ''))
+));
+$device = trim(($order['device_brand'] ?? '') . ' ' . ($order['device_model'] ?? ''));
+
+// Customer total: final_cost is authoritative; do not double-count parts into it.
+$order_total = (float)($order['final_cost'] ?? 0);
+if ($order_total <= 0) {
+    $order_total = (float)($order['estimated_cost'] ?? 0);
+}
+
+$parts_sum = 0.0;
+$lines = [];
+foreach ($items as $item) {
+    $qty = (float)($item['quantity'] ?? 1);
+    $price = (float)($item['price'] ?? 0);
+    $line = $qty * $price;
+    $parts_sum += $line;
+    $lines[] = [
+        'name' => (string)($item['part_name'] ?? 'Díl'),
+        'qty' => $qty,
+        'unit' => (string)($item['unit'] ?? 'ks'),
+        'price' => $price,
+        'line' => $line,
+    ];
+}
+
+// Labor / service remainder so line items sum to order total (no double count).
+$labor = round($order_total - $parts_sum, 2);
+if (abs($labor) >= 0.01) {
+    array_unshift($lines, [
+        'name' => 'Oprava / práce' . ($device !== '' ? ': ' . $device : ''),
+        'qty' => 1.0,
+        'unit' => 'ks',
+        'price' => $labor,
+        'line' => $labor,
+    ]);
+} elseif (empty($lines)) {
+    $lines[] = [
+        'name' => 'Oprava / servisní služba' . ($device !== '' ? ': ' . $device : ''),
+        'qty' => 1.0,
+        'unit' => 'ks',
+        'price' => $order_total,
+        'line' => $order_total,
+    ];
+}
+
+// Document title — same family as invoice thermal for neplátce DPH.
+if ($is_vat_payer) {
+    $doc_title = (abs($order_total) <= 10000.0)
+        ? 'ZJEDNODUŠENÝ DAŇOVÝ DOKLAD'
+        : 'FAKTURA - DAŇOVÝ DOKLAD';
+} else {
+    $doc_title = 'DOKLAD O ZAPLACENÍ';
+}
+
+$doc_number = 'Z' . (int)$order['id'];
+$issue_date = !empty($order['updated_at'])
+    ? date('d.m.Y H:i', strtotime($order['updated_at']))
+    : date('d.m.Y H:i', strtotime($order['created_at'] ?? 'now'));
+
+$crmScriptNonce = function_exists('crmCspNonce') ? (string)crmCspNonce() : '';
 ?>
 <!DOCTYPE html>
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title><?php echo __('print_title_receipt'); ?> #<?php echo $order['id']; ?></title>
-    <style>
-        body { 
-            font-family: Arial, Helvetica, sans-serif; 
-            font-size: 14px; 
-            width: 72mm; /* Actual printable area for 80mm paper */
-            margin: 0; 
-            padding: 0;
-            color: #000;
-            background: #fff;
-        }
-        .container {
-            width: 100%;
-            padding: 1mm;
-        }
-        .text-center { text-align: center; }
-        .text-right { text-align: right; }
-        .bold { font-weight: 900; }
-        .line { border-bottom: 2px dashed #000; margin: 8px 0; }
-        .header { font-size: 18px; margin-bottom: 5px; text-transform: uppercase; }
-        .order-num { font-size: 22px; margin: 5px 0; }
-        .item-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
-        .item-name { flex: 1; padding-right: 5px; font-weight: bold; }
-        .footer { font-size: 12px; margin-top: 15px; border-top: 1px solid #000; padding-top: 5px; font-weight: bold; }
-        .qr-code { margin-top: 10px; }
-        .qr-code img { width: 40mm; height: 40mm; }
-        
-        @media print {
-            @page { 
-                margin: 0; 
-                size: 80mm auto; 
-            }
-            body { width: 72mm; background: none; }
-            .no-print { display: none; }
-        }
-    </style>
+    <title><?php echo $h($doc_title); ?> <?php echo $h($doc_number); ?></title>
+    <?php crmThermalReceiptCss(); ?>
 </head>
-<body<?php if (empty($_GET['embed'])): ?> onload="window.print()"<?php endif; ?>>
+<body data-auto-print="<?php echo empty($_GET['embed']) ? '1' : '0'; ?>">
 
-<div class="container">
-    <div class="text-center">
-        <div class="header bold"><?php echo htmlspecialchars(get_setting('company_name', 'Repair CRM')); ?></div>
-        <div style="font-size: 12px;"><?php echo htmlspecialchars(get_setting('company_address')); ?></div>
-        <div><?php echo _l('phone'); ?>: <?php echo htmlspecialchars(get_setting('company_phone')); ?></div>
-        <div class="line"></div>
-        <div class="order-num bold"><?php echo mb_strtoupper(_l('order')); ?> č. <?php echo $order['id']; ?></div>
-        <div class="bold"><?php echo mb_strtoupper(_l('collected')); ?></div>
-        <div><?php echo date('d.m.Y H:i'); ?></div>
-        <div class="line"></div>
+<div class="no-print">
+    <button type="button" class="btn-print" data-print-action="print"><?php echo __('print_btn'); ?></button>
+    <a class="btn-back" href="orders.php"><?php echo __('back'); ?></a>
+</div>
+
+<div class="receipt">
+    <div class="header">
+        <div class="company-name"><?php echo $h($supplier['name']); ?></div>
+        <?php if ($supplier['address'] !== ''): ?>
+            <div class="muted"><?php echo nl2br($h($supplier['address'])); ?></div>
+        <?php endif; ?>
+        <?php if ($supplier['ico'] !== ''): ?>
+            <div class="muted">IČO: <?php echo $h($supplier['ico']); ?></div>
+        <?php endif; ?>
+        <?php if ($is_vat_payer && $supplier['dic'] !== ''): ?>
+            <div class="muted">DIČ: <?php echo $h($supplier['dic']); ?></div>
+        <?php endif; ?>
+        <?php if (!$is_vat_payer): ?>
+            <div class="badge-nonvat">Neplátce DPH</div>
+        <?php endif; ?>
     </div>
 
-    <div class="bold"><?php echo mb_strtoupper(_l('client')); ?>:</div>
-    <div><?php echo htmlspecialchars($order['first_name'] . ' ' . $order['last_name']); ?></div>
-    <div><?php echo _l('phone'); ?>: <?php echo htmlspecialchars($order['phone']); ?></div>
+    <div class="doc-title"><?php echo $h($doc_title); ?></div>
+    <div class="doc-number">č. <?php echo $h($doc_number); ?></div>
 
-    <div class="line"></div>
+    <div class="section">
+        <div class="row"><span class="label">Datum:</span><span><?php echo $h($issue_date); ?></span></div>
+        <div class="row"><span class="label">Zakázka:</span><span>#<?php echo (int)$order['id']; ?></span></div>
+        <?php if ($device !== ''): ?>
+            <div class="muted"><?php echo $h($device); ?></div>
+        <?php endif; ?>
+        <?php if (!empty($order['serial_number'])): ?>
+            <div class="muted">S/N: <?php echo $h($order['serial_number']); ?></div>
+        <?php endif; ?>
+        <div class="row"><span class="label">Forma úhrady:</span><span>Hotově / Kartou</span></div>
+    </div>
 
-    <div class="bold"><?php echo mb_strtoupper(_l('device_type')); ?>:</div>
-    <div class="bold" style="font-size: 16px;"><?php echo htmlspecialchars($order['device_brand'] . ' ' . $order['device_model']); ?></div>
-    <div>S/N: <?php echo htmlspecialchars($order['serial_number'] ?: '---'); ?></div>
-    <?php if($order['pin_code']): ?>
-    <div><?php echo _l('pin'); ?>: <span class="bold"><?php echo htmlspecialchars($order['pin_code']); ?></span></div>
+    <div class="section">
+        <div class="label">Odběratel</div>
+        <div><strong><?php echo $h($cust_name !== '' ? $cust_name : '—'); ?></strong></div>
+        <?php if (!empty($order['phone'])): ?>
+            <div class="muted">Tel: <?php echo $h($order['phone']); ?></div>
+        <?php endif; ?>
+        <?php if (!empty($order['address'])): ?>
+            <div class="muted"><?php echo $h($order['address']); ?></div>
+        <?php endif; ?>
+        <?php if (!empty($order['ico'])): ?>
+            <div class="muted">IČO: <?php echo $h($order['ico']); ?></div>
+        <?php endif; ?>
+    </div>
+
+    <div class="section">
+        <div class="label" style="margin-bottom: 4px;">Položky</div>
+        <?php foreach ($lines as $line): ?>
+            <div class="item">
+                <span class="item-name"><?php echo $h($line['name']); ?></span>
+                <div class="item-details">
+                    <span>
+                        <?php
+                        $q = $line['qty'];
+                        $q_fmt = (abs($q - round($q)) < 0.001)
+                            ? (string)(int)round($q)
+                            : number_format($q, 2, ',', ' ');
+                        echo $h($q_fmt . ' ' . $line['unit']);
+                        ?>
+                        × <?php echo number_format($line['price'], 2, ',', ' '); ?>
+                    </span>
+                    <span><strong><?php echo $h($money($line['line'])); ?></strong></span>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    </div>
+
+    <div class="total-section">
+        <div class="total-row">
+            <span>CELKEM:</span>
+            <span><?php echo $h($money($order_total)); ?></span>
+        </div>
+    </div>
+
+    <?php if (!$is_vat_payer): ?>
+        <div class="legal-note">
+            Dodavatel není plátcem DPH.<br>
+            Cena neobsahuje daň z přidané hodnoty.
+        </div>
     <?php endif; ?>
 
-    <div class="line"></div>
-
-    <div class="bold"><?php echo mb_strtoupper(_l('problem')); ?>:</div>
-    <div style="word-wrap: break-word; font-style: italic;"><?php echo htmlspecialchars($order['problem_description']); ?></div>
-
-    <div class="line"></div>
-
-    <div class="bold"><?php echo mb_strtoupper(_l('parts_used')); ?>:</div>
-    <div class="item-row">
-        <span class="item-name"><?php echo _l('work_cost'); ?></span>
-        <span class="bold"><?php echo formatMoney($order['final_cost'] ?? $order['estimated_cost']); ?></span>
-    </div>
-    <?php foreach ($items as $item): ?>
-    <div class="item-row">
-        <span class="item-name"><?php echo htmlspecialchars($item['part_name']); ?> x<?php echo $item['quantity']; ?></span>
-        <span><?php echo formatMoney($item['price'] * $item['quantity']); ?></span>
-    </div>
-    <?php endforeach; ?>
-
-    <div class="line" style="border-bottom-style: solid;"></div>
-
-    <div class="text-right">
-        <div class="bold" style="font-size: 12px;"><?php echo mb_strtoupper(_l('total_pay')); ?>:</div>
-        <div class="bold" style="font-size: 22px;"><?php 
-            $total = ($order['final_cost'] ?? $order['estimated_cost']);
-            foreach ($items as $item) $total += ($item['price'] * $item['quantity']);
-            echo formatMoney($total);
-        ?></div>
-    </div>
-
-    <div class="line"></div>
-
-    <div class="text-center qr-code">
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=<?php echo urlencode('https://servis.expert/status/?id='.$order['id']); ?>" alt="QR">
-        <div style="font-size: 10px; margin-top: 5px;">Ověřit stav zakázky</div>
-    </div>
-
-    <div class="footer text-center">
-        Prosím, uchovejte tuto účtenku do dokončení opravy.<br>
-        <div class="bold" style="margin-top: 5px;">www.servis.expert</div>
+    <div class="footer">
+        <div>Děkujeme za Vaši důvěru!</div>
+        <div class="footer-phone"><?php echo $h(CRM_THERMAL_CLIENT_PHONE); ?></div>
+        <div class="muted" style="margin-top: 2px;"><?php echo $h($supplier['name']); ?></div>
+        <div class="muted">www.servis.expert</div>
     </div>
 </div>
 
-<div class="no-print text-center" style="margin-top: 20px; padding-bottom: 50px;">
-    <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px;"><?php echo __('print_btn'); ?></button>
-</div>
-
-<div class="footer text-center">
-    Děkujeme za Vaši důvěru!<br>
-    www.servis.expert
-</div>
-
-<div class="no-print text-center" style="margin-top: 20px;">
-    <button onclick="window.print()">Tisk</button>
-</div>
-
+<script<?php echo $crmScriptNonce !== '' ? ' nonce="' . e($crmScriptNonce) . '"' : ''; ?> src="assets/js/print.js"></script>
 </body>
 </html>

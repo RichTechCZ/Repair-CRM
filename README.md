@@ -19,7 +19,7 @@ CRM system for electronics repair service centers.
 - PHP 8.0 or higher
 - MySQL 5.7+ / MariaDB 10.3+
 - Apache with mod_rewrite (or Nginx)
-- PHP extensions: pdo, pdo_mysql, mbstring, json, curl, gd
+- PHP extensions: pdo, pdo_mysql, mbstring, json, curl, gd, fileinfo, openssl
 
 ## Installation
 
@@ -36,8 +36,11 @@ Create MySQL database:
 
 ```sql
 CREATE DATABASE repair_crm CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER '<db_user>'@'localhost' IDENTIFIED BY '<strong-db-password>';
-GRANT ALL PRIVILEGES ON repair_crm.* TO '<db_user>'@'localhost';
+CREATE USER 'repair_crm_app'@'localhost' IDENTIFIED BY '<strong-runtime-password>';
+CREATE USER 'repair_crm_migrator'@'localhost' IDENTIFIED BY '<strong-migration-password>';
+GRANT SELECT, INSERT, UPDATE, DELETE ON repair_crm.* TO 'repair_crm_app'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES
+    ON repair_crm.* TO 'repair_crm_migrator'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
@@ -54,11 +57,22 @@ Edit `.env`:
 ```env
 DB_HOST=localhost
 DB_NAME=repair_crm
-DB_USER=<db_user>
-DB_PASS=<strong-db-password>
+DB_USER=repair_crm_app
+DB_PASS=<strong-runtime-password>
+DB_MIGRATION_USER=repair_crm_migrator
+DB_MIGRATION_PASS=<strong-migration-password>
+CRM_ENV=production
+# Generate once and keep it stable: php -r "echo base64_encode(random_bytes(32)), PHP_EOL;"
+CRM_DATA_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
+# Set to 1 only behind a trusted TLS-terminating reverse proxy.
+CRM_TRUST_PROXY_HTTPS=0
 
 # Telegram Bot (optional)
 TG_BOT_TOKEN=
+# Required for webhook delivery. Use the public HTTPS URL of tg_webhook.php.
+TELEGRAM_WEBHOOK_URL=https://crm.example.com/tg_webhook.php
+# 1-256 random URL-safe characters; never commit the real value.
+TELEGRAM_WEBHOOK_SECRET=
 
 # AI Integration (optional)
 AI_API_KEY=
@@ -66,19 +80,18 @@ AI_MODEL=google/gemini-2.0-flash-001
 AI_PROVIDER=openrouter
 ```
 
+When Telegram is enabled, sign in as an administrator, open `set_tg.php`, and submit its confirmation form once. The endpoint registers the configured URL and secret with Telegram; `tg_webhook.php` rejects all requests without the matching secret header.
+
 ### 4. Run migrations
 
-Open in browser:
-```
-https://your-domain.com/run_migrations.php
-```
-
-Or via command line:
+Production migrations are CLI-only and use the separate migration account:
 ```bash
 php run_migrations.php
 ```
 
 ### 5. Web server configuration
+
+The session cookie is marked `Secure` automatically for direct HTTPS requests. If TLS terminates at a trusted reverse proxy, set `CRM_TRUST_PROXY_HTTPS=1` and make sure the proxy removes any client-supplied `X-Forwarded-Proto` header before setting its own.
 
 #### Apache
 
@@ -143,6 +156,14 @@ CRM_ADMIN_USERNAME="<admin-user>" CRM_ADMIN_PASSWORD="<strong-admin-password>" p
 
 Then open `https://your-domain.com/login.php` and sign in with the account you created.
 
+## Verification
+
+Run the dependency-free regression suite after changing security or financial rules:
+
+```bash
+php tests/run.php
+```
+
 ## Project structure
 
 ```
@@ -155,11 +176,14 @@ Repair-CRM/
 │   ├── config.php         # Database and session configuration
 │   ├── env_loader.php     # .env loader
 │   ├── functions.php      # Helper functions
+│   ├── migration_runner.php # Idempotent migration orchestration
+│   ├── upload_security.php  # Order-attachment validation/storage
 │   ├── header.php         # Header template
 │   ├── footer.php         # Footer template
 │   └── lang.php           # Translations
 ├── migrations/            # SQL migrations
 ├── models/                # Data models
+├── tests/                 # Dependency-free regression checks
 ├── uploads/               # Uploaded files (created automatically)
 ├── .env.example           # Configuration template
 ├── .gitignore             # Git exclusions
@@ -168,7 +192,7 @@ Repair-CRM/
 ├── orders.php             # Orders
 ├── customers.php          # Customers
 ├── inventory.php          # Inventory
-├── invoices.php           # Invoices
+├── accounting.php         # Invoices and accounting
 ├── reports.php            # Reports
 ├── settings.php           # Settings
 └── run_migrations.php     # Migration runner
@@ -181,16 +205,19 @@ Repair-CRM/
 - CSRF protection on all forms
 - XSS protection via output escaping
 - Rate limiting on login attempts
-- HTTP Security Headers
+- Enforced nonce-based Content Security Policy with no inline event attributes, plus SRI-pinned browser dependencies
+- Authenticated encryption for device PINs; keep `CRM_DATA_ENCRYPTION_KEY` stable and outside Git
+- Separate least-privilege runtime and migration database accounts
+- HTTP security headers
 
 ## Updates
 
-When updating the system:
-
-```bash
-git pull origin main
-php run_migrations.php
-```
+The web process cannot update application files. Build and verify an immutable
+release outside the live directory, put the CRM into maintenance mode, run
+`php run_migrations.php`, activate the release atomically at the hosting layer,
+then run a health check. If the health check fails, switch back to the previous
+release; database migrations must be written to remain backward-compatible
+through that rollback window.
 
 ## License
 

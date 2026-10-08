@@ -19,11 +19,11 @@
                 <div id="universalPreviewContent"></div>
             </div>
             <div class="modal-footer border-secondary py-2">
-                <a href="#" id="previewOpenTabBtn" target="_blank" class="btn btn-outline-secondary btn-sm me-auto" onclick="openPreviewInNewTab()">
+                <a href="#" id="previewOpenTabBtn" target="_blank" class="btn btn-outline-secondary btn-sm me-auto" data-crm-action="open-preview-new-tab">
                     <i class="fas fa-external-link-alt me-1"></i><?php echo __('open_full_view'); ?>
                 </a>
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal"><?php echo __('close'); ?></button>
-                <button type="button" class="btn btn-primary btn-sm" id="previewPrintBtn" disabled onclick="printUniversalPreview()">
+                <button type="button" class="btn btn-primary btn-sm" id="previewPrintBtn" disabled data-crm-action="print-preview">
                     <i class="fas fa-print me-1"></i><?php echo __('print'); ?>
                 </button>
             </div>

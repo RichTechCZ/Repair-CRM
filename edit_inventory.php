@@ -3,14 +3,18 @@ require_once 'includes/config.php';
 require_once 'includes/functions.php';
 require_once 'includes/header.php';
 
-$id = $_GET['id'] ?? null;
-if (!$id) die(__("inventory_id_missing"));
+$id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+if ($id <= 0) {
+    die(__("inventory_id_missing"));
+}
 
 $stmt = $pdo->prepare("SELECT * FROM inventory WHERE id = ?");
 $stmt->execute([$id]);
 $item = $stmt->fetch();
 
-if (!$item) die(__("part_not_found"));
+if (!$item) {
+    die(__("part_not_found"));
+}
 
 $success = false;
 $error = false;
@@ -21,29 +25,46 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         die(__('csrf_token_invalid'));
     }
 
-    $part_name = $_POST['part_name'];
-    $sku = $_POST['sku'];
-    $quantity = $_POST['quantity'];
-    $cost_price = $_POST['cost_price'];
-    $sale_price = $_POST['sale_price'];
-    $min_stock = $_POST['min_stock'];
+    $part_name = trim((string)($_POST['part_name'] ?? ''));
+    $sku = trim((string)($_POST['sku'] ?? ''));
+    $quantity_raw = $_POST['quantity'] ?? '';
+    $cost_raw = $_POST['cost_price'] ?? '';
+    $sale_raw = $_POST['sale_price'] ?? '';
+    $min_raw = $_POST['min_stock'] ?? '';
 
-    try {
-        $update = $pdo->prepare("UPDATE inventory SET 
-            part_name = ?, 
-            sku = ?, 
-            quantity = ?, 
-            cost_price = ?, 
-            sale_price = ?, 
-            min_stock = ? 
-            WHERE id = ?");
-        $update->execute([$part_name, $sku, $quantity, $cost_price, $sale_price, $min_stock, $id]);
-        $success = __("inventory_updated");
-        // Refresh
-        $stmt->execute([$id]);
-        $item = $stmt->fetch();
-    } catch (Exception $e) {
-        $error = __("error_prefix") . $e->getMessage();
+    if ($part_name === '') {
+        $error = __('part_name') . ': ' . __('missing_data');
+    } elseif (!is_numeric($quantity_raw) || !is_finite((float)$quantity_raw) || (float)$quantity_raw < 0 || floor((float)$quantity_raw) != (float)$quantity_raw) {
+        $error = __('stock_quantity') . ': ' . __('missing_data');
+    } elseif ($cost_raw !== '' && (!is_numeric($cost_raw) || !is_finite((float)$cost_raw) || (float)$cost_raw < 0)) {
+        $error = __('buy_price') . ': ' . __('missing_data');
+    } elseif ($sale_raw !== '' && (!is_numeric($sale_raw) || !is_finite((float)$sale_raw) || (float)$sale_raw < 0)) {
+        $error = __('sell_price') . ': ' . __('missing_data');
+    } elseif ($min_raw !== '' && (!is_numeric($min_raw) || !is_finite((float)$min_raw) || (float)$min_raw < 0 || floor((float)$min_raw) != (float)$min_raw)) {
+        $error = __('min_stock_alert_limit') . ': ' . __('missing_data');
+    } else {
+        $quantity = (int)$quantity_raw;
+        $cost_price = $cost_raw === '' ? 0.0 : (float)$cost_raw;
+        $sale_price = $sale_raw === '' ? 0.0 : (float)$sale_raw;
+        $min_stock = $min_raw === '' ? 0 : (int)$min_raw;
+
+        try {
+            $update = $pdo->prepare("UPDATE inventory SET
+                part_name = ?,
+                sku = ?,
+                quantity = ?,
+                cost_price = ?,
+                sale_price = ?,
+                min_stock = ?
+                WHERE id = ?");
+            $update->execute([$part_name, $sku, $quantity, $cost_price, $sale_price, $min_stock, $id]);
+            $success = __("inventory_updated");
+            $stmt->execute([$id]);
+            $item = $stmt->fetch();
+        } catch (Exception $e) {
+            error_log('edit_inventory error: ' . $e->getMessage());
+            $error = __("error_prefix") . publicExceptionMessage($e);
+        }
     }
 }
 ?>
@@ -54,43 +75,46 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 </div>
 
 <?php if ($success): ?>
-    <div class="alert alert-success"><?php echo $success; ?></div>
+    <div class="alert alert-success"><?php echo htmlspecialchars($success); ?></div>
+<?php endif; ?>
+<?php if ($error): ?>
+    <div class="alert alert-danger"><?php echo htmlspecialchars($error); ?></div>
 <?php endif; ?>
 
-<div class="card">
+<div class="card surface-card">
     <div class="card-body">
         <form method="POST">
             <?php echo csrfField(); ?>
             <div class="row g-3">
                 <div class="col-12">
                     <label class="form-label"><?php echo __('part_name'); ?></label>
-                    <input type="text" name="part_name" class="form-control" value="<?php echo htmlspecialchars($item['part_name']); ?>" required>
+                    <input type="text" name="part_name" class="form-control" value="<?php echo htmlspecialchars($item['part_name']); ?>" required maxlength="255">
                 </div>
                 <div class="col-md-6">
                     <label class="form-label"><?php echo __('sku'); ?></label>
-                    <input type="text" name="sku" class="form-control" value="<?php echo htmlspecialchars($item['sku']); ?>">
+                    <input type="text" name="sku" class="form-control" value="<?php echo htmlspecialchars($item['sku']); ?>" maxlength="100">
                 </div>
                 <div class="col-md-6">
                     <label class="form-label"><?php echo __('stock_quantity'); ?></label>
-                    <input type="number" name="quantity" class="form-control" value="<?php echo $item['quantity']; ?>" required>
+                    <input type="number" name="quantity" class="form-control" value="<?php echo (int)$item['quantity']; ?>" min="0" step="1" required>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label"><?php echo __('buy_price'); ?></label>
                     <div class="input-group">
-                        <input type="number" name="cost_price" class="form-control" step="0.01" value="<?php echo $item['cost_price']; ?>">
+                        <input type="number" name="cost_price" class="form-control" step="0.01" min="0" value="<?php echo htmlspecialchars((string)$item['cost_price']); ?>">
                         <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
                     </div>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label"><?php echo __('sell_price'); ?></label>
                     <div class="input-group">
-                        <input type="number" name="sale_price" class="form-control" step="0.01" value="<?php echo $item['sale_price']; ?>">
+                        <input type="number" name="sale_price" class="form-control" step="0.01" min="0" value="<?php echo htmlspecialchars((string)$item['sale_price']); ?>">
                         <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
                     </div>
                 </div>
                 <div class="col-12">
                     <label class="form-label"><?php echo __('min_stock_alert_limit'); ?></label>
-                    <input type="number" name="min_stock" class="form-control" value="<?php echo $item['min_stock']; ?>">
+                    <input type="number" name="min_stock" class="form-control" min="0" step="1" value="<?php echo (int)$item['min_stock']; ?>">
                 </div>
                 <div class="col-12 mt-4">
                     <button type="submit" class="btn btn-primary px-5"><?php echo __('save'); ?></button>

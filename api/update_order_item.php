@@ -6,19 +6,30 @@ api_bootstrap([
     'rate' => 'update_order_item',
 ]);
 $id = $_POST['id'] ?? null;
-$new_qty = (float)($_POST['quantity'] ?? 1);
-$new_price = (float)($_POST['price'] ?? 0);
+$new_qty = filter_var(
+    $_POST['quantity'] ?? null,
+    FILTER_VALIDATE_INT,
+    ['options' => ['min_range' => 1, 'max_range' => 100000]]
+);
+$new_price_raw = $_POST['price'] ?? null;
 
-if (!$id) {
+if (
+    !$id ||
+    $new_qty === false ||
+    !is_numeric($new_price_raw) ||
+    !is_finite((float)$new_price_raw) ||
+    (float)$new_price_raw < 0
+) {
     echo json_encode(['success' => false, 'message' => __('missing_id')]);
     exit;
 }
+$new_price = (float)$new_price_raw;
 
 try {
     $pdo->beginTransaction();
 
     // Fetch current state
-    $stmt = $pdo->prepare("SELECT oi.*, o.status, o.technician_id FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.id = ?");
+    $stmt = $pdo->prepare("SELECT oi.*, o.status, o.technician_id FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.id = ? FOR UPDATE");
     $stmt->execute([$id]);
     $item = $stmt->fetch();
 

@@ -119,11 +119,24 @@ function api_json_exit(array $payload, int $status = 200): void {
     if ($status !== 200) {
         http_response_code($status);
     }
-    if (ob_get_length()) {
-        ob_clean();
+    // Drop any accidental BOM/whitespace/notices so jQuery dataType:json never
+    // treats a successful write as a "network error".
+    while (ob_get_level() > 0) {
+        ob_end_clean();
     }
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode($payload);
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=utf-8');
+        header('X-Content-Type-Options: nosniff');
+    }
+    $json = json_encode(
+        $payload,
+        JSON_UNESCAPED_UNICODE
+        | (defined('JSON_INVALID_UTF8_SUBSTITUTE') ? JSON_INVALID_UTF8_SUBSTITUTE : 0)
+    );
+    if ($json === false) {
+        $json = '{"success":false,"message":"JSON encode failed"}';
+    }
+    echo $json;
     exit;
 }
 

@@ -3,6 +3,7 @@ require_once __DIR__ . '/../includes/api_bootstrap.php';
 api_bootstrap([
     'post' => true,
     'csrf' => true,
+    'permission' => 'admin_access',
     'rate' => 'test_tech_tg',
 ]);
 $tech_id = $_POST['id'] ?? null;
@@ -21,7 +22,7 @@ try {
             throw new Exception(__('tg_id_must_be_number'));
         }
 
-        $msg = sprintf(__('tg_test_msg'), $tech['name']);
+        $msg = sprintf(__('tg_test_msg'), telegramHtml($tech['name']));
         $res = sendTelegramNotification($tech['telegram_id'], $msg);
         if ($res) {
             echo json_encode(['success' => true]);

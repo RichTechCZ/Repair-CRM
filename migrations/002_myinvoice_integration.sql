@@ -13,7 +13,7 @@ INSERT INTO `system_settings` (`setting_key`, `setting_value`) VALUES
 ('acc_auto_create_invoice', '1'),
 ('myinvoice_enabled', '1'),
 ('myinvoice_auto_issue', '1'),
-('myinvoice_api_base_url', 'http://fakturace.43.157.31.121.sslip.io'),
+('myinvoice_api_base_url', 'https://fakturace.43.157.31.121.sslip.io'),
 ('myinvoice_default_country_id', '1'),
 ('myinvoice_default_street', '-'),
 ('myinvoice_default_city', 'Praha'),

@@ -44,8 +44,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $company = $_POST['company'] ?? '';
 
     try {
-        $update = $pdo->prepare("UPDATE customers SET customer_type = ?, first_name = ?, last_name = ?, phone = ?, email = ?, address = ?, ico = ?, dic = ?, company = ? WHERE id = ?");
-        $update->execute([$customer_type, $first_name, $last_name, $phone, $email, $address, $ico, $dic, $company, $id]);
+        $update = $pdo->prepare("UPDATE customers SET customer_type = ?, first_name = ?, last_name = ?, phone = ?, phone_search = ?, email = ?, address = ?, ico = ?, dic = ?, company = ? WHERE id = ?");
+        $update->execute([
+            $customer_type,
+            $first_name,
+            $last_name,
+            $phone,
+            normalizePhoneForSearch($phone),
+            $email,
+            $address,
+            $ico,
+            $dic,
+            $company,
+            $id,
+        ]);
         $success = __('customer_updated_success');
         // Refresh
         $stmt->execute([$id]);
@@ -57,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><?php echo __('edit'); ?> <?php echo __('client'); ?></h2>
+    <h1><?php echo __('edit'); ?> <?php echo __('client'); ?></h1>
     <a href="customers.php" class="btn btn-outline-secondary"><?php echo __('back'); ?></a>
 </div>
 
@@ -124,14 +136,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </div>
                 <div class="col-12 mt-4 d-flex justify-content-between">
                     <button type="submit" class="btn btn-primary px-5"><?php echo __('save'); ?></button>
-                    <button type="button" class="btn btn-outline-danger" onclick="deleteCustomer(<?php echo $id; ?>)"><?php echo __('delete'); ?> <?php echo __('client'); ?></button>
+                    <button type="button" class="btn btn-outline-danger" data-crm-action="delete-customer" data-crm-id="<?php echo (int)$id; ?>"><?php echo __('delete'); ?> <?php echo __('client'); ?></button>
                 </div>
             </div>
         </form>
     </div>
 </div>
 
-<script>
+<script nonce="<?php echo e(crmCspNonce()); ?>">
 $(document).ready(function() {
     $('input[name="customer_type"]').on('change', function() {
         if ($(this).val() === 'company') {

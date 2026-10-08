@@ -20,6 +20,9 @@ $stmt->execute([$id]);
 $order = $stmt->fetch();
 
 if (!$order) die(__("print_not_found"));
+if (function_exists('crmDecryptDevicePinInRow')) {
+    crmDecryptDevicePinInRow($order);
+}
 
 // Fetch items (parts) used
 $stmt = $pdo->prepare("SELECT oi.*, i.part_name FROM order_items oi JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
@@ -59,7 +62,7 @@ function _l($key) {
 <body>
 
 <div class="no-print" style="text-align: center; margin-bottom: 20px;">
-    <button onclick="window.print()" style="padding: 10px 20px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px;"><?php echo _l('print'); ?></button>
+    <button data-print-action="print" style="padding: 10px 20px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px;"><?php echo _l('print'); ?></button>
 </div>
 
 <div class="receipt-box">
@@ -138,8 +141,7 @@ function _l($key) {
 
     <div class="total">
         <?php echo mb_strtoupper(_l('total_pay')); ?>: <?php 
-            $total = (float)($order['final_cost'] ?: $order['estimated_cost']);
-            foreach ($items as $item) $total += ($item['price'] * $item['quantity']);
+            $total = (float)($order['final_cost'] ?? $order['estimated_cost'] ?? 0);
             echo formatMoney($total);
         ?>
     </div>
@@ -158,5 +160,6 @@ function _l($key) {
     </div>
 </div>
 
+<script nonce="<?php echo e(crmCspNonce()); ?>" src="assets/js/print.js"></script>
 </body>
 </html>

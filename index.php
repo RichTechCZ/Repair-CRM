@@ -43,76 +43,71 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
 
 ?>
 
-<div class="page-header">
-    <div class="page-header__copy">
-        <div class="page-kicker"><?php echo e(get_setting('company_name', 'Repair CRM')); ?></div>
-        <h1><?php echo __('dashboard'); ?></h1>
-        <p class="page-subtitle">
+<section class="workspace-overview workspace-overview--dashboard ui-ready" aria-labelledby="dashboard-overview-title">
+    <div class="workspace-overview__head">
+        <div class="workspace-overview__copy">
+        <h1 id="dashboard-overview-title"><?php echo __('dashboard'); ?></h1>
+        <p class="workspace-overview__total">
             <?php echo __('all_orders'); ?>: <strong class="financial-number"><?php echo $dashboard_total; ?></strong>
         </p>
     </div>
     <div class="page-actions">
         <a href="orders.php" class="btn btn-outline-secondary"><?php echo __('all_orders'); ?></a>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newOrderModal">
-            <i class="fas fa-plus"></i>
+            <i class="fas fa-plus" aria-hidden="true"></i>
             <span><?php echo __('new_order'); ?></span>
         </button>
     </div>
-</div>
+    </div>
 
-<div class="row g-4 mb-4 ui-ready">
-    <div class="col-12 col-sm-6 col-md-4 col-xl">
-        <a href="?filter=Accepted" class="text-decoration-none">
-            <div class="metric-card metric-card--accent h-100 <?php echo $canonical_filter_status == 'Accepted' ? 'ring-2 text-primary' : ''; ?>">
-                <span class="metric-label"><?php echo __('new_orders'); ?></span>
-                <div class="metric-value financial-number"><?php echo $new_count; ?></div>
-                <div class="metric-meta"><?php echo e(__('status')); ?>: Accepted</div>
-            </div>
+    <div class="workspace-overview__metrics workspace-overview__metrics--five" aria-label="<?php echo e(__('status')); ?>">
+        <a href="?filter=Accepted" class="workspace-overview__metric <?php echo $canonical_filter_status == 'Accepted' ? 'is-active' : ''; ?>">
+            <span class="workspace-overview__metric-label"><?php echo __('new_orders'); ?></span>
+            <span class="workspace-overview__metric-data">
+                <strong class="workspace-overview__metric-value financial-number"><?php echo $new_count; ?></strong>
+                <?php echo getStatusBadge('Accepted'); ?>
+            </span>
         </a>
-    </div>
-    <div class="col-12 col-sm-6 col-md-4 col-xl">
-        <a href="?filter=Approval" class="text-decoration-none">
-            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'Approval' ? 'ring-2 text-info' : ''; ?>">
-                <span class="metric-label"><?php echo __('pending_approval_orders'); ?></span>
-                <div class="metric-value financial-number"><?php echo $pending_count; ?></div>
-                <div class="metric-meta"><?php echo e(__('status')); ?>: Approval</div>
-            </div>
+        <a href="?filter=Approval" class="workspace-overview__metric <?php echo $canonical_filter_status == 'Approval' ? 'is-active' : ''; ?>">
+            <span class="workspace-overview__metric-label"><?php echo __('pending_approval_orders'); ?></span>
+            <span class="workspace-overview__metric-data">
+                <strong class="workspace-overview__metric-value financial-number"><?php echo $pending_count; ?></strong>
+                <?php echo getStatusBadge('Approval'); ?>
+            </span>
         </a>
-    </div>
-    <div class="col-12 col-sm-6 col-md-4 col-xl">
-        <a href="?filter=In Repair" class="text-decoration-none">
-            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'In Repair' ? 'ring-2 text-warning' : ''; ?>">
-                <span class="metric-label"><?php echo __('in_progress_orders'); ?></span>
-                <div class="metric-value financial-number"><?php echo $progress_count; ?></div>
-                <div class="metric-meta"><?php echo e(__('status')); ?>: In Repair</div>
-            </div>
+        <a href="?filter=In%20Repair" class="workspace-overview__metric <?php echo $canonical_filter_status == 'In Repair' ? 'is-active' : ''; ?>">
+            <span class="workspace-overview__metric-label"><?php echo __('in_progress_orders'); ?></span>
+            <span class="workspace-overview__metric-data">
+                <strong class="workspace-overview__metric-value financial-number"><?php echo $progress_count; ?></strong>
+                <?php echo getStatusBadge('In Repair'); ?>
+            </span>
         </a>
-    </div>
-    <div class="col-12 col-sm-6 col-md-4 col-xl">
-        <a href="?filter=Ready" class="text-decoration-none">
-            <div class="metric-card h-100 <?php echo $canonical_filter_status == 'Ready' ? 'ring-2 text-success' : ''; ?>">
-                <span class="metric-label"><?php echo __('completed_orders'); ?></span>
-                <div class="metric-value financial-number"><?php echo $ready_count; ?></div>
-                <div class="metric-meta"><?php echo e(__('status')); ?>: Ready</div>
-            </div>
+        <a href="?filter=Ready" class="workspace-overview__metric <?php echo $canonical_filter_status == 'Ready' ? 'is-active' : ''; ?>">
+            <span class="workspace-overview__metric-label"><?php echo __('completed_orders'); ?></span>
+            <span class="workspace-overview__metric-data">
+                <strong class="workspace-overview__metric-value financial-number"><?php echo $ready_count; ?></strong>
+                <?php echo getStatusBadge('Ready'); ?>
+            </span>
         </a>
-    </div>
-    <div class="col-12 col-sm-6 col-md-4 col-xl">
         <?php if ($_SESSION['role'] == 'admin'): ?>
-            <div class="metric-card h-100" data-bs-toggle="tooltip" title="<?php echo __('online_techs_tooltip'); ?>">
-                <span class="metric-label"><?php echo __('online_techs'); ?></span>
-                <div class="metric-value financial-number"><?php echo $online_count; ?></div>
-                <div class="metric-meta"><?php echo __('technician'); ?></div>
+            <div class="workspace-overview__metric" data-bs-toggle="tooltip" title="<?php echo e(__('online_techs_tooltip')); ?>">
+                <span class="workspace-overview__metric-label"><?php echo __('online_techs'); ?></span>
+                <span class="workspace-overview__metric-data">
+                    <strong class="workspace-overview__metric-value financial-number"><?php echo $online_count; ?></strong>
+                    <span class="workspace-overview__metric-note"><?php echo __('technician'); ?></span>
+                </span>
             </div>
         <?php else: ?>
-            <div class="metric-card h-100">
-                <span class="metric-label"><?php echo __('technician'); ?></span>
-                <div class="metric-value financial-number">#<?php echo (int)($_SESSION['tech_id'] ?? 0); ?></div>
-                <div class="metric-meta"><?php echo e($_SESSION['full_name'] ?? ''); ?></div>
+            <div class="workspace-overview__metric">
+                <span class="workspace-overview__metric-label"><?php echo __('technician'); ?></span>
+                <span class="workspace-overview__metric-data">
+                    <strong class="workspace-overview__metric-value financial-number">#<?php echo (int)($_SESSION['tech_id'] ?? 0); ?></strong>
+                    <span class="workspace-overview__metric-note"><?php echo e($_SESSION['full_name'] ?? ''); ?></span>
+                </span>
             </div>
         <?php endif; ?>
     </div>
-</div>
+</section>
 
 <div class="row">
     <div class="col-md-8">
@@ -127,15 +122,22 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                     else echo __('recent_orders'); 
                     ?>
                 </h5>
-                <?php if ($filter_status): ?>
+                <?php
+                $active_search = normalizeSearchQuery((string)($_GET['search'] ?? ''));
+                $orders_search_href = 'orders.php' . ($active_search !== '' ? ('?search=' . rawurlencode($active_search)) : '');
+                ?>
+                <?php if ($active_search !== ''): ?>
+                    <a href="index.php<?php echo $filter_status ? ('?filter=' . rawurlencode((string)$filter_status)) : ''; ?>" class="btn btn-sm btn-outline-secondary"><?php echo __('cancel'); ?></a>
+                    <a href="<?php echo e($orders_search_href); ?>" class="btn btn-sm btn-primary"><?php echo __('all_orders'); ?></a>
+                <?php elseif ($filter_status): ?>
                     <a href="index.php" class="btn btn-sm btn-outline-secondary"><?php echo __('show_all'); ?></a>
                 <?php else: ?>
                     <a href="orders.php" class="btn btn-sm btn-primary"><?php echo __('all_orders'); ?></a>
                 <?php endif; ?>
             </div>
             <div class="card-body p-0">
-                <div class="table-responsive dashboard-orders-table-wrap">
-                    <table class="table table-hover align-middle mb-0 dashboard-orders-table">
+                <div class="table-responsive table-scroll-touch dashboard-orders-table-wrap">
+                    <table class="table table-hover align-middle mb-0 dashboard-orders-table table-mobile-cards">
                         <thead class="bg-transparent sticky-top" style="z-index: 10;">
                             <tr>
                                 <th class="ps-4">ID</th>
@@ -148,57 +150,34 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                         </thead>
                         <tbody>
                             <?php
-                            $search = normalizeSearchQuery($_GET['search'] ?? '');
-                            $search_parts = buildOrderSearchQueryParts($search, 'o', 'c', 't');
-                            
-                            // Technicians always see only orders assigned to them.
-                            $where_clauses = [];
-                            $params = [];
-                            if ($_SESSION['role'] == 'technician') {
-                                $where_clauses[] = 'o.technician_id = ?';
-                                $params[] = (int)$_SESSION['tech_id'];
-                            }
-
-                            if (!empty($search_parts['where_clauses'])) {
-                                $where_clauses = array_merge($where_clauses, $search_parts['where_clauses']);
-                                $params = array_merge($params, $search_parts['where_params']);
-                            }
-
-                            if ($filter_status) {
-                                $canonical_filter_status = canonicalOrderStatus($filter_status);
-                                if ($canonical_filter_status == 'Ready') {
-                                    $where_clauses[] = buildStatusInCondition('o.status', $dashboard_status_groups['ready'], $params);
-                                } elseif ($canonical_filter_status == 'In Repair') {
-                                    $where_clauses[] = buildStatusInCondition('o.status', $dashboard_status_groups['progress'], $params);
-                                } else {
-                                    $where_clauses[] = buildStatusInCondition('o.status', [$filter_status], $params);
-                                }
-                            }
-
-                            $where_clause = $where_clauses ? (' WHERE ' . implode(' AND ', $where_clauses)) : '';
-                            $sql = "SELECT o.*, c.first_name, c.last_name, c.phone, t.name as tech_name 
-                                           , " . $search_parts['score_sql'] . " AS search_relevance
-                                    FROM orders o 
-                                    JOIN customers c ON o.customer_id = c.id 
-                                    LEFT JOIN technicians t ON o.technician_id = t.id" . 
-                                    $where_clause . 
-                                    " ORDER BY search_relevance DESC, o.created_at DESC LIMIT 15";
-                            
-                            $stmt = $pdo->prepare($sql);
-                            $exec_params = array_merge($search_parts['score_params'], $params);
-                            $stmt->execute($exec_params);
-                            
-                            $orders_list = $stmt->fetchAll();
-                            
+                            // Same search engine as Orders page search-shell
+                            // (scoring + optional-index fallback + tech scope).
+                            $orders_list = [];
                             $has_media_ids = [];
-                            if (!empty($orders_list)) {
-                                $order_ids = array_column($orders_list, 'id');
-                                $placeholders = implode(',', array_fill(0, count($order_ids), '?'));
-                                $m_stmt = $pdo->prepare("SELECT order_id FROM order_attachments WHERE order_id IN ($placeholders) GROUP BY order_id");
-                                $m_stmt->execute($order_ids);
-                                $has_media_ids = array_flip($m_stmt->fetchAll(PDO::FETCH_COLUMN));
+                            try {
+                                $search_result = searchOrdersList(
+                                    $pdo,
+                                    (string)($_GET['search'] ?? ''),
+                                    $dashboard_technician_id,
+                                    $filter_status,
+                                    15,
+                                    0,
+                                    false
+                                );
+                                $orders_list = $search_result['orders'];
+
+                                if (!empty($orders_list)) {
+                                    $order_ids = array_column($orders_list, 'id');
+                                    $placeholders = implode(',', array_fill(0, count($order_ids), '?'));
+                                    $m_stmt = $pdo->prepare("SELECT order_id FROM order_attachments WHERE order_id IN ($placeholders) GROUP BY order_id");
+                                    $m_stmt->execute($order_ids);
+                                    $has_media_ids = array_flip($m_stmt->fetchAll(PDO::FETCH_COLUMN));
+                                }
+                            } catch (PDOException $e) {
+                                error_log('index.php order search error: ' . $e->getMessage());
+                                $orders_list = [];
                             }
-                            
+
                             $found = false;
                             foreach($orders_list as $r):
                                 $found = true;
@@ -207,8 +186,8 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                                 $has_media = isset($has_media_ids[$r['id']]);
                             ?>
                             <tr <?php if($r['priority'] == 'High') echo 'class="priority-high-row"'; ?>>
-                                <td class="ps-4">
-                                    <a href="view_order.php?id=<?php echo $r['id']; ?>" class="fw-bold text-decoration-none">#<?php echo $r['id']; ?></a>
+                                <td class="ps-4" data-label="ID">
+                                    <a href="view_order.php?id=<?php echo $r['id']; ?>" class="fw-bold text-decoration-none mobile-order-link">#<?php echo $r['id']; ?></a>
                                     <?php if($has_media): ?>
                                         <i class="fas fa-camera text-info ms-1" title="<?php echo __('has_media'); ?>"></i>
                                     <?php endif; ?>
@@ -219,20 +198,20 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                                         </div>
                                     <?php endif; ?>
                                 </td>
-                                <td>
+                                <td data-label="<?php echo e(__('client')); ?>">
                                     <div class="fw-semibold"><?php echo htmlspecialchars($r['first_name'].' '.$r['last_name']); ?></div>
                                     <div class="small text-white-75"><?php echo htmlspecialchars($r['phone']); ?></div>
                                 </td>
-                                <td>
+                                <td data-label="<?php echo e(__('device_model')); ?>">
                                     <div class="fw-medium text-primary"><?php echo $icon; ?> <?php echo htmlspecialchars($r['device_brand']); ?></div>
                                     <div class="small text-white-75"><?php echo htmlspecialchars($r['device_model']); ?></div>
                                 </td>
-                                <td>
+                                <td data-label="<?php echo e(__('problem')); ?>">
                                     <div class="small problem-snippet"><?php echo htmlspecialchars(mb_strimwidth($r['problem_description'], 0, 56, "...")); ?></div>
                                     <span class="badge bg-transparent border border-secondary text-white-75 mt-2"><i class="fas fa-user-cog me-1"></i><?php echo htmlspecialchars($r['tech_name'] ?? '---'); ?></span>
                                 </td>
-                                <td><?php echo getStatusBadge($r['status']); ?></td>
-                                <td class="text-end pe-4"><strong><?php echo formatMoney($r['final_cost'] ?? $r['estimated_cost']); ?></strong></td>
+                                <td data-label="<?php echo e(__('status')); ?>"><?php echo getStatusBadge($r['status']); ?></td>
+                                <td class="text-end pe-4" data-label="<?php echo e(__('amount')); ?>"><strong><?php echo formatMoney($r['final_cost'] ?? $r['estimated_cost']); ?></strong></td>
                             </tr>
                             <?php endforeach; 
                             
@@ -423,16 +402,52 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                             <span class="fw-semibold small text-uppercase"><?php echo __('section_device'); ?></span>
                         </div>
                         <div class="row g-3">
-                            <div class="col-md-3">
-                                <label class="form-label"><?php echo __('device_type'); ?></label>
-                                <select name="device_type" class="form-select" required>
-                                    <option value="Phone">📱 <?php echo __('Phone'); ?></option>
-                                    <option value="Notebook">💻 <?php echo __('Notebook'); ?></option>
-                                    <option value="PC">🖥️ <?php echo __('PC'); ?></option>
-                                    <option value="Tablet">📟 <?php echo __('Tablet'); ?></option>
-                                    <option value="HDD">💾 <?php echo __('HDD'); ?></option>
-                                    <option value="Other">❓ <?php echo __('Other'); ?></option>
-                                </select>
+                            <div class="col-12">
+                                <span class="form-label device-type-picker__label" id="new-order-device-type-label"><?php echo __('device_type'); ?></span>
+                                <div class="device-type-picker" role="radiogroup" aria-labelledby="new-order-device-type-label">
+                                    <label class="device-type-option">
+                                        <input type="radio" name="device_type" value="Phone" checked required>
+                                        <span class="device-type-option__surface">
+                                            <span class="device-type-icon device-type-icon--phone" aria-hidden="true"></span>
+                                            <span class="device-type-option__title"><?php echo __('Phone'); ?></span>
+                                        </span>
+                                    </label>
+                                    <label class="device-type-option">
+                                        <input type="radio" name="device_type" value="Notebook">
+                                        <span class="device-type-option__surface">
+                                            <span class="device-type-icon device-type-icon--notebook" aria-hidden="true"></span>
+                                            <span class="device-type-option__title"><?php echo __('Notebook'); ?></span>
+                                        </span>
+                                    </label>
+                                    <label class="device-type-option">
+                                        <input type="radio" name="device_type" value="PC">
+                                        <span class="device-type-option__surface">
+                                            <span class="device-type-icon device-type-icon--pc" aria-hidden="true"></span>
+                                            <span class="device-type-option__title"><?php echo __('PC'); ?></span>
+                                        </span>
+                                    </label>
+                                    <label class="device-type-option">
+                                        <input type="radio" name="device_type" value="Tablet">
+                                        <span class="device-type-option__surface">
+                                            <span class="device-type-icon device-type-icon--tablet" aria-hidden="true"></span>
+                                            <span class="device-type-option__title"><?php echo __('Tablet'); ?></span>
+                                        </span>
+                                    </label>
+                                    <label class="device-type-option">
+                                        <input type="radio" name="device_type" value="HDD">
+                                        <span class="device-type-option__surface">
+                                            <span class="device-type-icon device-type-icon--hdd" aria-hidden="true"></span>
+                                            <span class="device-type-option__title"><?php echo __('HDD'); ?></span>
+                                        </span>
+                                    </label>
+                                    <label class="device-type-option">
+                                        <input type="radio" name="device_type" value="Other">
+                                        <span class="device-type-option__surface">
+                                            <span class="device-type-icon device-type-icon--other" aria-hidden="true"></span>
+                                            <span class="device-type-option__title"><?php echo __('Other'); ?></span>
+                                        </span>
+                                    </label>
+                                </div>
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label"><?php echo __('warranty_type'); ?></label>
@@ -580,7 +595,7 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
 
 
 
-<script>
+<script nonce="<?php echo e(crmCspNonce()); ?>">
 $(document).ready(function() {
     let currentCustomerSearch = '';
     function escapeHtml(text) {
@@ -704,7 +719,11 @@ $(document).ready(function() {
                     const $sel = $('.select2-customer');
                     $sel.append(new Option(custLabel, o.customer_id, true, true)).trigger('change');
                 }
-                if (o.device_type) $('select[name="device_type"]').val(o.device_type);
+                if (o.device_type) {
+                    $('input[name="device_type"]').filter(function() {
+                        return this.value === o.device_type;
+                    }).prop('checked', true);
+                }
                 if (o.order_type) $('select[name="order_type"]').val(o.order_type);
                 if (o.device_brand) {
                     const $brand = $('select[name="device_brand"]');
@@ -721,7 +740,7 @@ $(document).ready(function() {
                 if (o.serial_number) $('input[name="serial_number"]').val(o.serial_number.toUpperCase());
                 if (o.serial_number_2) $('input[name="serial_number_2"]').val(o.serial_number_2.toUpperCase());
                 if (o.appearance) $('input[name="appearance"]').val(o.appearance);
-                if (o.pin_code) $('input[name="pin_code"]').val(o.pin_code);
+                // PIN intentionally not copied from API payloads.
                 if (o.problem_description) $('textarea[name="problem_description"]').val(o.problem_description);
                 if (o.technician_notes) $('textarea[name="technician_notes"]').val(o.technician_notes);
                 if (o.priority === 'High') $('#priorityHighDashboard').prop('checked', true);
@@ -807,18 +826,20 @@ $(document).ready(function() {
     // Inline New Customer: AJAX submit and bind to New Order select
     $('#saveNewCustomerBtn').on('click', function() {
         const $panel = $('#newCustomerInlineForm');
-        const firstName = $('#inline_first_name').val().trim();
-        const lastName = $('#inline_last_name').val().trim();
-        const phone = $('#inline_phone').val().trim();
-        
+        const firstName = String($('#inline_first_name').val() || '').trim();
+        const lastName = String($('#inline_last_name').val() || '').trim();
+        const phone = String($('#inline_phone').val() || '').trim();
+
         if (!firstName || !lastName || !phone) {
             showAlert('<?php echo __('fill_required_fields'); ?>');
             return;
         }
-        
+
         const btn = $(this);
         btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> <?php echo __('saving'); ?>...');
 
+        const csrfFromForm = String($panel.closest('form').find('input[name="csrf_token"]').val() || '');
+        const csrfFromMeta = String($('meta[name="csrf-token"]').attr('content') || '');
         const formData = {
             first_name: firstName,
             last_name: lastName,
@@ -830,7 +851,7 @@ $(document).ready(function() {
             company_name: $('#inline_ares_name').val() || '',
             dic: $('#inline_ares_dic').val() || '',
             response_format: 'json',
-            csrf_token: $panel.closest('form').find('input[name="csrf_token"]').val()
+            csrf_token: csrfFromForm || csrfFromMeta
         };
 
         $.ajax({
@@ -863,10 +884,23 @@ $(document).ready(function() {
                     bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false }).hide();
                 }
             } else {
-                showAlert(res.message || '<?php echo __('add_client_error'); ?>');
+                showAlert((res && res.message) || '<?php echo __('add_client_error'); ?>');
             }
         }).fail(function(xhr) {
-            const message = xhr.responseJSON && xhr.responseJSON.message;
+            let message = xhr.responseJSON && xhr.responseJSON.message;
+            if (!message && xhr.responseText) {
+                try {
+                    const parsed = JSON.parse(xhr.responseText);
+                    if (parsed && parsed.message) {
+                        message = parsed.message;
+                    }
+                } catch (e) { /* non-JSON body (empty 500, HTML login, etc.) */ }
+            }
+            if (!message && xhr.status === 403) {
+                message = '<?php echo __('csrf_token_invalid'); ?>';
+            } else if (!message && xhr.status === 401) {
+                message = '<?php echo __('unauthorized'); ?>';
+            }
             showAlert(message || '<?php echo __('network_error_client'); ?>');
         }).always(function() {
             btn.prop('disabled', false).html('<i class="fas fa-check me-2"></i><?php echo __('save'); ?>');

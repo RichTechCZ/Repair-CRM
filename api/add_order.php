@@ -1,6 +1,54 @@
 <?php
 // Form POST → redirect (not JSON).
+// Must begin before shared includes: the failure handler redirects instead of
+// returning JSON, so no include output may commit response headers first.
+ob_start();
+$orderCreateStage = 'config';
+
+register_shutdown_function(static function () use (&$orderCreateStage): void {
+    $fatal = error_get_last();
+    $fatalTypes = [E_ERROR, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR];
+    if ($fatal === null || !in_array($fatal['type'], $fatalTypes, true)) {
+        return;
+    }
+
+    // The diagnostics directory is denied by its .htaccess. Keep the record
+    // compact and never include submitted customer or device data.
+    $diagnostic = sprintf(
+        "%s stage=%s type=%d message=%s%s",
+        date('c'),
+        $orderCreateStage,
+        $fatal['type'],
+        str_replace(["\r", "\n"], ' ', (string)$fatal['message']),
+        PHP_EOL
+    );
+    @file_put_contents(__DIR__ . '/../temp/add_order_runtime.log', $diagnostic, FILE_APPEND | LOCK_EX);
+
+    if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+        $_SESSION['order_form_error'] = function_exists('__')
+            ? __('order_create_failed')
+            : 'Unable to create the order. Please try again.';
+        header('Location: ../orders.php', true, 302);
+    }
+});
+
+require_once __DIR__ . '/../includes/config.php';
+
+// Handle the public entry point before API rate limiting. On this host the
+// shared bootstrap cannot safely produce its form redirect for an anonymous
+// request and Apache returns an empty 500 instead.
+if (empty($_SESSION['user_id'])) {
+    header('Location: ../login.php', true, 302);
+    exit;
+}
+
 require_once __DIR__ . '/../includes/api_bootstrap.php';
+require_once __DIR__ . '/../includes/upload_security.php';
+// Defensive: older production config.php may not load sensitive_data.php.
+if (!function_exists('crmEncryptSensitiveValue')) {
+    require_once __DIR__ . '/../includes/sensitive_data.php';
+}
+$orderCreateStage = 'api_bootstrap';
 api_bootstrap([
     'post' => true,
     'csrf' => true,
@@ -11,8 +59,9 @@ api_bootstrap([
             header('Location: ../login.php');
             exit;
         }
-        http_response_code($status);
-        die($message);
+        $_SESSION['order_form_error'] = $message;
+        header('Location: ../orders.php');
+        exit;
     },
 ]);
 
@@ -34,16 +83,33 @@ $estimated_cost   = max(0, filter_input(INPUT_POST, 'estimated_cost', FILTER_VAL
 $shipping_method  = trim($_POST['shipping_method'] ?? '') ?: null;
 
 if (!$customer_id || !$device_model) {
-    die(__('missing_fields'));
+    $_SESSION['order_form_error'] = __('missing_fields');
+    header('Location: ../orders.php');
+    exit;
 }
 
 if (($_SESSION['role'] ?? '') === 'technician') {
     $technician_id = (int)($_SESSION['tech_id'] ?? 0);
 }
 
+if (!currentUserCanCreateOrderForCustomer((int)$customer_id)) {
+    $_SESSION['order_form_error'] = __('access_denied_msg');
+    header('Location: ../orders.php');
+    exit;
+}
+
+$storedUploadPaths = [];
 try {
+    $orderCreateStage = 'database_transaction';
     $pdo->beginTransaction();
     $initial_status = getDefaultOrderStatus();
+    $storedPinCode = crmEncryptSensitiveValue($pin_code);
+
+    $customerLock = $pdo->prepare('SELECT id FROM customers WHERE id = ? FOR UPDATE');
+    $customerLock->execute([(int)$customer_id]);
+    if (!$customerLock->fetchColumn()) {
+        throw new RuntimeException('Customer not found.');
+    }
 
     $stmt = $pdo->prepare(
         "INSERT INTO orders (customer_id, technician_id, device_type, order_type, device_brand, device_model,
@@ -53,76 +119,65 @@ try {
     $stmt->execute([
         $customer_id, $technician_id, $device_type, $order_type, $device_brand, $device_model,
         $problem_description, $technician_notes, $serial_number, $serial_number_2,
-        $pin_code, $appearance, $priority, $estimated_cost, $shipping_method, $initial_status
+        $storedPinCode, $appearance, $priority, $estimated_cost, $shipping_method, $initial_status
     ]);
     $order_id = (int)$pdo->lastInsertId();
+    crmEnsureOrderPublicStatusToken($pdo, $order_id);
 
     saveDeviceModelUsage($device_brand, $device_model);
     logOrderStatusChange($order_id, '', $initial_status);
 
     // ── Secure file upload ────────────────────────────────────────────────────
     if (!empty($_FILES['files']['name'][0])) {
-        $upload_dir = __DIR__ . '/../uploads/';
-        if (!is_dir($upload_dir)) mkdir($upload_dir, 0755, true);
-
-        // Protect uploads from PHP execution
-        $htaccess = $upload_dir . '.htaccess';
-        if (!file_exists($htaccess)) {
-            file_put_contents($htaccess,
-                "# Deny PHP execution in uploads\n" .
-                "<FilesMatch \"\\.php$\">\n    Require all denied\n</FilesMatch>\n" .
-                "RemoveHandler .php .phtml .php3 .php4 .php5\n" .
-                "RemoveType .php .phtml .php3 .php4 .php5\n"
+        $orderCreateStage = 'attachment_processing';
+        $uploadResult = crmStoreOrderUploads($pdo, $order_id, $_FILES['files']);
+        $storedUploadPaths = $uploadResult['paths'];
+        if ($uploadResult['rejected'] > 0) {
+            $_SESSION['order_form_warning'] = sprintf(
+                '%d attachment(s) were rejected because of type, size, or upload errors.',
+                $uploadResult['rejected']
             );
         }
-
-        $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'video/x-msvideo'];
-        $allowed_exts  = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi'];
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-
-        foreach ($_FILES['files']['tmp_name'] as $key => $tmp) {
-            if ($_FILES['files']['error'][$key] !== UPLOAD_ERR_OK) continue;
-
-            $real_type = finfo_file($finfo, $tmp);
-            if (!in_array($real_type, $allowed_types)) continue;
-            if (strpos($real_type, 'image/') === 0 && getimagesize($tmp) === false) continue;
-
-            $ext = strtolower(pathinfo($_FILES['files']['name'][$key], PATHINFO_EXTENSION));
-            if (!in_array($ext, $allowed_exts)) $ext = 'bin';
-
-            $new_name = bin2hex(random_bytes(16)) . '.' . $ext;
-            if (move_uploaded_file($tmp, $upload_dir . $new_name)) {
-                $pdo->prepare("INSERT INTO order_attachments (order_id, file_path, file_type, file_name) VALUES (?, ?, ?, ?)")
-                    ->execute([$order_id, 'uploads/' . $new_name, $real_type, basename($_FILES['files']['name'][$key])]);
-            }
-        }
-        finfo_close($finfo);
     }
 
+    $orderCreateStage = 'database_commit';
     $pdo->commit();
+    consumeCustomerOrderCreationGrant((int)$customer_id);
 
     // ── Telegram notification ─────────────────────────────────────────────────
-    if ($technician_id) {
-        $tech = $pdo->prepare("SELECT telegram_id, name FROM technicians WHERE id = ?");
-        $tech->execute([$technician_id]);
-        $techData = $tech->fetch();
-        if ($techData && $techData['telegram_id']) {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
-            $link = $protocol . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . "/../view_order.php?id=" . $order_id;
-            $msg  = sprintf(__('tg_new_order'), $order_id) . "\n";
-            $msg .= sprintf(__('tg_device'), "$device_brand $device_model") . "\n";
-            $msg .= sprintf(__('tg_problem'), mb_substr($problem_description, 0, 100)) . "\n";
-            $msg .= sprintf(__('tg_open_link'), $link);
-            sendTelegramNotification($techData['telegram_id'], $msg);
+    // The order is already committed. A delivery problem must never turn a
+    // successful creation into an HTTP 500 or a misleading failure message.
+    try {
+        $orderCreateStage = 'telegram_notification';
+        if ($technician_id) {
+            $tech = $pdo->prepare("SELECT telegram_id, name FROM technicians WHERE id = ?");
+            $tech->execute([$technician_id]);
+            $techData = $tech->fetch();
+            if ($techData && $techData['telegram_id']) {
+                $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
+                $host = preg_replace('/[^A-Za-z0-9.:-]/', '', (string)($_SERVER['HTTP_HOST'] ?? 'app.servis.expert'));
+                $link = $protocol . ($host ?: 'app.servis.expert') . "/view_order.php?id=" . $order_id;
+                $msg  = sprintf(__('tg_new_order'), $order_id) . "\n";
+                $msg .= sprintf(__('tg_device'), telegramHtml("$device_brand $device_model")) . "\n";
+                $msg .= sprintf(__('tg_problem'), telegramHtml(mb_substr($problem_description, 0, 100))) . "\n";
+                $msg .= sprintf(__('tg_open_link'), telegramHtml($link));
+                sendTelegramNotification($techData['telegram_id'], $msg);
+            }
         }
+    } catch (Throwable $e) {
+        error_log('add_order Telegram notification error: ' . $e->getMessage());
     }
 
-    header("Location: ../orders.php");
+    $orderCreateStage = 'success_redirect';
+    header('Location: ../orders.php?created_order_id=' . (int)$order_id);
     exit;
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
+    crmRemoveStoredUploadPaths($storedUploadPaths);
     error_log("add_order error: " . $e->getMessage());
-    die('Order creation failed. Please try again.');
+    $_SESSION['order_form_error'] = __('order_create_failed');
+    header('Location: ../orders.php');
+    exit;
 }
 ?>

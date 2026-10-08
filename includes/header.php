@@ -1,6 +1,23 @@
 <?php
 require_once __DIR__ . '/functions.php';
 
+// Ensure CSP helpers exist even when an older config.php is still on the host.
+if (!function_exists('crmCspNonce')) {
+    $crmCspFile = __DIR__ . '/content_security_policy.php';
+    if (is_file($crmCspFile)) {
+        require_once $crmCspFile;
+    }
+}
+if (function_exists('crmStartContentSecurityPolicy')) {
+    crmStartContentSecurityPolicy();
+}
+if (!function_exists('crmCspNonce')) {
+    function crmCspNonce(): string
+    {
+        return '';
+    }
+}
+
 // Check if user is logged in
 if (!isset($_SESSION['user_id']) && basename($_SERVER['PHP_SELF']) != 'login.php') {
     header("Location: login.php");
@@ -24,50 +41,89 @@ if ($page == 'reports.php') {
         header("Location: index.php");
         exit;
     }
+} elseif ($page == 'statistics.php') {
+    if (!hasPermission('admin_access') && !isTechnicianScoped()) {
+        header("Location: index.php");
+        exit;
+    }
 } elseif (isset($permission_pages[$page]) && !hasPermission($permission_pages[$page])) {
     header("Location: index.php");
     exit;
 }
 ?>
+<?php
+
+// Resolve page title early so <title> is contextual (Trunk Test / browser tabs).
+$company_name = (string)get_setting('company_name', 'Repair CRM');
+$current_page = basename($_SERVER['PHP_SELF']);
+$page_titles = [
+    'index.php' => __('dashboard'),
+    'orders.php' => __('orders'),
+    'customers.php' => __('customers'),
+    'inventory.php' => __('inventory'),
+    'reports.php' => __('reports'),
+    'statistics.php' => __('statistics'),
+    'accounting.php' => __('accounting'),
+    'settings.php' => __('settings'),
+    'view_order.php' => __('order'),
+    'edit_order.php' => __('edit'),
+    'edit_customer.php' => __('customers'),
+    'edit_inventory.php' => __('inventory'),
+    'login.php' => __('login'),
+];
+$page_title = $page_titles[$current_page] ?? $company_name;
+
+?>
 <!DOCTYPE html>
 <html lang="<?php echo e($_SESSION['lang'] ?? 'ru'); ?>" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo e(get_setting('company_name', 'Repair CRM')); ?> - <?php echo e(__('dashboard')); ?></title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title><?php echo e($company_name); ?> - <?php echo e($page_title); ?></title>
     <!-- CSRF token for AJAX requests -->
     <meta name="csrf-token" content="<?php echo e($_SESSION['csrf_token'] ?? ''); ?>">
-    <!-- Preconnect for performance -->
+    <!-- Integrity-pinned third-party dependencies -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
     <!-- Bootstrap 5.3.3 CSS (Dark Theme fixes) -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+          crossorigin="anonymous">
     <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Fancybox 5 CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+          integrity="sha384-iw3OoTErCYJJB9mCa8LNS2hbsQ7M3C0EpIsO/H5+EGAkPGc6rk+V8i04oW/K5xq0"
+          crossorigin="anonymous" referrerpolicy="no-referrer">
+    <!-- Fancybox 5.0.36 CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.36/dist/fancybox/fancybox.css"
+          integrity="sha384-qlUhevqmCF5AxtnfkF0zXJClBzA6GJuX/UrLejCfE61bBGt+zo/My0AJ+ojVmUSb"
+          crossorigin="anonymous">
     <!-- Select2 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-
-    <!-- Typography: refined UI font + mono accents for metrics -->
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet"
+          integrity="sha384-OXVF05DQEe311p6ohU11NwlnX08FzMCsyoXzGOaL+83dKAb3qS17yZJxESl8YrJQ"
+          crossorigin="anonymous">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="stylesheet" href="assets/css/style.css?v=<?php echo (int)filemtime(__DIR__ . '/../assets/css/style.css'); ?>">
 
     <!-- JQuery -->
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script nonce="<?php echo e(crmCspNonce()); ?>" src="https://code.jquery.com/jquery-3.6.0.min.js"
+            integrity="sha384-vtXRMe3mGCbOeY7l30aIg8H9p3GdeSe4IFlP6G8JMa7o7lXvnz3GFKzPxzJdPfGK"
+            crossorigin="anonymous"></script>
     <!-- Bootstrap 5 JS Bundle -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Custom JS -->
-    <script src="assets/js/main.js"></script>
+    <script nonce="<?php echo e(crmCspNonce()); ?>" src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+            integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+            crossorigin="anonymous"></script>
+    <!-- Custom JS (filemtime busts browser cache after deploys) -->
+    <script nonce="<?php echo e(crmCspNonce()); ?>" src="assets/js/main.js?v=<?php echo (int)@filemtime(__DIR__ . '/../assets/js/main.js'); ?>"></script>
     <!-- Select2 JS -->
-    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-    <!-- Fancybox 5 JS -->
-    <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
-    <script>
+    <script nonce="<?php echo e(crmCspNonce()); ?>" src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"
+            integrity="sha384-d3UHjPdzJkZuk5H3qKYMLRyWLAQBJbby2yr2Q58hXXtAGF8RSNO9jpLDlKKPv5v3"
+            crossorigin="anonymous"></script>
+    <!-- Fancybox 5.0.36 JS -->
+    <script nonce="<?php echo e(crmCspNonce()); ?>" src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.36/dist/fancybox/fancybox.umd.js"
+            integrity="sha384-BodKYo5iRmFaqEaP1o8AAu9hCHqLvNhSWEg12QF1IjPnl1SgsrwQMSMKUB4POJ18"
+            crossorigin="anonymous"></script>
+    <script nonce="<?php echo e(crmCspNonce()); ?>">
     // Automatically attach CSRF token to every jQuery AJAX POST request
     $(function() {
         var csrfToken = $('meta[name="csrf-token"]').attr('content');
@@ -80,7 +136,12 @@ if ($page == 'reports.php') {
             }
 
             if (data instanceof FormData) {
-                if (!data.has('csrf_token')) {
+                // Replace missing or empty tokens; empty values still "has()" and would skip CSRF.
+                var existingFormToken = data.has('csrf_token') ? String(data.get('csrf_token') || '') : '';
+                if (existingFormToken === '') {
+                    if (data.has('csrf_token')) {
+                        data.delete('csrf_token');
+                    }
                     data.append('csrf_token', csrfToken);
                 }
                 options.data = data;
@@ -91,7 +152,7 @@ if ($page == 'reports.php') {
 
             if (data && typeof data === 'object') {
                 var payload = $.extend(true, {}, data);
-                if (!Object.prototype.hasOwnProperty.call(payload, 'csrf_token')) {
+                if (!payload.csrf_token) {
                     payload.csrf_token = csrfToken;
                 }
                 options.data = $.param(payload);
@@ -100,8 +161,14 @@ if ($page == 'reports.php') {
             }
 
             if (typeof data === 'string') {
-                if (!/(^|&)csrf_token=/.test(data)) {
-                    options.data = data ? (data + '&csrf_token=' + encodeURIComponent(csrfToken)) : ('csrf_token=' + encodeURIComponent(csrfToken));
+                if (!/(^|&)csrf_token=/.test(data) || /(?:^|&)csrf_token=(?:&|$)/.test(data)) {
+                    // Missing token, or present but empty (csrf_token=).
+                    var withoutEmpty = data.replace(/(^|&)csrf_token=(?:&|$)/g, function(match, sep) {
+                        return sep === '&' ? '&' : '';
+                    }).replace(/&$/g, '');
+                    options.data = withoutEmpty
+                        ? (withoutEmpty + '&csrf_token=' + encodeURIComponent(csrfToken))
+                        : ('csrf_token=' + encodeURIComponent(csrfToken));
                 }
                 return;
             }
@@ -110,13 +177,16 @@ if ($page == 'reports.php') {
         });
     });
     </script>
-    <script>
+    <script nonce="<?php echo e(crmCspNonce()); ?>">
     window.LANG_NOTICE = '<?php echo __("notice_title"); ?>';
     window.LANG_CONFIRM = '<?php echo __("confirm_title"); ?>';
     window.LANG_PREVIEW = '<?php echo __("preview_btn"); ?>';
+    window.LANG_CLOSE = '<?php echo __("close"); ?>';
+    window.LANG_OPEN_NAVIGATION = '<?php echo __("open_navigation"); ?>';
+    window.LANG_CLOSE_NAVIGATION = '<?php echo __("close_navigation"); ?>';
     </script>
 </head>
-<body>
+<body class="app-page app-page--<?php echo e(preg_replace('/[^a-z0-9_-]/i', '', pathinfo(basename($_SERVER['PHP_SELF']), PATHINFO_FILENAME))); ?>">
 <?php
 $company_name = (string)get_setting('company_name', 'Repair CRM');
 $current_page = basename($_SERVER['PHP_SELF']);
@@ -126,6 +196,7 @@ $page_titles = [
     'customers.php' => __('customers'),
     'inventory.php' => __('inventory'),
     'reports.php' => __('reports'),
+    'statistics.php' => __('statistics'),
     'accounting.php' => __('accounting'),
     'settings.php' => __('settings'),
     'view_order.php' => __('order'),
@@ -139,9 +210,13 @@ $search_action = 'index.php';
 $search_placeholder = __('search_placeholder');
 $show_search = true;
 
-if ($current_page == 'orders.php') {
-    $search_action = 'orders.php';
-    $search_placeholder = __('orders') . ' (#ID, ' . __('client') . ', ' . __('phone') . ', ' . __('device_model') . ', ' . __('serial') . '...)';
+// Dashboard topbar and Orders page search use the same order-search contract:
+// same target fields, same GET key, same engine (searchOrdersList).
+$order_search_placeholder = __('orders') . ' (#ID, ' . __('client') . ', ' . __('phone') . ', ' . __('device_model') . ', ' . __('serial') . '...)';
+
+if ($current_page == 'index.php' || $current_page == 'orders.php') {
+    $search_action = ($current_page == 'orders.php') ? 'orders.php' : 'index.php';
+    $search_placeholder = $order_search_placeholder;
 } elseif ($current_page == 'customers.php') {
     $search_action = 'customers.php';
     $search_placeholder = __('customers') . ' (ID, ' . __('client') . ', ' . __('phone') . ', ' . __('ico') . '...)';
@@ -156,6 +231,9 @@ if ($current_page == 'orders.php') {
         $show_search = false;
     }
 }
+
+// Orders keeps its search next to the page context and primary action.
+$show_topbar_search = $show_search && $current_page !== 'orders.php';
 
 $nav_items = [
     [
@@ -189,6 +267,12 @@ $nav_items = [
         'visible' => hasPermission('admin_access') || (($_SESSION['role'] ?? '') === 'technician'),
     ],
     [
+        'href' => 'statistics.php',
+        'label' => __('statistics'),
+        'icon' => 'reports',
+        'visible' => hasPermission('admin_access') || isTechnicianScoped(),
+    ],
+    [
         'href' => 'accounting.php',
         'label' => __('accounting'),
         'icon' => 'accounting',
@@ -208,7 +292,7 @@ $user_initial = mb_strtoupper(mb_substr((string)($_SESSION['full_name'] ?? 'U'),
 <a class="skip-link" href="#main-content">Skip to main content</a>
 <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
 
-<aside id="sidebar" class="app-sidebar" aria-label="Primary">
+<aside id="sidebar" class="app-sidebar" aria-label="Primary navigation">
     <div class="sidebar-brand">
         <div class="brand-mark" aria-hidden="true">
             <span></span>
@@ -226,7 +310,7 @@ $user_initial = mb_strtoupper(mb_substr((string)($_SESSION['full_name'] ?? 'U'),
         <?php foreach ($nav_items as $item): ?>
             <?php if (!$item['visible']) continue; ?>
             <?php $is_active = $current_page === basename($item['href']); ?>
-            <a class="nav-link <?php echo $is_active ? 'active' : ''; ?>" href="<?php echo e($item['href']); ?>">
+            <a class="nav-link <?php echo $is_active ? 'active' : ''; ?>" href="<?php echo e($item['href']); ?>"<?php echo $is_active ? ' aria-current="page"' : ''; ?>>
                 <span class="nav-mark nav-mark--<?php echo e($item['icon']); ?>" aria-hidden="true"></span>
                 <span><?php echo e($item['label']); ?></span>
             </a>
@@ -246,19 +330,15 @@ $user_initial = mb_strtoupper(mb_substr((string)($_SESSION['full_name'] ?? 'U'),
 </aside>
 
 <div id="content" class="app-content">
-    <nav class="navbar navbar-expand-lg topbar-shell mb-4" aria-label="Header">
+    <nav class="navbar navbar-expand-lg topbar-shell <?php echo $show_topbar_search ? '' : 'topbar-shell--searchless'; ?> mb-4" aria-label="Header">
         <div class="container-fluid topbar-main">
-            <div class="topbar-title-group">
-                <button class="btn btn-outline-secondary topbar-menu d-lg-none" id="sidebarCollapse" type="button" aria-label="Open navigation">
+            <div class="topbar-navigation">
+                <button class="btn btn-outline-secondary topbar-menu d-lg-none" id="sidebarCollapse" type="button" aria-label="<?php echo e(__('open_navigation')); ?>" aria-controls="sidebar" aria-expanded="false">
                     <span class="menu-bars" aria-hidden="true"></span>
                 </button>
-                <div>
-                    <div class="page-kicker"><?php echo e($company_name); ?></div>
-                    <span class="navbar-brand page-title mb-0"><?php echo e($page_title); ?></span>
-                </div>
             </div>
 
-            <?php if ($show_search): ?>
+            <?php if ($show_topbar_search): ?>
             <form action="<?php echo e($search_action); ?>" method="GET" class="topbar-search" role="search">
                 <label for="globalSearch" class="visually-hidden"><?php echo e(__('search_placeholder')); ?></label>
                 <div class="search-shell">
@@ -267,18 +347,17 @@ $user_initial = mb_strtoupper(mb_substr((string)($_SESSION['full_name'] ?? 'U'),
                     <button class="btn btn-primary btn-sm px-3" type="submit">Go</button>
                 </div>
             </form>
-            <?php else: ?>
+            <?php elseif (!$show_search): ?>
                 <div class="topbar-search topbar-search--empty" aria-hidden="true"></div>
             <?php endif; ?>
 
             <div class="topbar-actions">
                 <div class="topbar-user-chip">
                     <span class="topbar-user-chip__avatar" aria-hidden="true"><?php echo e($user_initial); ?></span>
-                    <div class="topbar-user-chip__copy">
-                        <strong><?php echo e($_SESSION['full_name'] ?? __('technician')); ?></strong>
-                        <span><?php echo e($page_title); ?></span>
-                    </div>
+                <div class="topbar-user-chip__copy">
+                    <strong><?php echo e($_SESSION['full_name'] ?? __('technician')); ?></strong>
                 </div>
+            </div>
             </div>
         </div>
     </nav>

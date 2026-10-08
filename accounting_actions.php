@@ -1,6 +1,7 @@
 <?php
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+header('Content-Type: application/json');
 
 // Access Check
 if (!hasPermission('admin_access')) {
@@ -12,12 +13,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !validateCsrfToken($_POST['csrf_tok
     die(json_encode(['success' => false, 'error' => 'Security token invalid.']));
 }
 
-header('Content-Type: application/json');
-
-$action = $_REQUEST['action'] ?? '';
+$action = $_POST['action'] ?? $_GET['action'] ?? '';
 $valid_actions = ['save_invoice', 'get_invoice', 'delete_invoice', 'update_status', 'create_credit_note', 'export_pohoda', 'export_s3money', 'get_order_data'];
-if (!in_array($action, $valid_actions)) {
+if (!in_array($action, $valid_actions, true)) {
     die(json_encode(['success' => false, 'error' => 'Invalid action']));
+}
+
+$read_actions = ['get_invoice', 'get_order_data'];
+$expected_method = in_array($action, $read_actions, true) ? 'GET' : 'POST';
+if ($_SERVER['REQUEST_METHOD'] !== $expected_method) {
+    http_response_code(405);
+    header('Allow: ' . $expected_method);
+    die(json_encode(['success' => false, 'error' => 'Method not allowed']));
 }
 
 switch ($action) {
@@ -33,8 +40,9 @@ switch ($action) {
 
             $result = $manager->saveInvoice($_POST);
             echo json_encode($result);
-        } catch (Exception $e) {
-            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            error_log('accounting save_invoice error: ' . $e->getMessage());
+            echo json_encode(['success' => false, 'error' => publicExceptionMessage($e)]);
         }
         break;
 
@@ -49,19 +57,39 @@ switch ($action) {
             } else {
                 echo json_encode(['success' => false, 'error' => 'Invoice not found']);
             }
-        } catch (Exception $e) {
-            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            error_log('accounting get_invoice error: ' . $e->getMessage());
+            echo json_encode(['success' => false, 'error' => publicExceptionMessage($e)]);
         }
         break;
 
     case 'delete_invoice':
         try {
+            $pdo->beginTransaction();
             $id = (int)$_POST['id'];
+            if ($id <= 0) {
+                throw new InvalidArgumentException('Invalid invoice ID.');
+            }
+            $lock = $pdo->prepare('SELECT id, status, myinvoice_invoice_id FROM invoices WHERE id = ? FOR UPDATE');
+            $lock->execute([$id]);
+            $invoiceRow = $lock->fetch(PDO::FETCH_ASSOC);
+            if (!$invoiceRow) {
+                throw new RuntimeException('Invoice not found.');
+            }
+            // Issued/paid invoices are accounting records: they are corrected with a credit note, never deleted.
+            if (!in_array((string)$invoiceRow['status'], ['draft', 'cancelled'], true) || !empty($invoiceRow['myinvoice_invoice_id'])) {
+                throw new RuntimeException('Only a draft or cancelled invoice that was not sent to MyInvoice can be deleted. Use a credit note for issued invoices.');
+            }
             $pdo->prepare("DELETE FROM invoice_items WHERE invoice_id = ?")->execute([$id]);
             $pdo->prepare("DELETE FROM invoices WHERE id = ?")->execute([$id]);
+            $pdo->commit();
             echo json_encode(['success' => true]);
-        } catch (Exception $e) {
-            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            error_log('accounting delete_invoice error: ' . $e->getMessage());
+            echo json_encode(['success' => false, 'error' => publicExceptionMessage($e)]);
         }
         break;
 
@@ -71,16 +99,22 @@ switch ($action) {
             $manager = new InvoiceManager($pdo);
             $success = $manager->updateStatus((int)$_POST['id'], $_POST['status'], $_POST['payment_method'] ?? null);
             echo json_encode(['success' => $success]);
-        } catch (Exception $e) {
-            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            error_log('accounting update_status error: ' . $e->getMessage());
+            echo json_encode(['success' => false, 'error' => publicExceptionMessage($e)]);
         }
         break;
 
     case 'create_credit_note':
-        require_once 'models/InvoiceManager.php';
-        $manager = new InvoiceManager($pdo);
-        $result = $manager->createCreditNote((int)$_POST['id']);
-        echo json_encode($result);
+        try {
+            require_once 'models/InvoiceManager.php';
+            $manager = new InvoiceManager($pdo);
+            $result = $manager->createCreditNote((int)$_POST['id']);
+            echo json_encode($result);
+        } catch (Throwable $e) {
+            error_log('accounting create_credit_note error: ' . $e->getMessage());
+            echo json_encode(['success' => false, 'error' => publicExceptionMessage($e)]);
+        }
         break;
 
     case 'export_pohoda':

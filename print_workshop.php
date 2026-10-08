@@ -20,6 +20,9 @@ $stmt->execute([$id]);
 $order = $stmt->fetch();
 
 if (!$order) die(__("print_not_found"));
+if (function_exists('crmDecryptDevicePinInRow')) {
+    crmDecryptDevicePinInRow($order);
+}
 
 // Fetch parts linked to this order
 $stmt = $pdo->prepare("SELECT oi.*, i.part_name FROM order_items oi JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
@@ -57,7 +60,7 @@ function _l($key) { global $target_lang; return __($key, $target_lang); }
 <body>
 
 <div class="no-print" style="text-align: center; margin-bottom: 20px;">
-    <button onclick="window.print()" style="padding: 10px 20px; cursor: pointer; background: #000; color: white; border: none; font-weight: bold;">Tisk pracovního příkazu</button>
+    <button data-print-action="print" style="padding: 10px 20px; cursor: pointer; background: #000; color: white; border: none; font-weight: bold;">Tisk pracovního příkazu</button>
 </div>
 
 <div class="work-order">
@@ -146,5 +149,6 @@ function _l($key) { global $target_lang; return __($key, $target_lang); }
     </div>
 </div>
 
+<script nonce="<?php echo e(crmCspNonce()); ?>" src="assets/js/print.js"></script>
 </body>
 </html>

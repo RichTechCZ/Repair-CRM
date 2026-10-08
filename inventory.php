@@ -70,7 +70,7 @@ $catalog_import_success = isset($_GET['catalog_imported']);
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h2 class="mb-0"><?php echo __('inventory'); ?></h2>
+        <h1 class="mb-0"><?php echo __('inventory'); ?></h1>
         <small class="text-muted"><?php echo __('total_items'); ?>: <?php echo $total_count; ?></small>
         <?php if ($catalog_host !== ''): ?>
             <div class="small text-muted mt-1"><?php echo __('catalog_saved_source'); ?>: <?php echo htmlspecialchars($catalog_host); ?></div>
@@ -78,7 +78,7 @@ $catalog_import_success = isset($_GET['catalog_imported']);
     </div>
     <div class="d-flex gap-2 align-items-center">
         <?php if($inventory_stats['low_stock'] > 0): ?>
-            <span class="badge bg-warning text-dark me-2"><?php echo __('low_stock_alert'); ?>: <?php echo $inventory_stats['low_stock']; ?></span>
+            <span class="status-pill status-pill--stock-low me-2"><?php echo __('low_stock_alert'); ?>: <?php echo (int)$inventory_stats['low_stock']; ?></span>
         <?php endif; ?>
         <button class="btn btn-outline-info" data-bs-toggle="collapse" data-bs-target="#filterPanel">
             <i class="fas fa-filter me-2"></i> <?php echo __('filters'); ?>
@@ -131,8 +131,8 @@ $catalog_import_success = isset($_GET['catalog_imported']);
     <div class="col-12">
         <div class="card shadow-sm border-0">
             <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
+                <div class="table-responsive table-scroll-touch">
+                    <table class="table table-hover align-middle mb-0 table-mobile-cards">
                         <thead class="table-dark">
                             <tr>
                                 <th class="ps-4"><?php echo __('photo_col'); ?></th>
@@ -156,10 +156,10 @@ $catalog_import_success = isset($_GET['catalog_imported']);
                             <?php else: ?>
                                 <?php foreach ($inventory as $item): ?>
                                 <tr>
-                                    <td class="ps-4">
+                                    <td class="ps-4" data-label="<?php echo e(__('photo_col')); ?>">
                                         <?php if(!empty($item['image_path'])): ?>
                                             <a href="<?php echo $item['image_path']; ?>" data-fancybox="inventory">
-                                                <img src="<?php echo $item['image_path']; ?>" class="rounded shadow-sm" style="width: 40px; height: 40px; object-fit: cover;">
+                                                <img src="<?php echo $item['image_path']; ?>" class="rounded shadow-sm" style="width: 40px; height: 40px; object-fit: cover;" alt="<?php echo htmlspecialchars($item['part_name']); ?>">
                                             </a>
                                         <?php else: ?>
                                             <div class="bg-dark bg-opacity-25 rounded d-flex align-items-center justify-content-center shadow-sm border border-secondary" style="width: 40px; height: 40px;">
@@ -167,30 +167,30 @@ $catalog_import_success = isset($_GET['catalog_imported']);
                                             </div>
                                         <?php endif; ?>
                                     </td>
-                                    <td>
+                                    <td data-label="<?php echo e(__('part_name')); ?>">
                                         <div class="fw-bold"><?php echo htmlspecialchars($item['part_name']); ?></div>
                                     </td>
-                                    <td><code><?php echo htmlspecialchars($item['sku']); ?></code></td>
-                                    <td>
+                                    <td data-label="<?php echo e(__('sku')); ?>"><code><?php echo htmlspecialchars($item['sku']); ?></code></td>
+                                    <td data-label="<?php echo e(__('quantity')); ?>">
                                         <span class="fw-medium <?php echo $item['quantity'] <= $item['min_stock'] ? 'text-danger' : ''; ?>">
                                             <?php echo $item['quantity']; ?> <?php echo __('pcs_short'); ?>
                                         </span>
                                     </td>
-                                    <td><?php echo formatMoney($item['cost_price']); ?></td>
-                                    <td class="fw-bold text-primary"><?php echo formatMoney($item['sale_price']); ?></td>
-                                    <td>
+                                    <td data-label="<?php echo e(__('buy_price')); ?>"><?php echo formatMoney($item['cost_price']); ?></td>
+                                    <td class="fw-bold text-primary" data-label="<?php echo e(__('sell_price')); ?>"><?php echo formatMoney($item['sale_price']); ?></td>
+                                    <td data-label="<?php echo e(__('status')); ?>">
                                         <?php if ($item['quantity'] <= 0): ?>
-                                            <span class="badge bg-danger"><?php echo __('status_no'); ?></span>
+                                            <span class="status-pill status-pill--stock-out"><?php echo __('status_no'); ?></span>
                                         <?php elseif ($item['quantity'] <= $item['min_stock']): ?>
-                                            <span class="badge bg-warning text-dark"><?php echo __('status_low'); ?></span>
+                                            <span class="status-pill status-pill--stock-low"><?php echo __('status_low'); ?></span>
                                         <?php else: ?>
-                                            <span class="badge bg-success"><?php echo __('status_ok'); ?></span>
+                                            <span class="status-pill status-pill--stock-ok"><?php echo __('status_ok'); ?></span>
                                         <?php endif; ?>
                                     </td>
-                                    <td class="text-end pe-4">
+                                    <td class="text-end pe-4 mobile-row-actions" data-label="">
                                         <div class="btn-group btn-group-sm">
-                                            <a href="edit_inventory.php?id=<?php echo $item['id']; ?>" class="btn btn-white border" title="<?php echo __('edit'); ?>"><i class="fas fa-edit text-warning"></i></a>
-                                            <button type="button" class="btn btn-white border text-danger" onclick="deletePart(<?php echo $item['id']; ?>)" title="<?php echo __('delete'); ?>"><i class="fas fa-trash"></i></button>
+                                            <a href="edit_inventory.php?id=<?php echo $item['id']; ?>" class="btn btn-white border" title="<?php echo __('edit'); ?>" aria-label="<?php echo __('edit'); ?>: <?php echo htmlspecialchars($item['part_name']); ?>"><i class="fas fa-edit text-warning" aria-hidden="true"></i></a>
+                                            <button type="button" class="btn btn-white border text-danger" data-crm-action="delete-part" data-crm-id="<?php echo (int)$item['id']; ?>" title="<?php echo __('delete'); ?>" aria-label="<?php echo __('delete'); ?>: <?php echo htmlspecialchars($item['part_name']); ?>"><i class="fas fa-trash" aria-hidden="true"></i></button>
                                         </div>
                                     </td>
                                 </tr>
@@ -284,7 +284,7 @@ $catalog_import_success = isset($_GET['catalog_imported']);
 <div class="modal fade" id="catalogUpdateModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form id="catalogUpdateForm" action="api/parse_catalog.php" method="POST" onsubmit="return confirmCatalogUpdate(this);">
+            <form id="catalogUpdateForm" action="api/parse_catalog.php" method="POST" data-crm-submit-action="confirm-catalog-update">
                 <?php echo csrfField(); ?>
                 <div class="modal-header">
                     <h5 class="modal-title"><?php echo __('update_catalog'); ?></h5>
@@ -316,7 +316,7 @@ $catalog_import_success = isset($_GET['catalog_imported']);
     </div>
 </div>
 
-<script>
+<script nonce="<?php echo e(crmCspNonce()); ?>">
 $(document).ready(function() {
     $('.select2-filter').select2({
         width: '100%',

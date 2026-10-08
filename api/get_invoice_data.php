@@ -2,6 +2,7 @@
 ob_start();
 require_once '../includes/config.php';
 require_once '../includes/functions.php';
+require_once __DIR__ . '/../models/InvoiceAutomation.php';
 
 if (ob_get_length()) ob_clean();
 header('Content-Type: application/json');
@@ -34,19 +35,16 @@ try {
     if (!$order) {
         throw new Exception('Order not found');
     }
+    unset($order['pin_code']);
 
     $prefix = get_setting('acc_invoice_prefix', date('Y'));
     $next_num = get_setting('acc_invoice_next_number', '1');
     // Format: Prefix + 4 digits (e.g. 20260001)
     $invoice_number = $prefix . str_pad($next_num, 4, '0', STR_PAD_LEFT);
 
-    // Total = work cost + parts revenue. final_cost is explicitly "work (without parts)",
-    // so prices from order_items must be added to get the true invoiceable total.
-    $work_cost = (float)($order['final_cost'] ?: $order['estimated_cost'] ?: 0);
-    $parts_stmt = $pdo->prepare("SELECT COALESCE(SUM(quantity * price), 0) FROM order_items WHERE order_id = ?");
-    $parts_stmt->execute([$order_id]);
-    $parts_revenue = (float)$parts_stmt->fetchColumn();
-    $total_amount = $work_cost + $parts_revenue;
+    // The stored final cost is the customer charge. Do not add order item prices:
+    // they may already be included and would double-count invoice revenue.
+    $total_amount = resolveInvoiceTotal($order['final_cost'] ?? null, $order['estimated_cost'] ?? 0);
 
     echo json_encode([
         'success' => true,

@@ -16,7 +16,7 @@ try {
     $pdo->beginTransaction();
 
     // Fetch the item and order status
-    $stmt = $pdo->prepare("SELECT oi.*, o.status, o.technician_id FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.id = ?");
+    $stmt = $pdo->prepare("SELECT oi.*, o.status, o.technician_id FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.id = ? FOR UPDATE");
     $stmt->execute([$id]);
     $item = $stmt->fetch();
 

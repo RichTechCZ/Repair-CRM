@@ -37,13 +37,20 @@ try {
         exit;
     }
 
+    crmDecryptDevicePinInRow($order);
+
     // Fetch attachments
     $stmt = $pdo->prepare("SELECT * FROM order_attachments WHERE order_id = ? ORDER BY created_at DESC");
     $stmt->execute([$id]);
     $attachments = $stmt->fetchAll();
 
     // Fetch parts
-    $stmt = $pdo->prepare("SELECT oi.*, i.part_name FROM order_items oi JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
+    $stmt = $pdo->prepare(
+        "SELECT oi.*, COALESCE(NULLIF(oi.part_name, ''), i.part_name) AS part_name
+         FROM order_items oi
+         LEFT JOIN inventory i ON oi.inventory_id = i.id
+         WHERE oi.order_id = ?"
+    );
     $stmt->execute([$id]);
     $items = $stmt->fetchAll();
 

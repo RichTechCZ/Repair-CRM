@@ -4,9 +4,24 @@ require_once 'includes/functions.php';
 require_once 'includes/reports_stats.php';
 require_once 'includes/header.php';
 
-// Filter by date range (default to current week)
-$start_date = $_GET['start_date'] ?? date('Y-m-d', strtotime('monday this week'));
-$end_date = $_GET['end_date'] ?? date('Y-m-d', strtotime('sunday this week'));
+// Filter by a bounded, strictly parsed date range.
+$defaultStartDate = date('Y-m-d', strtotime('monday this week'));
+$defaultEndDate = date('Y-m-d', strtotime('sunday this week'));
+$start_date = (string)($_GET['start_date'] ?? $defaultStartDate);
+$end_date = (string)($_GET['end_date'] ?? $defaultEndDate);
+$startDateObject = DateTimeImmutable::createFromFormat('!Y-m-d', $start_date);
+$endDateObject = DateTimeImmutable::createFromFormat('!Y-m-d', $end_date);
+if (
+    $startDateObject === false ||
+    $endDateObject === false ||
+    $startDateObject->format('Y-m-d') !== $start_date ||
+    $endDateObject->format('Y-m-d') !== $end_date ||
+    $endDateObject < $startDateObject ||
+    $startDateObject->diff($endDateObject)->days > 366
+) {
+    $start_date = $defaultStartDate;
+    $end_date = $defaultEndDate;
+}
 $active_tab = $_GET['tab'] ?? 'staff_stats';
 $selected_tech_id = $_GET['tech_id'] ?? null;
 
@@ -18,6 +33,8 @@ if (!$is_admin && $is_tech) {
     $active_tab = 'individual_stats';
     $selected_tech_id = $_SESSION['tech_id'];
 }
+
+$reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
 ?>
 
 <div class="container-fluid">
@@ -73,6 +90,7 @@ if (!$is_admin && $is_tech) {
                             <th class="text-end"><?php echo __('earned'); ?></th>
                             <th class="text-end"><?php echo __('sc_income'); ?></th>
                             <th class="text-center" style="width:60px">%</th>
+                            <th class="text-end pe-3" style="width:48px"></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -85,7 +103,8 @@ if (!$is_admin && $is_tech) {
                         ];
 
                         foreach ($techs as $t):
-                            $s = getDetailedStats($pdo, $start_date, $end_date, $t['id']);
+                            $s = $reportStatsBatch['by_technician'][(int)$t['id']]
+                                ?? crmEmptyDetailedStats($reportStatsBatch['rates'][(int)$t['id']] ?? 50.0);
                             $totals['received'] += $s['received'];
                             $totals['in_progress'] += $s['in_progress'];
                             $totals['completed'] += $s['completed'];
@@ -95,6 +114,10 @@ if (!$is_admin && $is_tech) {
                             $totals['expenses'] += $s['expenses'];
                             $totals['earnings'] += $s['earnings'];
                             $totals['sc_income'] += $s['sc_income'];
+                            $payrollUrl = 'print_payroll_thermal.php?tech_id=' . (int)$t['id']
+                                . '&start_date=' . rawurlencode($start_date)
+                                . '&end_date=' . rawurlencode($end_date);
+                            $payrollTitle = __('payroll_statement') . ' — ' . $t['name'];
                         ?>
                         <tr>
                             <td>
@@ -102,7 +125,11 @@ if (!$is_admin && $is_tech) {
                                 <a href="?tab=individual_stats&tech_id=<?php echo $t['id']; ?>&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="ms-2 small text-primary"><i class="fas fa-external-link-alt"></i></a>
                             </td>
                             <td class="text-center">
-                                <a href="javascript:void(0)" onclick="showOrdersModal(<?php echo $t['id']; ?>, 'completed', '<?php echo __('repaired_count'); ?>')" class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 text-decoration-none">
+                                <a href="#" data-crm-action="show-report-orders"
+                                   data-crm-id="<?php echo (int)$t['id']; ?>"
+                                   data-report-type="completed"
+                                   data-report-title="<?php echo e(__('repaired_count')); ?>"
+                                   class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 text-decoration-none">
                                     <?php echo $s['completed']; ?>
                                 </a>
                             </td>
@@ -112,6 +139,17 @@ if (!$is_admin && $is_tech) {
                             <td class="text-end fw-bold text-primary"><?php echo formatMoney($s['earnings']); ?></td>
                             <td class="text-end text-success fw-bold"><?php echo formatMoney($s['sc_income']); ?></td>
                             <td class="text-center"><span class="badge bg-secondary"><?php echo $s['engineer_rate']; ?>%</span></td>
+                            <td class="text-end pe-3">
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-secondary"
+                                        title="<?php echo e(__('print_payroll')); ?>"
+                                        aria-label="<?php echo e(__('print_payroll') . ': ' . $t['name']); ?>"
+                                        data-crm-action="open-preview"
+                                        data-preview-url="<?php echo e($payrollUrl); ?>"
+                                        data-preview-title="<?php echo e($payrollTitle); ?>">
+                                    <i class="fas fa-receipt" aria-hidden="true"></i>
+                                </button>
+                            </td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -125,6 +163,7 @@ if (!$is_admin && $is_tech) {
                             <td class="text-end text-primary"><?php echo formatMoney($totals['earnings']); ?></td>
                             <td class="text-end text-success"><?php echo formatMoney($totals['sc_income']); ?></td>
                             <td></td>
+                            <td></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -133,7 +172,7 @@ if (!$is_admin && $is_tech) {
 
         <!-- GENERAL STATS TAB -->
         <?php if ($active_tab == 'general_stats'): 
-            $gs = getDetailedStats($pdo, $start_date, $end_date);
+            $gs = $reportStatsBatch['all'];
         ?>
             <div class="row g-4 mb-5">
                 <div class="col-md-3">
@@ -221,7 +260,7 @@ if (!$is_admin && $is_tech) {
                         <input type="hidden" name="start_date" value="<?php echo $start_date; ?>">
                         <input type="hidden" name="end_date" value="<?php echo $end_date; ?>">
                         <label class="form-label small text-muted"><?php echo __('select_employee_label'); ?></label>
-                        <select name="tech_id" class="form-select" onchange="this.form.submit()">
+                        <select name="tech_id" class="form-select" data-crm-change-action="submit-form">
                             <option value=""><?php echo __('select_employee_option'); ?></option>
                             <?php 
                             $techs_list = $pdo->query("SELECT id, name FROM technicians WHERE is_active = 1 ORDER BY name ASC")->fetchAll();
@@ -235,8 +274,31 @@ if (!$is_admin && $is_tech) {
             <?php endif; ?>
 
             <?php if ($selected_tech_id): 
-                $is = getDetailedStats($pdo, $start_date, $end_date, $selected_tech_id);
+                $is = $reportStatsBatch['by_technician'][(int)$selected_tech_id]
+                    ?? crmEmptyDetailedStats($reportStatsBatch['rates'][(int)$selected_tech_id] ?? 50.0);
+                $individualPayrollUrl = 'print_payroll_thermal.php?tech_id=' . (int)$selected_tech_id
+                    . '&start_date=' . rawurlencode($start_date)
+                    . '&end_date=' . rawurlencode($end_date);
+                $individualTechName = '';
+                if ($is_admin) {
+                    $nameStmt = $pdo->prepare('SELECT name FROM technicians WHERE id = ? LIMIT 1');
+                    $nameStmt->execute([(int)$selected_tech_id]);
+                    $individualTechName = (string)($nameStmt->fetchColumn() ?: '');
+                } else {
+                    $individualTechName = (string)($_SESSION['tech_name'] ?? '');
+                }
+                $individualPayrollTitle = __('payroll_statement')
+                    . ($individualTechName !== '' ? ' — ' . $individualTechName : '');
             ?>
+                <div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-primary"
+                            data-crm-action="open-preview"
+                            data-preview-url="<?php echo e($individualPayrollUrl); ?>"
+                            data-preview-title="<?php echo e($individualPayrollTitle); ?>">
+                        <i class="fas fa-receipt me-1" aria-hidden="true"></i><?php echo e(__('print_payroll')); ?>
+                    </button>
+                </div>
                 <div class="row g-4 mb-4">
                     <div class="col-md-3">
                         <div class="card p-3 border shadow-none text-center">
@@ -325,8 +387,8 @@ if (!$is_admin && $is_tech) {
                                 $e_cost = floatval($r['extra_expenses'] ?: 0);
                                 // Net profit per order (can be negative — must NOT floor)
                                 $net = $customer_total - $p_cost - $e_cost;
-                                // Engineer payout = customer total − parts cost − 50% extra (floored at 0)
-                                $earn_base = $customer_total - $p_cost - ($e_cost / 2);
+                                // Engineer payout = (revenue − parts − full extra) × rate% (floored at 0)
+                                $earn_base = $customer_total - $p_cost - $e_cost;
                                 if ($earn_base < 0) $earn_base = 0;
                                 $earn = $earn_base * ($is['engineer_rate'] / 100);
                             ?>
@@ -390,7 +452,7 @@ if (!$is_admin && $is_tech) {
     </div>
 </div>
 
-<script>
+<script nonce="<?php echo e(crmCspNonce()); ?>">
 function showOrdersModal(techId, type, title) {
     const modal = new bootstrap.Modal(document.getElementById('reportOrdersModal'));
     document.getElementById('reportOrdersModalTitle').innerText = title + ' <?php echo __('detailed_suffix'); ?>';
@@ -434,7 +496,7 @@ function showOrdersModal(techId, type, title) {
 
                     const tdStatus = document.createElement('td');
                     const badge = document.createElement('span');
-                    badge.className = 'badge ' + getStatusBadgeClass(order.status);
+                    badge.className = 'status-pill ' + getStatusPillClass(order.status);
                     badge.textContent = getStatusLabel(order.status);
                     tdStatus.appendChild(badge);
 
@@ -465,24 +527,24 @@ function showOrdersModal(techId, type, title) {
         });
 }
 
-function getStatusBadgeClass(status) {
+function getStatusPillClass(status) {
     switch(status) {
-        case 'Accepted': return 'bg-primary';
-        case 'Diagnostics': return 'bg-info text-dark';
-        case 'Approval': return 'bg-warning text-dark';
-        case 'In Repair': return 'bg-warning';
-        case 'Ready': return 'bg-success';
-        case 'Issued': return 'bg-info text-dark';
-        case 'Issued Without Repair': return 'bg-dark';
-        case 'Repair Cancelled': return 'bg-danger';
-        case 'New': return 'bg-primary';
-        case 'Pending Approval': return 'bg-warning text-dark';
-        case 'In Progress': return 'bg-warning';
-        case 'Waiting for Parts': return 'bg-warning';
-        case 'Completed': return 'bg-success';
-        case 'Collected': return 'bg-info text-dark';
-        case 'Cancelled': return 'bg-danger';
-        default: return 'bg-secondary';
+        case 'Accepted':
+        case 'New': return 'status-pill--accepted';
+        case 'Diagnostics': return 'status-pill--diagnostics';
+        case 'Approval':
+        case 'Pending Approval': return 'status-pill--approval';
+        case 'In Repair':
+        case 'In Progress': return 'status-pill--repair';
+        case 'Waiting for Parts': return 'status-pill--waiting';
+        case 'Ready':
+        case 'Completed': return 'status-pill--ready';
+        case 'Issued':
+        case 'Collected': return 'status-pill--issued';
+        case 'Issued Without Repair':
+        case 'Repair Cancelled':
+        case 'Cancelled': return 'status-pill--cancelled';
+        default: return 'status-pill--closed';
     }
 }
 

@@ -1,78 +1,60 @@
 <?php
 /**
- * CRM Migration Runner
- * -------------------
- * Scans ./migrations/ for *.sql files (sorted alphabetically) and
- * executes any that have not yet been recorded in the `migrations` table.
+ * CRM migration runner.
  *
- * Usage (CLI):
- *   php run_migrations.php
- *
- * Usage (web – admin only):
- *   Open https://your-domain/run_migrations.php while logged in as admin.
+ * CLI: php run_migrations.php
+ * Web: always disabled (410). Migrations are CLI-only in every environment.
  */
 
 require_once __DIR__ . '/includes/config.php';
+require_once __DIR__ . '/includes/migration_runner.php';
 
-// ── Auth guard (web) ──────────────────────────────────────────────────────────
-if (php_sapi_name() !== 'cli') {
-    require_once __DIR__ . '/includes/functions.php';
-    if (empty($_SESSION['user_id']) || !hasPermission('admin_access')) {
-        http_response_code(403);
-        die('<h1>403 Forbidden</h1>');
+$isCli = PHP_SAPI === 'cli';
+
+if ($isCli) {
+    $migrationUser = trim((string)(getenv('DB_MIGRATION_USER') ?: ''));
+    $migrationPass = (string)(getenv('DB_MIGRATION_PASS') ?: '');
+    if ($crmIsProduction && ($migrationUser === '' || $migrationPass === '')) {
+        fwrite(STDERR, "Production migrations require DB_MIGRATION_USER and DB_MIGRATION_PASS.\n");
+        exit(1);
     }
-    echo '<pre>';
-}
-
-// ── Bootstrap: ensure migrations table exists ─────────────────────────────────
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS `migrations` (
-        `id`             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-        `migration_name` VARCHAR(255)   NOT NULL UNIQUE,
-        `executed_at`    TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-");
-
-// ── Load already-executed migrations ─────────────────────────────────────────
-$executed = $pdo->query("SELECT migration_name FROM migrations")->fetchAll(PDO::FETCH_COLUMN);
-
-// ── Scan migration files ──────────────────────────────────────────────────────
-$files = glob(__DIR__ . '/migrations/*.sql');
-if (!$files) {
-    echo "No migration files found.\n";
-    exit(0);
-}
-sort($files);
-
-$ok = 0; $skip = 0; $fail = 0;
-
-foreach ($files as $file) {
-    $name = basename($file);
-
-    if (in_array($name, $executed, true)) {
-        echo "SKIP : $name\n";
-        $skip++;
-        continue;
+    if ($crmIsProduction && in_array(strtolower($migrationUser), ['root', 'admin', 'administrator'], true)) {
+        fwrite(STDERR, "Privileged migration database accounts are forbidden in production.\n");
+        exit(1);
     }
-
-    $sql = file_get_contents($file);
-    try {
-        // Split on semicolons so multi-statement files work
-        foreach (array_filter(array_map('trim', explode(';', $sql))) as $stmt) {
-            $pdo->exec($stmt);
+    if ($migrationUser !== '') {
+        try {
+            $pdo = new PDO(
+                'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
+                $migrationUser,
+                $migrationPass,
+                [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false,
+                ]
+            );
+        } catch (PDOException $e) {
+            error_log('Migration DB connection error: ' . $e->getMessage());
+            fwrite(STDERR, "Unable to connect with the migration database account.\n");
+            exit(1);
         }
-        $pdo->prepare("INSERT INTO migrations (migration_name) VALUES (?)")->execute([$name]);
-        echo "OK   : $name\n";
-        $ok++;
-    } catch (Throwable $e) {
-        echo "ERROR: $name — " . $e->getMessage() . "\n";
-        $fail++;
-        break; // Stop on first failure to preserve consistency
     }
 }
 
-echo "\nDone. OK=$ok  SKIP=$skip  FAIL=$fail\n";
-
-if (php_sapi_name() !== 'cli') {
-    echo '</pre>';
+if (!$isCli) {
+    // Web execution is disabled in every environment. Migrations are CLI-only.
+    http_response_code(410);
+    exit('Web migrations are disabled. Run php run_migrations.php from the deployment CLI.');
 }
+
+$results = crmRunMigrations($pdo, __DIR__);
+$hasError = crmMigrationResultsContainError($results);
+
+foreach ($results as $result) {
+    $file = $result['file'] ?? '(migration system)';
+    $status = strtoupper((string)($result['status'] ?? 'unknown'));
+    $message = isset($result['message']) ? ' — ' . $result['message'] : '';
+    echo "{$status}: {$file}{$message}\n";
+}
+exit($hasError ? 1 : 0);

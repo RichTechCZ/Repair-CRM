@@ -19,6 +19,17 @@ if (!$order) die(__('order_not_found'));
 if (!currentUserCanViewOrder($id)) {
     die(__('no_edit_permission'));
 }
+// PIN is encrypted at rest. Decrypt only after authorization; never show ciphertext.
+if (!function_exists('crmDecryptDevicePinInRow')) {
+    require_once __DIR__ . '/includes/sensitive_data.php';
+}
+crmDecryptDevicePinInRow($order);
+if (function_exists('crmSensitiveDataIsEncrypted') && crmSensitiveDataIsEncrypted((string)($order['pin_code'] ?? ''))) {
+    error_log('view_order.php: refusing to render encrypted PIN ciphertext for order #' . (int)$id);
+    $order['pin_code'] = '';
+    $order['pin_code_decrypt_failed'] = true;
+}
+$pinDecryptFailed = !empty($order['pin_code_decrypt_failed']);
 
 // Fetch parts linked to this order. Fall back to the pre-migration schema until
 // order_items.part_name/source are added on production.
@@ -65,13 +76,17 @@ try {
 ?>
 
 <?php
-    $back_url = "javascript:history.back()";
+    // Never use javascript:history.back() — CSP (default-src 'self' / script-src)
+    // blocks javascript: URLs, so the Back control appears dead in the browser.
+    $back_url = 'orders.php';
+    $back_uses_explicit_return = false;
     if (!empty($_GET['return'])) {
         $candidate_back_url = (string)$_GET['return'];
         $is_relative_url = !preg_match('#^(?:[a-z][a-z0-9+.-]*:|//)#i', $candidate_back_url);
         $has_safe_chars = (bool)preg_match('/^[A-Za-z0-9_\/.\-]+(?:\?[A-Za-z0-9_=&%+.,:\-\/]*)?$/', $candidate_back_url);
         if ($is_relative_url && $has_safe_chars) {
             $back_url = $candidate_back_url;
+            $back_uses_explicit_return = true;
         }
     }
 ?>
@@ -82,9 +97,12 @@ try {
         <h1>#<?php echo $order['id']; ?> · <?php echo htmlspecialchars($order['device_model']); ?></h1>
         <p class="page-subtitle"><?php echo __('created'); ?>: <?php echo $created_label; ?></p>
     </div>
-    <div class="page-actions">
-        <a href="<?php echo e($back_url); ?>" class="btn btn-outline-secondary">
-            <i class="fas fa-arrow-left"></i>
+    <div class="page-actions page-actions--order">
+        <a href="<?php echo e($back_url); ?>"
+           class="btn btn-outline-secondary"
+           data-crm-action="navigate-back"
+           data-crm-explicit-return="<?php echo $back_uses_explicit_return ? '1' : '0'; ?>">
+            <i class="fas fa-arrow-left" aria-hidden="true"></i>
             <span><?php echo __('back'); ?></span>
         </a>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#editOrderFullModal">
@@ -92,7 +110,7 @@ try {
             <span><?php echo __('edit'); ?></span>
         </button>
         <?php if(hasPermission('admin_access')): ?>
-        <button class="btn btn-outline-danger" onclick="deleteOrder(<?php echo $order['id']; ?>)">
+        <button class="btn btn-outline-danger" data-crm-action="delete-order" data-crm-id="<?php echo (int)$order['id']; ?>">
             <i class="fas fa-trash"></i>
             <span><?php echo __('delete'); ?></span>
         </button>
@@ -122,7 +140,7 @@ try {
                         <p class="mb-1"><strong><?php echo htmlspecialchars($order['device_brand'] . ' ' . $order['device_model']); ?></strong></p>
                         <p class="text-white-75 mb-1">
                             <?php echo htmlspecialchars(__($order['device_type'])); ?> | 
-                            <strong><?php echo $order['order_type'] == 'Warranty' ? __('Warranty') : __('Non-Warranty'); ?></strong>
+                            <strong><?php echo $order['order_type'] == 'Warranty' ? __('reclamation') : __('Non-Warranty'); ?></strong>
                         </p>
                         <h6 class="mt-2 mb-1"><?php echo __('serial_numbers'); ?></h6>
                         <p class="text-white-75 mb-0 small">
@@ -137,7 +155,11 @@ try {
                     <div class="detail-card">
                         <h6><?php echo __('pin'); ?></h6>
                         <div class="alert alert-warning bg-transparent border border-warning py-2 mb-0">
-                            <code class="text-warning"><?php echo htmlspecialchars($order['pin_code'] ?: '---'); ?></code>
+                            <?php if ($pinDecryptFailed): ?>
+                                <span class="text-warning"><?php echo e(__('not_found')); ?> — PIN encrypted, re-enter in edit</span>
+                            <?php else: ?>
+                                <code class="text-warning"><?php echo htmlspecialchars($order['pin_code'] ?: '---'); ?></code>
+                            <?php endif; ?>
                         </div>
                         <h6 class="mt-3"><?php echo __('technician'); ?></h6>
                         <div class="alert alert-info bg-transparent border border-info py-2 mb-3 text-info">
@@ -145,9 +167,9 @@ try {
                         </div>
                         <h6><?php echo __('priority'); ?></h6>
                         <?php if($order['priority'] == 'High'): ?>
-                            <span class="badge bg-danger px-3 py-2 mt-1"><?php echo __('high'); ?></span>
+                            <span class="status-pill status-pill--priority-high"><?php echo __('high'); ?></span>
                         <?php else: ?>
-                            <span class="badge bg-secondary px-3 py-2 mt-1"><?php echo __('normal'); ?></span>
+                            <span class="status-pill status-pill--priority-normal"><?php echo __('normal'); ?></span>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -191,9 +213,9 @@ try {
                             <tr>
                                 <td class="small text-white-75"><?php echo date('d.m.Y H:i', strtotime($log['changed_at'])); ?></td>
                                 <td>
-                                    <span class="badge bg-transparent border border-secondary text-white-75"><?php echo htmlspecialchars(getStatusLabel($log['old_status'])); ?></span>
+                                    <?php echo getStatusBadge($log['old_status']); ?>
                                     <i class="fas fa-arrow-right mx-1 text-white-75"></i>
-                                    <span class="badge bg-primary text-white"><?php echo htmlspecialchars(getStatusLabel($log['new_status'])); ?></span>
+                                    <?php echo getStatusBadge($log['new_status']); ?>
                                 </td>
                                 <td><?php echo htmlspecialchars($who); ?></td>
                             </tr>
@@ -227,8 +249,8 @@ try {
                         <div class="col-6 col-md-3" id="media-item-<?php echo $file['id']; ?>">
                             <div class="card h-100 shadow-sm border position-relative">
                                 <?php if ($_SESSION['role'] == 'admin'): ?>
-                                <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1 z-3 shadow-sm" 
-                                        onclick="deleteMedia(<?php echo $file['id']; ?>)" style="padding: 2px 6px; font-size: 10px;">
+                                <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1 z-3 shadow-sm"
+                                        data-crm-action="delete-media" data-crm-id="<?php echo (int)$file['id']; ?>" style="padding: 2px 6px; font-size: 10px;">
                                     <i class="fas fa-times"></i>
                                 </button>
                                 <?php endif; ?>
@@ -297,10 +319,10 @@ try {
                             <td class="text-end fw-bold"><?php echo formatMoney($sum); ?></td>
                             <td class="text-end">
                                 <div class="btn-group btn-group-sm">
-                                    <button class="btn btn-outline-primary" onclick="openEditPartModal(<?php echo htmlspecialchars(json_encode($item)); ?>)" title="<?php echo __('edit'); ?>">
+                                    <button class="btn btn-outline-primary" data-crm-action="edit-order-part" data-crm-item="<?php echo e(json_encode($item, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>" title="<?php echo __('edit'); ?>">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <button class="btn btn-outline-danger" onclick="deletePart(<?php echo $item['id']; ?>)" title="<?php echo __('delete'); ?>">
+                                    <button class="btn btn-outline-danger" data-crm-action="delete-part" data-crm-id="<?php echo (int)$item['id']; ?>" title="<?php echo __('delete'); ?>">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </div>
@@ -322,7 +344,7 @@ try {
                 <h5 class="mb-0"><?php echo __('order_status'); ?></h5>
             </div>
             <div class="card-body">
-                <form id="statusForm">
+                <form id="statusForm" data-current-shipping="<?php echo e($order['shipping_method'] ?? ''); ?>" data-order-type="<?php echo e($order['order_type'] ?? ''); ?>">
                     <?php echo csrfField(); ?>
                     <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                     <?php if (!$show_shipping): ?>
@@ -404,9 +426,9 @@ try {
                                 <i class="fas fa-print me-2"></i> <?php echo __('print'); ?>
                             </button>
                             <ul class="dropdown-menu w-100 shadow">
-                                <li><a class="dropdown-item py-2" href="javascript:void(0)" onclick="openUniversalPreview('print_order.php?id=<?php echo $order['id']; ?>', 'Order #<?php echo $order['id']; ?>')"><i class="fas fa-file-invoice me-2 text-primary"></i> <?php echo __('a4_invoice'); ?></a></li>
-                                <li><a class="dropdown-item py-2" href="javascript:void(0)" onclick="openUniversalPreview('print_workshop.php?id=<?php echo $order['id']; ?>', 'Workshop #<?php echo $order['id']; ?>')"><i class="fas fa-tools me-2 text-warning"></i> <?php echo __('work_order'); ?></a></li>
-                                <li><a class="dropdown-item py-2" href="javascript:void(0)" onclick="openUniversalPreview('print_thermal.php?id=<?php echo $order['id']; ?>', 'Receipt #<?php echo $order['id']; ?>')"><i class="fas fa-receipt me-2 text-success"></i> <?php echo __('thermal_receipt'); ?></a></li>
+                                <li><a class="dropdown-item py-2" href="#" data-crm-action="open-preview" data-preview-url="print_order.php?id=<?php echo (int)$order['id']; ?>" data-preview-title="Order #<?php echo (int)$order['id']; ?>"><i class="fas fa-file-invoice me-2 text-primary"></i> <?php echo __('a4_invoice'); ?></a></li>
+                                <li><a class="dropdown-item py-2" href="#" data-crm-action="open-preview" data-preview-url="print_workshop.php?id=<?php echo (int)$order['id']; ?>" data-preview-title="Workshop #<?php echo (int)$order['id']; ?>"><i class="fas fa-tools me-2 text-warning"></i> <?php echo __('work_order'); ?></a></li>
+                                <li><a class="dropdown-item py-2" href="#" data-crm-action="open-preview" data-preview-url="print_thermal.php?id=<?php echo (int)$order['id']; ?>" data-preview-title="Receipt #<?php echo (int)$order['id']; ?>"><i class="fas fa-receipt me-2 text-success"></i> <?php echo __('thermal_receipt'); ?></a></li>
                             </ul>
                         </div>
                     </div>
@@ -419,7 +441,7 @@ try {
             <div class="card-header bg-transparent border-bottom-0 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><?php echo __('shipping'); ?></h5>
                 <?php if($status === 'Issued'): ?>
-                    <span class="badge bg-success small"><?php echo getStatusLabel('Issued'); ?></span>
+                    <?php echo getStatusBadge('Issued'); ?>
                 <?php endif; ?>
             </div>
             <div class="card-body">
@@ -539,10 +561,16 @@ try {
                             <?php echo $existing_invoice ? __('save') : __('create_invoice'); ?>
                         </button>
                         <?php if($existing_invoice): ?>
-                        <a href="javascript:void(0)" onclick="openUniversalPreview('print_invoice.php?id=<?php echo $existing_invoice['id']; ?>', 'Invoice #<?php echo $existing_invoice['invoice_number']; ?>')" class="btn btn-outline-secondary" title="<?php echo __('print'); ?>">
+                        <a href="#" data-crm-action="open-preview"
+                           data-preview-url="print_invoice.php?id=<?php echo (int)$existing_invoice['id']; ?>"
+                           data-preview-title="<?php echo e('Invoice #' . $existing_invoice['invoice_number']); ?>"
+                           class="btn btn-outline-secondary" title="<?php echo __('print'); ?>">
                             <i class="fas fa-print"></i>
                         </a>
-                        <a href="javascript:void(0)" onclick="openUniversalPreview('print_invoice_thermal.php?id=<?php echo $existing_invoice['id']; ?>', 'Receipt #<?php echo $existing_invoice['invoice_number']; ?>')" class="btn btn-outline-success" title="<?php echo __('thermal_receipt'); ?>">
+                        <a href="#" data-crm-action="open-preview"
+                           data-preview-url="print_invoice_thermal.php?id=<?php echo (int)$existing_invoice['id']; ?>"
+                           data-preview-title="<?php echo e('Receipt #' . $existing_invoice['invoice_number']); ?>"
+                           class="btn btn-outline-success" title="<?php echo __('thermal_receipt'); ?>">
                             <i class="fas fa-receipt"></i>
                         </a>
                         <?php endif; ?>
@@ -566,43 +594,45 @@ try {
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="btn-group w-100 mb-3" role="group">
+                    <div class="btn-group w-100 mb-3" role="group" aria-label="<?php echo e(__('add_part_to_order')); ?>">
                         <input type="radio" class="btn-check" name="mode" id="partModeInventory" value="inventory" autocomplete="off" checked>
                         <label class="btn btn-outline-primary" for="partModeInventory"><?php echo __('part_mode_inventory'); ?></label>
                         <input type="radio" class="btn-check" name="mode" id="partModeManual" value="manual" autocomplete="off">
                         <label class="btn btn-outline-primary" for="partModeManual"><?php echo __('part_mode_manual'); ?></label>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label"><?php echo __('select_part_from_warehouse'); ?></label>
-                        <select name="inventory_id" class="form-select" required>
+                    <div id="inventoryPartFields" class="mb-3">
+                        <label class="form-label" for="addPartInventoryId"><?php echo __('select_part_from_warehouse'); ?></label>
+                        <?php /* required is enforced in JS: Select2 hides the native select and HTML5 required then silently blocks submit */ ?>
+                        <select name="inventory_id" id="addPartInventoryId" class="form-select">
                             <option value=""><?php echo __('choose_option'); ?></option>
-                            <?php foreach($inventory as $item): ?>
-                            <option value="<?php echo $item['id']; ?>">
-                                <?php echo htmlspecialchars($item['part_name']); ?> (<?php echo __('in_stock'); ?>: <?php echo $item['quantity']; ?>)
+                            <?php foreach ($inventory as $item): ?>
+                            <option value="<?php echo (int)$item['id']; ?>" data-stock="<?php echo (int)$item['quantity']; ?>">
+                                <?php echo htmlspecialchars((string)$item['part_name']); ?>
+                                (<?php echo __('in_stock'); ?>: <?php echo (int)$item['quantity']; ?>)
                             </option>
                             <?php endforeach; ?>
                         </select>
                     </div>
                     <div id="manualPartFields" class="d-none">
                         <div class="mb-3">
-                            <label class="form-label"><?php echo __('part_name'); ?></label>
-                            <input type="text" name="part_name" class="form-control">
+                            <label class="form-label" for="addPartName"><?php echo __('part_name'); ?></label>
+                            <input type="text" name="part_name" id="addPartName" class="form-control" autocomplete="off">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label"><?php echo __('source'); ?></label>
-                            <input type="text" name="source" class="form-control">
+                            <label class="form-label" for="addPartSource"><?php echo __('source'); ?></label>
+                            <input type="text" name="source" id="addPartSource" class="form-control" autocomplete="off">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label"><?php echo __('price'); ?></label>
+                            <label class="form-label" for="addPartPrice"><?php echo __('price'); ?></label>
                             <div class="input-group">
-                                <input type="number" name="price" class="form-control" step="0.01" min="0">
+                                <input type="number" name="price" id="addPartPrice" class="form-control" step="0.01" min="0">
                                 <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
                             </div>
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label"><?php echo __('quantity'); ?></label>
-                        <input type="number" name="quantity" class="form-control" value="1" min="1">
+                        <label class="form-label" for="addPartQuantity"><?php echo __('quantity'); ?></label>
+                        <input type="number" name="quantity" id="addPartQuantity" class="form-control" value="1" min="1" step="1" required>
                     </div>
                 </div>
                 <div class="modal-footer border-secondary">
@@ -709,11 +739,11 @@ try {
                 <div class="mb-4">
                     <i class="fas fa-shipping-fast fa-4x text-warning mb-3 animate-bounce"></i>
                 </div>
-                <h5><?php echo __('required_for_issue'); ?></h5>
+                <h5><?php echo __('shipping_required_title'); ?></h5>
                 <p class="text-white-75 mb-0"><?php echo __('shipping_required_msg'); ?></p>
             </div>
             <div class="modal-footer border-top-0 justify-content-center">
-                <button type="button" class="btn btn-warning px-4" onclick="goToShipping()">
+                <button type="button" class="btn btn-warning px-4" data-crm-action="go-to-shipping">
                     <i class="fas fa-truck me-2"></i><?php echo __('specify_shipping'); ?>
                 </button>
             </div>
@@ -832,7 +862,7 @@ try {
                         </div>
                         <div class="col-md-4">
                             <label class="form-label"><?php echo __('pin'); ?></label>
-                            <input type="text" name="pin_code" class="form-control" value="<?php echo htmlspecialchars($order['pin_code'] ?? ''); ?>">
+                            <input type="text" name="pin_code" class="form-control" value="<?php echo htmlspecialchars($pinDecryptFailed ? '' : ($order['pin_code'] ?? '')); ?>" placeholder="<?php echo $pinDecryptFailed ? e('Re-enter device PIN') : ''; ?>">
                         </div>
                         <div class="col-12">
                             <label class="form-label"><?php echo __('appearance'); ?></label>

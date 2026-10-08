@@ -6,17 +6,31 @@ api_bootstrap([
     'permission' => 'admin_access',
     'rate' => 'add_inventory',
 ]);
-$part_name = trim($_POST['part_name'] ?? '');
-$sku = trim($_POST['sku'] ?? '');
-$quantity = (float)($_POST['quantity'] ?? 0);
-$cost_price = (float)($_POST['cost_price'] ?? 0);
-$sale_price = (float)($_POST['sale_price'] ?? 0);
-$min_stock = (float)($_POST['min_stock'] ?? 5);
+$part_name = trim((string)($_POST['part_name'] ?? ''));
+$sku = trim((string)($_POST['sku'] ?? ''));
+$quantity_raw = $_POST['quantity'] ?? 0;
+$cost_raw = $_POST['cost_price'] ?? 0;
+$sale_raw = $_POST['sale_price'] ?? 0;
+$min_raw = $_POST['min_stock'] ?? 5;
 
 if ($part_name === '') {
     echo json_encode(['success' => false, 'message' => 'Part name is required']);
     exit;
 }
+if (!is_numeric($quantity_raw) || !is_finite((float)$quantity_raw) || (float)$quantity_raw < 0 || floor((float)$quantity_raw) != (float)$quantity_raw) {
+    echo json_encode(['success' => false, 'message' => 'Invalid quantity']);
+    exit;
+}
+if (!is_numeric($cost_raw) || !is_finite((float)$cost_raw) || (float)$cost_raw < 0
+    || !is_numeric($sale_raw) || !is_finite((float)$sale_raw) || (float)$sale_raw < 0
+    || !is_numeric($min_raw) || !is_finite((float)$min_raw) || (float)$min_raw < 0 || floor((float)$min_raw) != (float)$min_raw) {
+    echo json_encode(['success' => false, 'message' => 'Invalid numeric fields']);
+    exit;
+}
+$quantity = (int)$quantity_raw;
+$cost_price = (float)$cost_raw;
+$sale_price = (float)$sale_raw;
+$min_stock = (int)$min_raw;
 
 try {
     $stmt = $pdo->prepare("INSERT INTO inventory (part_name, sku, quantity, cost_price, sale_price, min_stock) VALUES (?, ?, ?, ?, ?, ?)");

@@ -1,14 +1,12 @@
 <?php
-ob_start();
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
-ob_clean();
-header('Content-Type: application/json');
-
-if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['results' => [], 'pagination' => ['more' => false]]);
-    exit;
-}
+require_once __DIR__ . '/../includes/api_bootstrap.php';
+api_bootstrap([
+    'auth' => true,
+    'post' => false,
+    'csrf' => false,
+    'rate' => ['action' => 'search_customers', 'max' => 60, 'window' => 60],
+    'json' => true,
+]);
 
 $term = trim($_GET['q'] ?? '');
 $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
@@ -69,11 +67,11 @@ try {
         ];
     }
 
-    echo json_encode([
+    api_json_exit([
         'results' => $results,
         'pagination' => ['more' => (($offset + $per_page) < $total)]
     ]);
 } catch (Exception $e) {
     error_log('search_customers: ' . $e->getMessage());
-    echo json_encode(['results' => [], 'pagination' => ['more' => false]]);
+    api_json_exit(['results' => [], 'pagination' => ['more' => false]]);
 }

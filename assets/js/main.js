@@ -10,29 +10,50 @@ let activePreviewUrl = null;
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
-    // Sidebar toggle
-    const sidebarCollapse = document.getElementById('sidebarCollapse');
     const sidebar = document.getElementById('sidebar');
-    const content = document.getElementById('content');
+    const sidebarCollapse = document.getElementById('sidebarCollapse');
     const sidebarBackdrop = document.getElementById('sidebarBackdrop');
 
     if (sidebarCollapse) {
         sidebarCollapse.addEventListener('click', function() {
-            document.body.classList.toggle('sidebar-open');
-            sidebar.classList.toggle('active');
-            content.classList.toggle('active');
+            setSidebarOpen(!document.body.classList.contains('sidebar-open'));
         });
     }
 
     if (sidebarBackdrop) {
-        sidebarBackdrop.addEventListener('click', closeSidebar);
+        sidebarBackdrop.addEventListener('click', function() {
+            closeSidebar(true);
+        });
+    }
+
+    // Close drawer after choosing a destination (full navigation still unloads the page).
+    if (sidebar) {
+        sidebar.addEventListener('click', function(event) {
+            const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+            if (link && isCompactSidebar() && document.body.classList.contains('sidebar-open')) {
+                closeSidebar(false);
+            }
+        });
     }
 
     document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') {
-            closeSidebar();
+        if (event.key === 'Escape' && document.body.classList.contains('sidebar-open')) {
+            closeSidebar(true);
         }
     });
+
+    let sidebarResizeTimer = 0;
+    window.addEventListener('resize', function() {
+        window.clearTimeout(sidebarResizeTimer);
+        sidebarResizeTimer = window.setTimeout(function() {
+            setSidebarOpen(document.body.classList.contains('sidebar-open'));
+        }, 100);
+    });
+    setSidebarOpen(false);
+
+    prepareSharedAccessibility();
+    initDeclarativeActions();
+    enhanceMobileChrome();
 
     // Fix for aria-hidden on focusable elements inside modals (Accessibility)
     $(document).on('show.bs.modal shown.bs.modal', '.modal', function() {
@@ -66,17 +87,308 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-function closeSidebar() {
+function callPageAction(name, ...args) {
+    if (typeof window[name] === 'function') {
+        return window[name](...args);
+    }
+    return undefined;
+}
+
+function readActionId(element) {
+    const id = Number.parseInt(element.dataset.crmId || '', 10);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/**
+ * Shared replacement for inline event attributes. Keeping the action
+ * allowlist here lets CSP enforce script-src-attr 'none' without breaking
+ * dynamically rendered controls.
+ */
+function initDeclarativeActions() {
+    document.addEventListener('click', function(event) {
+        const element = event.target instanceof Element
+            ? event.target.closest('[data-crm-action]')
+            : null;
+        if (!element) return;
+
+        const action = element.dataset.crmAction;
+        const id = readActionId(element);
+        let handled = true;
+
+        switch (action) {
+            case 'show-new-invoice':
+                callPageAction('showNewInvoiceModal');
+                break;
+            case 'open-preview':
+                callPageAction('openUniversalPreview', element.dataset.previewUrl || '', element.dataset.previewTitle || '');
+                break;
+            case 'open-reception-language':
+                if (id !== null) callPageAction('openReceptionLangModal', id);
+                break;
+            case 'edit-invoice':
+                if (id !== null) callPageAction('editInvoice', id);
+                break;
+            case 'create-credit-note':
+                if (id !== null) callPageAction('createCreditNote', id);
+                break;
+            case 'export-pohoda':
+                if (id !== null) callPageAction('exportPohoda', id);
+                break;
+            case 'export-s3':
+                if (id !== null) callPageAction('exportS3', id);
+                break;
+            case 'delete-invoice':
+                if (id !== null) callPageAction('deleteInvoice', id);
+                break;
+            case 'toggle-customer-override':
+                callPageAction('toggleCustomerOverride');
+                break;
+            case 'load-from-order':
+                callPageAction('loadFromOrder');
+                break;
+            case 'add-invoice-item':
+                callPageAction('addInvItem');
+                break;
+            case 'remove-invoice-item':
+                element.closest('tr')?.remove();
+                callPageAction('calcTotals');
+                break;
+            case 'show-customer-orders':
+                if (id !== null) callPageAction('showCustomerOrders', id, element.dataset.customerName || '');
+                break;
+            case 'delete-customer':
+                if (id !== null) callPageAction('deleteCustomer', id);
+                break;
+            case 'delete-media':
+                if (id !== null) callPageAction('deleteMedia', id);
+                break;
+            case 'delete-order':
+                if (id !== null) callPageAction('deleteOrder', id);
+                break;
+            case 'delete-part':
+                if (id !== null) callPageAction('deletePart', id);
+                break;
+            case 'show-report-orders':
+                if (id !== null) {
+                    callPageAction(
+                        'showOrdersModal',
+                        id,
+                        element.dataset.reportType || '',
+                        element.dataset.reportTitle || ''
+                    );
+                }
+                break;
+            case 'test-technician-telegram':
+                if (id !== null) callPageAction('testTechTG', id);
+                break;
+            case 'run-backup':
+                callPageAction('runBackup');
+                break;
+            case 'check-updates':
+                callPageAction('checkForUpdates', true);
+                break;
+            case 'edit-order-part':
+                try {
+                    callPageAction('openEditPartModal', JSON.parse(element.dataset.crmItem || '{}'));
+                } catch (error) {
+                    console.error('Invalid order-item action payload.', error);
+                }
+                break;
+            case 'go-to-shipping':
+                callPageAction('goToShipping');
+                break;
+            case 'open-preview-new-tab':
+                callPageAction('openPreviewInNewTab');
+                break;
+            case 'print-preview':
+                callPageAction('printUniversalPreview');
+                break;
+            case 'print-window':
+                window.print();
+                break;
+            case 'close-window':
+                window.close();
+                break;
+            case 'navigate-back': {
+                // Prefer same-origin history when there was no safe ?return= URL.
+                // Always keep a real href (orders.php / return) so CSP and no-JS still work.
+                const explicitReturn = element.dataset.crmExplicitReturn === '1';
+                if (!explicitReturn && window.history.length > 1 && document.referrer) {
+                    try {
+                        const referrer = new URL(document.referrer);
+                        if (referrer.origin === window.location.origin) {
+                            window.history.back();
+                            break;
+                        }
+                    } catch (error) {
+                        // Fall through to the safe href navigation.
+                    }
+                }
+                handled = false;
+                break;
+            }
+            default:
+                handled = false;
+        }
+
+        if (handled) {
+            event.preventDefault();
+        }
+    });
+
+    document.addEventListener('change', function(event) {
+        const element = event.target instanceof Element
+            ? event.target.closest('[data-crm-change-action]')
+            : null;
+        if (!element) return;
+
+        if (element.dataset.crmChangeAction === 'calc-totals') {
+            callPageAction('calcTotals');
+        } else if (element.dataset.crmChangeAction === 'submit-form' && element.form) {
+            element.form.requestSubmit();
+        }
+    });
+
+    document.addEventListener('submit', function(event) {
+        const form = event.target;
+        if (
+            form instanceof HTMLFormElement &&
+            form.dataset.crmSubmitAction === 'confirm-catalog-update' &&
+            callPageAction('confirmCatalogUpdate', form) === false
+        ) {
+            event.preventDefault();
+        }
+    });
+}
+
+function isCompactSidebar() {
+    return window.matchMedia('(max-width: 991.98px)').matches;
+}
+
+function setSidebarOpen(shouldOpen, restoreFocus = false) {
     const sidebar = document.getElementById('sidebar');
     const content = document.getElementById('content');
+    const mainContent = document.getElementById('main-content');
+    const sidebarCollapse = document.getElementById('sidebarCollapse');
+    const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+    const isOpen = isCompactSidebar() && Boolean(shouldOpen);
 
-    document.body.classList.remove('sidebar-open');
+    document.body.classList.toggle('sidebar-open', isOpen);
+    document.body.classList.toggle('sidebar-drawer-mode', isCompactSidebar());
     if (sidebar) {
-        sidebar.classList.remove('active');
+        sidebar.classList.toggle('active', isOpen);
+        if (isCompactSidebar()) {
+            sidebar.setAttribute('aria-hidden', String(!isOpen));
+            sidebar.toggleAttribute('inert', !isOpen);
+        } else {
+            sidebar.removeAttribute('aria-hidden');
+            sidebar.removeAttribute('inert');
+        }
     }
     if (content) {
-        content.classList.remove('active');
+        content.classList.toggle('active', isOpen);
     }
+    // Inert only the page body — keep the topbar hamburger usable to close the drawer.
+    if (mainContent) {
+        mainContent.toggleAttribute('inert', isOpen);
+    }
+    if (sidebarCollapse) {
+        sidebarCollapse.setAttribute('aria-expanded', String(isOpen));
+        sidebarCollapse.setAttribute(
+            'aria-label',
+            isOpen ? (window.LANG_CLOSE_NAVIGATION || 'Close navigation') : (window.LANG_OPEN_NAVIGATION || 'Open navigation')
+        );
+    }
+    if (sidebarBackdrop) {
+        // Decorative backdrop is never part of the reading order; pointer interaction stays enabled in CSS.
+        sidebarBackdrop.setAttribute('aria-hidden', 'true');
+    }
+
+    if (isOpen && sidebar) {
+        const firstNavigationLink = sidebar.querySelector('a[href]');
+        if (firstNavigationLink) {
+            firstNavigationLink.focus({ preventScroll: true });
+        }
+    } else if (restoreFocus && sidebarCollapse) {
+        sidebarCollapse.focus({ preventScroll: true });
+    }
+}
+
+function closeSidebar(restoreFocus = false) {
+    setSidebarOpen(false, restoreFocus);
+}
+
+/**
+ * Phone/tablet affordances that do not change desktop layout.
+ *
+ * Do NOT inject Bootstrap's modal-dialog-scrollable / modal-fullscreen-sm-down:
+ * several CRM modals wrap header/body/footer in a <form>, and Bootstrap's
+ * scrollable/fullscreen flex rules then collapse the dialog (New Order broke).
+ * Mobile modal sizing is handled in CSS instead.
+ */
+function enhanceMobileChrome() {
+    const isCoarse = window.matchMedia('(pointer: coarse)').matches
+        || window.matchMedia('(hover: none)').matches;
+    document.documentElement.classList.toggle('input-coarse', isCoarse);
+
+    // Strip classes injected by older main.js builds if still present in markup.
+    document.querySelectorAll('.modal-dialog.modal-lg, .modal-dialog.modal-xl').forEach(function(dialog) {
+        dialog.classList.remove('modal-fullscreen-sm-down');
+        // Keep author-declared scrollable only when the dialog was designed for it.
+        if (dialog.dataset.crmKeepScrollable !== '1'
+            && dialog.querySelector(':scope > .modal-content > form > .modal-body')) {
+            dialog.classList.remove('modal-dialog-scrollable');
+        }
+    });
+}
+
+function prepareSharedAccessibility() {
+    const closeLabel = window.LANG_CLOSE || 'Close';
+
+    document.querySelectorAll('.btn-close:not([aria-label])').forEach(function(button) {
+        button.setAttribute('aria-label', closeLabel);
+    });
+
+    document.querySelectorAll('.modal').forEach(function(modal) {
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+
+        if (!modal.hasAttribute('aria-labelledby')) {
+            const title = modal.querySelector('.modal-title');
+            if (title) {
+                if (!title.id) {
+                    title.id = modal.id ? modal.id + 'Title' : 'modalTitle';
+                }
+                modal.setAttribute('aria-labelledby', title.id);
+            }
+        }
+    });
+
+    let generatedFieldId = 0;
+    document.querySelectorAll('label.form-label:not([for])').forEach(function(label) {
+        const controls = label.parentElement
+            ? Array.from(label.parentElement.querySelectorAll('input:not([type="hidden"]), select, textarea'))
+            : [];
+
+        if (controls.length !== 1) {
+            return;
+        }
+
+        const control = controls[0];
+        if (!control.id) {
+            do {
+                generatedFieldId += 1;
+                control.id = 'crm-field-' + generatedFieldId;
+            } while (document.querySelectorAll('#' + control.id).length > 1);
+        }
+        label.htmlFor = control.id;
+    });
+
+    document.querySelectorAll('a[title]:not([aria-label]), button[title]:not([aria-label])').forEach(function(control) {
+        if (control.textContent.trim() === '') {
+            control.setAttribute('aria-label', control.getAttribute('title'));
+        }
+    });
 }
 
 /**
@@ -160,8 +472,19 @@ function showConfirm(message, onConfirm, title = window.LANG_CONFIRM || 'Confirm
  */
 function openUniversalPreview(url, title = window.LANG_PREVIEW || 'Preview') {
     if (!globalPreviewModal) initGlobalModals();
-    
-    activePreviewUrl = url;
+
+    let safeUrl;
+    try {
+        safeUrl = new URL(String(url), window.location.href);
+        if (safeUrl.origin !== window.location.origin || !['http:', 'https:'].includes(safeUrl.protocol)) {
+            throw new Error('Cross-origin document previews are not allowed.');
+        }
+    } catch (error) {
+        console.error('Blocked unsafe preview URL', error);
+        return;
+    }
+
+    activePreviewUrl = safeUrl.href;
     const titleEl = document.getElementById('universalPreviewTitle');
     const contentEl = document.getElementById('universalPreviewContent');
     const printBtn = document.getElementById('previewPrintBtn');
@@ -169,7 +492,10 @@ function openUniversalPreview(url, title = window.LANG_PREVIEW || 'Preview') {
     
     if (titleEl) titleEl.innerText = title;
     if (printBtn) printBtn.disabled = true;
-    if (openTabBtn) openTabBtn.href = url;
+    if (openTabBtn) {
+        openTabBtn.href = safeUrl.href;
+        openTabBtn.rel = 'noopener noreferrer';
+    }
     
     if (contentEl) {
         contentEl.innerHTML = '';
@@ -177,12 +503,12 @@ function openUniversalPreview(url, title = window.LANG_PREVIEW || 'Preview') {
     
     if (!globalPreviewModal) {
         // Fallback if modal initialization failed
-        window.open(url, '_blank');
+        window.open(safeUrl.href, '_blank', 'noopener,noreferrer');
         return;
     }
 
     // Determine if this is a thermal/receipt document (narrow) or A4
-    const isThermal = url.includes('thermal') || url.includes('reception');
+    const isThermal = safeUrl.pathname.includes('thermal') || safeUrl.pathname.includes('reception');
     
     // Create iframe FIRST, add to DOM, THEN set src
     const iframe = document.createElement('iframe');
@@ -228,7 +554,8 @@ function openUniversalPreview(url, title = window.LANG_PREVIEW || 'Preview') {
     iframe.onerror = function() {
         const spinnerEl = document.getElementById('previewSpinner');
         if (spinnerEl) {
-            spinnerEl.innerHTML = '<div class="alert alert-warning m-3"><i class="fas fa-exclamation-triangle me-2"></i>Не удалось загрузить превью. <a href="' + url + '" target="_blank" class="alert-link">Открыть в новой вкладке</a></div>';
+            spinnerEl.innerHTML = '<div class="alert alert-warning m-3"><i class="fas fa-exclamation-triangle me-2"></i>Не удалось загрузить превью. <a target="_blank" rel="noopener noreferrer" class="alert-link">Открыть в новой вкладке</a></div>';
+            spinnerEl.querySelector('a').href = safeUrl.href;
         }
     };
     
@@ -236,7 +563,8 @@ function openUniversalPreview(url, title = window.LANG_PREVIEW || 'Preview') {
     const loadTimeout = setTimeout(function() {
         const spinnerEl = document.getElementById('previewSpinner');
         if (spinnerEl && iframe.style.display === 'none') {
-            spinnerEl.innerHTML = '<div class="alert alert-info m-3"><i class="fas fa-info-circle me-2"></i>Загрузка занимает больше времени... <a href="' + url + '" target="_blank" class="alert-link">Открыть в новой вкладке</a></div>';
+            spinnerEl.innerHTML = '<div class="alert alert-info m-3"><i class="fas fa-info-circle me-2"></i>Загрузка занимает больше времени... <a target="_blank" rel="noopener noreferrer" class="alert-link">Открыть в новой вкладке</a></div>';
+            spinnerEl.querySelector('a').href = safeUrl.href;
         }
     }, 8000);
 
@@ -249,8 +577,8 @@ function openUniversalPreview(url, title = window.LANG_PREVIEW || 'Preview') {
 
     // Now set source - iframe is already in DOM so onload will fire
     // Add parameter to prevent auto-print when inside iframe
-    const separator = url.includes('?') ? '&' : '?';
-    iframe.src = url + separator + 'embed=1';
+    safeUrl.searchParams.set('embed', '1');
+    iframe.src = safeUrl.href;
 
     globalPreviewModal.show();
 }

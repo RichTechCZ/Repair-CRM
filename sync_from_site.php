@@ -1,5 +1,7 @@
 <?php
 require_once 'includes/config.php';
+require_once 'includes/functions.php';
+require_once 'models/OrderStatusService.php';
 
 $sync_token = trim((string)(getenv('SYNC_TOKEN') ?: ''));
 if ($sync_token === '') {
@@ -12,6 +14,13 @@ error_reporting(E_ALL);
 ini_set('display_errors', php_sapi_name() === 'cli' ? '1' : '0');
 
 if (php_sapi_name() !== 'cli') {
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        http_response_code(405);
+        header('Allow: POST');
+        echo "Method not allowed\n";
+        exit;
+    }
+
     // Token must NOT travel in query string (logs, Referer, browser history).
     // Accept: X-Sync-Token header, Authorization: Bearer <token>, or POST field "token".
     $provided_token = '';
@@ -49,8 +58,13 @@ function sync_orders($data) {
         $id = intval($item['id']);
         if (!$id) continue;
         
-        $zap = $item['zap']; // d.m.Y or null
-        $amt = floatval($item['amt']);
+        $zap = $item['zap'] ?? null; // d.m.Y or null
+        $amountRaw = $item['amt'] ?? null;
+        if (!is_numeric($amountRaw) || !is_finite((float)$amountRaw) || (float)$amountRaw < 0) {
+            echo "Skipped Order #$id: invalid amount\n";
+            continue;
+        }
+        $amt = (float)$amountRaw;
         
         $shipping_date = null;
         if ($zap && $zap !== '-') {
@@ -58,50 +72,75 @@ function sync_orders($data) {
             if ($d) $shipping_date = $d->format('Y-m-d H:i:s');
         }
 
-        // Check local
-        $stmt = $pdo->prepare("SELECT final_cost, status, shipping_date FROM orders WHERE id = ?");
-        $stmt->execute([$id]);
-        $local = $stmt->fetch();
-        
-        if ($local) {
-            $needs_update = false;
-            $upd_fields = [];
-            $params = [];
-            
-            // 1. Amount
-            if (abs(floatval($local['final_cost']) - $amt) > 0.01) {
-                $upd_fields[] = "final_cost = ?";
-                $params[] = $amt;
-                $needs_update = true;
-            }
-            
-            // 2. Status & Shipping Date
-            if ($shipping_date) {
-                $issued_status = getOrderStatusStorageValue('Issued');
-                if ($local['status'] !== $issued_status) {
-                    $upd_fields[] = "status = " . $pdo->quote($issued_status);
-                    $needs_update = true;
-                }
-                // Only update shipping_date if it differs significantly
-                if (!$local['shipping_date'] || abs(strtotime($local['shipping_date']) - strtotime($shipping_date)) > 86400) {
-                    $upd_fields[] = "shipping_date = ?";
-                    $params[] = $shipping_date;
-                    $needs_update = true;
-                }
+        try {
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare('SELECT * FROM orders WHERE id = ? FOR UPDATE');
+            $stmt->execute([$id]);
+            $local = $stmt->fetch();
+            if (!$local) {
+                $pdo->rollBack();
+                continue;
             }
 
-            if ($needs_update) {
-                $params[] = $id;
-                $sql = "UPDATE orders SET " . implode(', ', $upd_fields) . " WHERE id = ?";
-                $pdo->prepare($sql)->execute($params);
-                
-                // Also update related invoice if exists
-                $stmt_inv = $pdo->prepare("UPDATE invoices SET total_amount = ?, status = 'issued' WHERE order_id = ?");
-                $stmt_inv->execute([$amt, $id]);
-                
-                $updated++;
-                echo "Updated Order #$id\n";
+            $newStatus = $shipping_date ? getOrderStatusStorageValue('Issued') : $local['status'];
+            OrderStatusService::assertIssuedRequirements(
+                canonicalOrderStatus($newStatus),
+                $amt,
+                $local['shipping_method'] ?? null,
+                true,
+                $local['order_type'] ?? null
+            );
+
+            $needsUpdate =
+                abs((float)$local['final_cost'] - $amt) > 0.01 ||
+                $local['status'] !== $newStatus ||
+                (
+                    $shipping_date &&
+                    (
+                        !$local['shipping_date'] ||
+                        abs(strtotime($local['shipping_date']) - strtotime($shipping_date)) > 86400
+                    )
+                );
+            if (!$needsUpdate) {
+                $pdo->rollBack();
+                continue;
             }
+
+            $pdo->prepare(
+                'UPDATE orders
+                 SET final_cost = ?, status = ?, shipping_date = COALESCE(?, shipping_date), updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?'
+            )->execute([$amt, $newStatus, $shipping_date, $id]);
+
+            $effects = OrderStatusService::applyInTransaction(
+                $pdo,
+                $id,
+                $local['status'],
+                $newStatus,
+                $amt
+            );
+            $pdo->commit();
+            $updated++;
+            echo "Updated Order #$id\n";
+
+            try {
+                OrderStatusService::afterCommit(
+                    $pdo,
+                    $id,
+                    $local['status'],
+                    $newStatus,
+                    $amt,
+                    $effects['invoice_to_sync']
+                );
+            } catch (Throwable $sideEffectError) {
+                error_log("sync_from_site Order #$id post-commit side effect failed: " . $sideEffectError->getMessage());
+            }
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            error_log("sync_from_site Order #$id failed: " . $e->getMessage());
+            echo "Skipped Order #$id: validation or update failed\n";
         }
     }
     return $updated;

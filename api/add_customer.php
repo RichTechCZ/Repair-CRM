@@ -1,4 +1,10 @@
 <?php
+/**
+ * Create a customer (form redirect or JSON for the inline new-order panel).
+ *
+ * JSON responses always go through api_json_exit so jQuery dataType:json
+ * never treats a successful write as a "network error" due to buffer noise.
+ */
 ob_start();
 require_once __DIR__ . '/../includes/api_bootstrap.php';
 
@@ -17,18 +23,13 @@ api_bootstrap([
     'json' => $isAjax,
     'fail' => static function (string $message, int $status) use ($isAjax): void {
         if ($isAjax) {
-            if (ob_get_length()) {
-                ob_clean();
-            }
-            header('Content-Type: application/json; charset=utf-8');
-            http_response_code($status);
-            echo json_encode(['success' => false, 'message' => $message]);
-            exit;
+            api_json_exit(['success' => false, 'message' => $message], $status);
         }
         if ($status === 401) {
             header('Location: ../login.php');
             exit;
         }
+        http_response_code($status);
         die($message);
     },
 ]);
@@ -43,37 +44,69 @@ $ico = trim((string)($_POST['ico'] ?? ''));
 $dic = trim((string)($_POST['dic'] ?? ''));
 $company_name = trim((string)($_POST['company_name'] ?? ''));
 
-if (!$first_name || !$last_name || !$phone) {
+if ($first_name === '' || $last_name === '' || $phone === '') {
     if ($isAjax) {
-        ob_clean();
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => __('fill_required_fields')]);
-    } else {
-        die(__('fill_required_fields') . " <a href='../customers.php'>" . __('back') . '</a>');
+        api_json_exit(['success' => false, 'message' => __('fill_required_fields')]);
     }
-    exit;
+    die(__('fill_required_fields') . " <a href='../customers.php'>" . __('back') . '</a>');
 }
 
 try {
-    $stmt = $pdo->prepare('INSERT INTO customers (customer_type, first_name, last_name, phone, email, address, ico, dic, company) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    $stmt->execute([$customer_type, $first_name, $last_name, $phone, $email, $address, $ico, $dic, $company_name]);
-    $id = $pdo->lastInsertId();
+    $phoneSearch = normalizePhoneForSearch($phone);
+    $hasPhoneSearch = tableColumnExists('customers', 'phone_search');
+
+    if ($hasPhoneSearch) {
+        $stmt = $pdo->prepare(
+            'INSERT INTO customers (customer_type, first_name, last_name, phone, phone_search, email, address, ico, dic, company)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        $stmt->execute([
+            $customer_type,
+            $first_name,
+            $last_name,
+            $phone,
+            $phoneSearch,
+            $email,
+            $address,
+            $ico,
+            $dic,
+            $company_name,
+        ]);
+    } else {
+        // Pre-migration production schema: write the customer without phone_search.
+        $stmt = $pdo->prepare(
+            'INSERT INTO customers (customer_type, first_name, last_name, phone, email, address, ico, dic, company)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        $stmt->execute([
+            $customer_type,
+            $first_name,
+            $last_name,
+            $phone,
+            $email,
+            $address,
+            $ico,
+            $dic,
+            $company_name,
+        ]);
+    }
+
+    $id = (int)$pdo->lastInsertId();
+    if ($id <= 0) {
+        throw new RuntimeException(__('add_client_error'));
+    }
+    grantCustomerForOrderCreation($id);
 
     if ($isAjax) {
-        ob_clean();
-        header('Content-Type: application/json');
-        echo json_encode(['success' => true, 'id' => $id]);
-    } else {
-        header('Location: ../customers.php?success=1');
+        api_json_exit(['success' => true, 'id' => $id]);
     }
-} catch (Exception $e) {
+
+    header('Location: ../customers.php?success=1');
+    exit;
+} catch (Throwable $e) {
     $safe = publicExceptionMessage($e);
     if ($isAjax) {
-        ob_clean();
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => $safe]);
-    } else {
-        die($safe . " <a href='../customers.php'>" . __('back') . '</a>');
+        api_json_exit(['success' => false, 'message' => $safe]);
     }
+    die($safe . " <a href='../customers.php'>" . __('back') . '</a>');
 }
-?>

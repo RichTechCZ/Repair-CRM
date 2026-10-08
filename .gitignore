@@ -42,3 +42,11 @@ vendor/
 # OS
 .DS_Store
 Thumbs.db
+# Local credentials, reports and tool state (never commit)
+ftp.md
+outputs/
+graphify-out/
+.playwright-cli/
+.codebase-memory/
+.claude/
+.agents/

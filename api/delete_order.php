@@ -12,17 +12,7 @@ if (!$id) {
     exit;
 }
 
-// Fetch order to check permissions
 try {
-    $stmt = $pdo->prepare("SELECT status, technician_id FROM orders WHERE id = ?");
-    $stmt->execute([$id]);
-    $order = $stmt->fetch();
-
-    if (!$order) {
-        echo json_encode(['success' => false, 'message' => __('order_not_found')]);
-        exit;
-    }
-
     // Deletion is an administrative, financially sensitive action.
     if (!hasPermission('admin_access')) {
         echo json_encode(['success' => false, 'message' => __('no_delete_permission')]);
@@ -30,6 +20,14 @@ try {
     }
 
     $pdo->beginTransaction();
+
+    $stmt = $pdo->prepare("SELECT status, technician_id FROM orders WHERE id = ? FOR UPDATE");
+    $stmt->execute([$id]);
+    $order = $stmt->fetch();
+
+    if (!$order) {
+        throw new Exception(__('order_not_found'));
+    }
 
     // Block deletion when the order still has active (non-cancelled) financial records.
     $inv_check = $pdo->prepare("SELECT COUNT(*) FROM invoices WHERE order_id = ? AND status <> 'cancelled'");
@@ -56,12 +54,6 @@ try {
     $stmt_files = $pdo->prepare("SELECT file_path FROM order_attachments WHERE order_id = ?");
     $stmt_files->execute([$id]);
     $files = $stmt_files->fetchAll();
-    foreach ($files as $f) {
-        $full_path = '../' . $f['file_path'];
-        if (file_exists($full_path)) {
-            unlink($full_path);
-        }
-    }
     $stmt_del_files = $pdo->prepare("DELETE FROM order_attachments WHERE order_id = ?");
     $stmt_del_files->execute([$id]);
 
@@ -70,6 +62,20 @@ try {
     $stmt2->execute([$id]);
 
     $pdo->commit();
+
+    // Files are removed only after the database deletion is durable, and only
+    // when their canonical path is inside the dedicated uploads directory.
+    $uploadsRoot = realpath(__DIR__ . '/../uploads');
+    if ($uploadsRoot !== false) {
+        $uploadsPrefix = rtrim($uploadsRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        foreach ($files as $file) {
+            $fullPath = realpath(__DIR__ . '/../' . ltrim((string)$file['file_path'], '/\\'));
+            if ($fullPath !== false && str_starts_with($fullPath, $uploadsPrefix) && is_file($fullPath)) {
+                @unlink($fullPath);
+            }
+        }
+    }
+
     echo json_encode(['success' => true]);
 } catch (Exception $e) {
     if ($pdo->inTransaction()) {

@@ -1,6 +1,8 @@
 <?php
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+require_once 'includes/upload_security.php';
+require_once 'models/OrderStatusService.php';
 require_once 'includes/header.php';
 
 $id = $_GET['id'] ?? $_GET['order_id'] ?? null;
@@ -28,99 +30,142 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
         $error = __('csrf_token_invalid');
     } else {
-        $customer_id = $_POST['customer_id'];
-        $technician_id = hasPermission('admin_access') ? ($_POST['technician_id'] ?? $order['technician_id']) : $order['technician_id'];
-        $device_type = $_POST['device_type'];
-        $order_type = $_POST['order_type'];
-        $device_brand = $_POST['device_brand'];
-        $device_model = $_POST['device_model'];
-        $serial_number = $_POST['serial_number'];
-        $serial_number_2 = $_POST['serial_number_2'];
-        $problem_description = $_POST['problem_description'];
-        $technician_notes = $_POST['technician_notes'];
-        $estimated_cost = $_POST['estimated_cost'];
-        $status = getOrderStatusStorageValue(canonicalOrderStatus($_POST['status']));
-
+        $storedUploadPaths = [];
         try {
-            // First get current status to see if it changed to Issued
-            $stmt_curr = $pdo->prepare("SELECT status, shipping_date FROM orders WHERE id = ?");
+            $pdo->beginTransaction();
+            $stmt_curr = $pdo->prepare('SELECT * FROM orders WHERE id = ? FOR UPDATE');
             $stmt_curr->execute([$id]);
             $current_order = $stmt_curr->fetch();
-            
-            $shipping_date_sql = "";
-            if (canonicalOrderStatus($status) === 'Issued' && !$current_order['shipping_date']) {
-                $shipping_date_sql = ", shipping_date = NOW()";
+            if (!$current_order || !currentUserCanEditOrder($id)) {
+                throw new Exception(__('no_edit_permission'));
             }
 
-            $update = $pdo->prepare("UPDATE orders SET 
-                customer_id = ?, 
+            $is_admin = hasPermission('admin_access');
+            $canonical_status = canonicalOrderStatus((string)($_POST['status'] ?? $current_order['status']));
+            if (!in_array($canonical_status, getAllStatuses(), true)) {
+                throw new InvalidArgumentException('Invalid status.');
+            }
+            $status = getOrderStatusStorageValue($canonical_status);
+            $estimated_cost_raw = $_POST['estimated_cost'] ?? $current_order['estimated_cost'];
+            if (
+                !is_numeric($estimated_cost_raw) ||
+                !is_finite((float)$estimated_cost_raw) ||
+                (float)$estimated_cost_raw < 0
+            ) {
+                throw new InvalidArgumentException(__('missing_data'));
+            }
+
+            OrderStatusService::assertCanChangeFromTerminal(
+                canonicalOrderStatus($current_order['status']),
+                $canonical_status,
+                $is_admin
+            );
+            OrderStatusService::assertIssuedRequirements(
+                $canonical_status,
+                $current_order['final_cost'] ?? null,
+                $current_order['shipping_method'] ?? null,
+                true,
+                $current_order['order_type'] ?? null
+            );
+            OrderStatusService::assertCancellationReason(
+                $canonical_status,
+                null,
+                tableColumnExists('orders', 'cancellation_reason'),
+                true,
+                $current_order['cancellation_reason'] ?? null
+            );
+
+            $customer_id = $is_admin
+                ? filter_var($_POST['customer_id'] ?? null, FILTER_VALIDATE_INT)
+                : (int)$current_order['customer_id'];
+            if (!$customer_id) {
+                throw new InvalidArgumentException(__('missing_data'));
+            }
+            $technician_id = $is_admin
+                ? (filter_var($_POST['technician_id'] ?? null, FILTER_VALIDATE_INT) ?: null)
+                : $current_order['technician_id'];
+
+            $shipping_date_sql = $canonical_status === 'Issued' && empty($current_order['shipping_date'])
+                ? ', shipping_date = CURRENT_TIMESTAMP'
+                : '';
+
+            $update = $pdo->prepare("UPDATE orders SET
+                customer_id = ?,
                 technician_id = ?,
-                device_type = ?, 
+                device_type = ?,
                 order_type = ?,
                 device_brand = ?,
-                device_model = ?, 
-                serial_number = ?, 
-                serial_number_2 = ?, 
-                problem_description = ?, 
-                technician_notes = ?, 
-                estimated_cost = ?, 
-                status = ? 
+                device_model = ?,
+                serial_number = ?,
+                serial_number_2 = ?,
+                problem_description = ?,
+                technician_notes = ?,
+                estimated_cost = ?,
+                status = ?,
+                updated_at = CURRENT_TIMESTAMP
                 $shipping_date_sql
                 WHERE id = ?");
             $update->execute([
-                $customer_id, 
+                $customer_id,
                 $technician_id,
-                $device_type, 
-                $order_type,
-                $device_brand,
-                $device_model, 
-                $serial_number, 
-                $serial_number_2,
-                $problem_description, 
-                $technician_notes, 
-                $estimated_cost, 
-                $status, 
+                trim((string)($_POST['device_type'] ?? $current_order['device_type'])),
+                trim((string)($_POST['order_type'] ?? $current_order['order_type'])),
+                trim((string)($_POST['device_brand'] ?? $current_order['device_brand'])),
+                trim((string)($_POST['device_model'] ?? $current_order['device_model'])),
+                trim((string)($_POST['serial_number'] ?? $current_order['serial_number'])),
+                trim((string)($_POST['serial_number_2'] ?? $current_order['serial_number_2'])),
+                trim((string)($_POST['problem_description'] ?? $current_order['problem_description'])),
+                trim((string)($_POST['technician_notes'] ?? $current_order['technician_notes'])),
+                (float)$estimated_cost_raw,
+                $status,
                 $id
             ]);
 
-            if (($current_order['status'] ?? '') !== $status) {
-                logOrderStatusChange($id, $current_order['status'] ?? '', $status);
-                sendOrderStatusAdminNotification($id, canonicalOrderStatus($status));
+            $effects = OrderStatusService::applyInTransaction(
+                $pdo,
+                (int)$id,
+                $current_order['status'],
+                $status,
+                $current_order['final_cost'] ?? null
+            );
+
+            if (!empty($_FILES['files']['name'][0])) {
+                $uploadResult = crmStoreOrderUploads($pdo, (int)$id, $_FILES['files']);
+                $storedUploadPaths = $uploadResult['paths'];
             }
 
-            // Handle File Uploads during Edit
-            if (isset($_FILES['files'])) {
-                $files = $_FILES['files'];
-                $upload_dir = 'uploads/';
-                if (!is_dir($upload_dir)) {
-                    mkdir($upload_dir, 0777, true);
-                }
-                $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'video/mp4', 'video/quicktime', 'video/x-msvideo'];
+            saveDeviceModelUsage(
+                trim((string)($_POST['device_brand'] ?? $current_order['device_brand'])),
+                trim((string)($_POST['device_model'] ?? $current_order['device_model']))
+            );
+            $pdo->commit();
 
-                        foreach ($files['name'] as $key => $name) {
-                            if ($files['error'][$key] == 0) {
-                                $type = $files['type'][$key];
-                                if (in_array($type, $allowed_types)) {
-                                    $ext = pathinfo($name, PATHINFO_EXTENSION);
-                                    $new_name = uniqid('order_' . $id . '_') . '.' . $ext;
-                                    $path = $upload_dir . $new_name;
-                                    
-                                    if (move_uploaded_file($files['tmp_name'][$key], $path)) {
-                                        $db_path = 'uploads/' . $new_name;
-                                        $stmt_file = $pdo->prepare("INSERT INTO order_attachments (order_id, file_path, file_type, file_name) VALUES (?, ?, ?, ?)");
-                                        $stmt_file->execute([$id, $db_path, $type, $name]);
-                                    }
-                                }
-                            }
-                        }
-            }
+            OrderStatusService::afterCommit(
+                $pdo,
+                (int)$id,
+                $current_order['status'],
+                $status,
+                $current_order['final_cost'] ?? null,
+                $effects['invoice_to_sync']
+            );
+            OrderStatusService::notifyTechnicianReassignment(
+                $pdo,
+                (int)$id,
+                $current_order['technician_id'],
+                $technician_id,
+                $current_order
+            );
 
             $success = __('order_updated_success');
-            // Refresh order data
             $stmt->execute([$id]);
             $order = $stmt->fetch();
-        } catch (Exception $e) {
-            $error = __('update_error') . $e->getMessage();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            crmRemoveStoredUploadPaths($storedUploadPaths);
+            error_log('edit_order error: ' . $e->getMessage());
+            $error = __('update_error') . ' ' . publicExceptionMessage($e);
         }
     }
 }
@@ -131,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <a href="javascript:history.back()" class="btn btn-outline-secondary btn-sm me-3">
             <i class="fas fa-arrow-left"></i> <?php echo __('back'); ?>
         </a>
-        <h2 class="mb-0"><?php echo __('edit_order_header'); ?><?php echo $order['id']; ?></h2>
+        <h1 class="mb-0"><?php echo __('edit_order_header'); ?><?php echo $order['id']; ?></h1>
     </div>
     <a href="view_order.php?id=<?php echo $order['id']; ?>" class="btn btn-outline-secondary">
         <i class="fas fa-eye me-2"></i> <?php echo __('view'); ?>
@@ -256,7 +301,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             ?>
                                 <div class="col-3 col-md-2" id="media-item-<?php echo $file['id']; ?>">
                                     <div class="card h-100 shadow-sm border position-relative">
-                                        <button type="button" class="btn btn-danger btn-sm position-absolute top-0 end-0 p-1" style="z-index: 10; font-size: 0.6rem;" onclick="deleteMedia(<?php echo $file['id']; ?>)">
+                                        <button type="button" class="btn btn-danger btn-sm position-absolute top-0 end-0 p-1" style="z-index: 10; font-size: 0.6rem;" data-crm-action="delete-media" data-crm-id="<?php echo (int)$file['id']; ?>">
                                             <i class="fas fa-times"></i>
                                         </button>
                                         <div class="ratio ratio-1x1 bg-dark bg-opacity-25">
@@ -279,14 +324,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </div>
                 <div class="col-12 mt-4 d-flex justify-content-between">
                     <button type="submit" class="btn btn-primary px-5"><?php echo __('save'); ?></button>
-                    <button type="button" class="btn btn-outline-danger" onclick="deleteOrder(<?php echo $id; ?>)"><?php echo __('delete'); ?></button>
+                    <button type="button" class="btn btn-outline-danger" data-crm-action="delete-order" data-crm-id="<?php echo (int)$id; ?>"><?php echo __('delete'); ?></button>
                 </div>
             </div>
         </form>
     </div>
 </div>
 
-<script>
+<script nonce="<?php echo e(crmCspNonce()); ?>">
 $(document).ready(function() {
     $('.select2-customer-remote').select2({
         placeholder: "<?php echo __('search_client_placeholder'); ?>",

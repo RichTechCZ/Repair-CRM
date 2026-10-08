@@ -1,63 +1,216 @@
 <?php
 /** Orders page scripts (PHP-rendered i18n). Included from orders.php */
 ?>
-<script>
-// Phone QR Popover using Google Charts API (no library needed)
+<script nonce="<?php echo e(crmCspNonce()); ?>">
+// Phone QR popover. Hover, click, and keyboard open the same QR; Call is
+// keyboard-reachable (Enter/Space focuses the call button; Escape restores focus).
 document.addEventListener('DOMContentLoaded', function() {
     const popover = document.getElementById('phoneQrPopover');
     const qrContainer = document.getElementById('qrContainer');
     const phoneLabel = document.getElementById('qrPhoneLabel');
     const callBtn = document.getElementById('qrCallBtn');
+    if (!popover || !qrContainer || !phoneLabel || !callBtn) return;
+
     let hideTimeout;
+    let activePhone = '';
+    let activeTrigger = null;
+
+    function isPopoverOpen() {
+        return popover.style.display === 'block';
+    }
+
+    function setExpanded(trigger, expanded) {
+        if (!trigger) return;
+        trigger.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    }
+
+    function hidePopover(options) {
+        const restoreFocus = options && options.restoreFocus;
+        const trigger = activeTrigger;
+        clearTimeout(hideTimeout);
+        popover.style.display = 'none';
+        popover.setAttribute('aria-hidden', 'true');
+        setExpanded(trigger, false);
+        activeTrigger = null;
+        if (restoreFocus && trigger) {
+            trigger.focus({ preventScroll: true });
+        }
+    }
+
+    function positionPopover(trigger) {
+        const rect = trigger.getBoundingClientRect();
+        const gap = 12;
+        const pad = 8;
+        const pw = popover.offsetWidth || 160;
+        const ph = popover.offsetHeight || 200;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const isNarrow = vw < 768;
+
+        // Desktop: to the right of the phone cell. Phone: below the trigger, clamped to viewport.
+        let left = isNarrow ? rect.left : (rect.right + gap);
+        let top = isNarrow ? (rect.bottom + gap) : rect.top;
+
+        if (left + pw > vw - pad) {
+            left = Math.max(pad, rect.right - pw);
+        }
+        if (top + ph > vh - pad) {
+            top = Math.max(pad, rect.top - gap - ph);
+        }
+
+        left = Math.min(Math.max(pad, left), Math.max(pad, vw - pw - pad));
+        top = Math.min(Math.max(pad, top), Math.max(pad, vh - ph - pad));
+
+        popover.style.left = left + 'px';
+        popover.style.top = top + 'px';
+    }
+
+    function renderQr(phone) {
+        if (activePhone === phone && qrContainer.querySelector('img')) return;
+
+        activePhone = phone;
+        const image = document.createElement('img');
+        image.src = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' + encodeURIComponent('tel:' + phone);
+        image.width = 120;
+        image.height = 120;
+        image.alt = 'QR: ' + phone;
+        image.decoding = 'async';
+        image.referrerPolicy = 'no-referrer';
+        image.addEventListener('error', function() {
+            if (activePhone !== phone) return;
+            qrContainer.replaceChildren();
+            const message = document.createElement('span');
+            message.className = 'small text-white-75';
+            message.textContent = '<?php echo e(__('error')); ?>';
+            qrContainer.appendChild(message);
+        });
+        qrContainer.replaceChildren(image);
+    }
+
+    function focusIsInsidePopoverOrTrigger() {
+        const active = document.activeElement;
+        if (!active) return false;
+        if (popover.contains(active)) return true;
+        if (activeTrigger && (active === activeTrigger || activeTrigger.contains(active))) return true;
+        return false;
+    }
+
+    function scheduleHide() {
+        clearTimeout(hideTimeout);
+        hideTimeout = setTimeout(function() {
+            if (focusIsInsidePopoverOrTrigger()) return;
+            hidePopover();
+        }, 180);
+    }
+
+    function showPopover(trigger, options) {
+        clearTimeout(hideTimeout);
+        const phone = trigger.dataset.phone || '';
+        if (!phone) return;
+
+        if (activeTrigger && activeTrigger !== trigger) {
+            setExpanded(activeTrigger, false);
+        }
+
+        renderQr(phone);
+        phoneLabel.textContent = phone;
+        callBtn.href = 'tel:' + phone;
+        activeTrigger = trigger;
+        setExpanded(trigger, true);
+        popover.style.display = 'block';
+        popover.setAttribute('aria-hidden', 'false');
+        positionPopover(trigger);
+
+        if (options && options.focusCall) {
+            callBtn.focus({ preventScroll: true });
+        }
+    }
+
+    const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 
     document.querySelectorAll('.phone-qr-trigger').forEach(el => {
-        el.addEventListener('click', function(e) {
-            clearTimeout(hideTimeout);
-            const phone = this.dataset.phone;
-            if (!phone) return;
+        el.setAttribute('aria-controls', 'phoneQrPopover');
+        el.setAttribute('aria-haspopup', 'dialog');
+        if (!el.hasAttribute('aria-expanded')) {
+            el.setAttribute('aria-expanded', 'false');
+        }
 
-            // Generate QR code using QR Server API
-            const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' + encodeURIComponent('tel:' + phone);
-            qrContainer.innerHTML = '<img src="' + qrUrl + '" alt="QR" style="width:120px;height:120px;">';
-
-            phoneLabel.textContent = phone;
-            callBtn.href = 'tel:' + phone;
-
-            // Position popover (fixed positioning)
-            const rect = e.target.getBoundingClientRect();
-            popover.style.left = (rect.right + 15) + 'px';
-            popover.style.top = (rect.bottom + 5) + 'px';
-            popover.style.display = 'block';
+        // Tap toggles on touch devices; second tap closes. Outside-tap also closes (below).
+        el.addEventListener('click', function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (activeTrigger === this && isPopoverOpen()) {
+                hidePopover();
+                return;
+            }
+            showPopover(this);
         });
 
-        el.addEventListener('mouseenter', function(e) {
-            // Optional: auto-show on hover for desktop
-            const phone = this.dataset.phone;
-            if (!phone) return;
-            const rect = e.target.getBoundingClientRect();
-            popover.style.left = (rect.right + 15) + 'px';
-            popover.style.top = (rect.bottom + 5) + 'px';
-            popover.style.display = 'block';
-        });
+        // Hover-only open/close on real desktop pointers — avoids sticky open states on iOS/Android.
+        if (canHover) {
+            el.addEventListener('mouseenter', function() {
+                showPopover(this);
+            });
+            el.addEventListener('mouseleave', scheduleHide);
+        }
 
-        el.addEventListener('mouseleave', function() {
-            hideTimeout = setTimeout(() => {
-                popover.style.display = 'none';
-            }, 300);
+        el.addEventListener('focusin', function() {
+            showPopover(this);
+        });
+        el.addEventListener('focusout', scheduleHide);
+        el.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                showPopover(this, { focusCall: true });
+            }
         });
     });
 
-    popover.addEventListener('mouseenter', function() {
+    if (canHover) {
+        popover.addEventListener('mouseenter', function() {
+            clearTimeout(hideTimeout);
+        });
+        popover.addEventListener('mouseleave', scheduleHide);
+    }
+    popover.addEventListener('focusin', function() {
         clearTimeout(hideTimeout);
     });
-
-    popover.addEventListener('mouseleave', function() {
-        popover.style.display = 'none';
+    popover.addEventListener('focusout', scheduleHide);
+    // Keep clicks inside the popover from bubbling to the document closer.
+    popover.addEventListener('click', function(event) {
+        event.stopPropagation();
     });
+
+    document.addEventListener('click', function(event) {
+        if (!isPopoverOpen()) return;
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (popover.contains(target)) return;
+        if (activeTrigger && (activeTrigger === target || activeTrigger.contains(target))) return;
+        hidePopover();
+    });
+
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape' && isPopoverOpen()) {
+            event.preventDefault();
+            hidePopover({ restoreFocus: true });
+        }
+    });
+    window.addEventListener('resize', function() {
+        if (activeTrigger && isPopoverOpen()) {
+            positionPopover(activeTrigger);
+        }
+    });
+    window.addEventListener('scroll', function() {
+        if (activeTrigger && isPopoverOpen()) {
+            // Hide on scroll — avoids orphaned fixed popovers while the table moves under a finger.
+            hidePopover();
+        }
+    }, { passive: true, capture: true });
 });
 </script>
 
-<script>
+<script nonce="<?php echo e(crmCspNonce()); ?>">
 // ── IMEI Duplicate Badge Handler ──────────────────────────────────────────
 (function () {
     var imeiModal = null;
@@ -106,23 +259,40 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        var statusColors = {
-            'Accepted': 'primary',
-            'Diagnostics': 'info',
-            'Approval': 'warning',
-            'In Repair': 'warning',
-            'Ready': 'success',
-            'Issued': 'secondary',
-            'Issued Without Repair': 'dark',
-            'Repair Cancelled': 'danger',
-            'New': 'primary',
-            'Pending Approval': 'warning',
-            'In Progress': 'warning',
-            'Waiting for Parts': 'warning',
-            'Completed': 'success',
-            'Collected': 'secondary',
-            'Cancelled': 'danger'
+        var statusVariants = {
+            'Accepted': 'accepted',
+            'Diagnostics': 'diagnostics',
+            'Approval': 'approval',
+            'In Repair': 'repair',
+            'Ready': 'ready',
+            'Issued': 'issued',
+            'Issued Without Repair': 'closed',
+            'Repair Cancelled': 'cancelled',
+            'New': 'accepted',
+            'Pending Approval': 'approval',
+            'In Progress': 'repair',
+            'Waiting for Parts': 'waiting',
+            'Completed': 'ready',
+            'Collected': 'issued',
+            'Cancelled': 'cancelled'
         };
+        var statusLabels = <?php echo json_encode([
+            'Accepted' => getStatusLabel('Accepted'),
+            'Diagnostics' => getStatusLabel('Diagnostics'),
+            'Approval' => getStatusLabel('Approval'),
+            'In Repair' => getStatusLabel('In Repair'),
+            'Ready' => getStatusLabel('Ready'),
+            'Issued' => getStatusLabel('Issued'),
+            'Issued Without Repair' => getStatusLabel('Issued Without Repair'),
+            'Repair Cancelled' => getStatusLabel('Repair Cancelled'),
+            'New' => getStatusLabel('New'),
+            'Pending Approval' => getStatusLabel('Pending Approval'),
+            'In Progress' => getStatusLabel('In Progress'),
+            'Waiting for Parts' => getStatusLabel('Waiting for Parts'),
+            'Completed' => getStatusLabel('Completed'),
+            'Collected' => getStatusLabel('Collected'),
+            'Cancelled' => getStatusLabel('Cancelled'),
+        ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 
         var html = '<div class="table-responsive">'
             + '<table class="table table-hover align-middle mb-0">'
@@ -132,7 +302,8 @@ document.addEventListener('DOMContentLoaded', function() {
             + '</tr></thead><tbody>';
 
         orders.forEach(function (o) {
-            var color = statusColors[o.status] || 'secondary';
+            var variant = statusVariants[o.status] || 'closed';
+            var statusText = statusLabels[o.status] || o.status;
 
             var sns = [];
             if (o.serial_number)   sns.push({ val: o.serial_number,   match: o.serial_number === sn });
@@ -152,7 +323,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 + '<td>' + escHtml(o.first_name + ' ' + o.last_name) + '</td>'
                 + '<td class="small">' + escHtml(o.device_brand + ' ' + o.device_model) + '</td>'
                 + '<td class="small">' + snHtml + '</td>'
-                + '<td><span class="badge bg-' + color + ' text-white">' + escHtml(o.status) + '</span></td>'
+                + '<td><span class="status-pill status-pill--' + variant + '">' + escHtml(statusText) + '</span></td>'
                 + '</tr>';
         });
 
@@ -172,7 +343,7 @@ document.addEventListener('DOMContentLoaded', function() {
 }());
 </script>
 
-<script>
+<script nonce="<?php echo e(crmCspNonce()); ?>">
 // FIX #3: escHTML prevents XSS when injecting data into innerHTML/template literals
 function escHTML(str) {
     if (str === null || str === undefined) return '';
@@ -181,11 +352,30 @@ function escHTML(str) {
     return d.innerHTML;
 }
 
+/** Bootstrap 5 has no jQuery modal plugin — always use the native API. */
+function showBsModal(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el || typeof bootstrap === 'undefined') return null;
+    const instance = bootstrap.Modal.getOrCreateInstance(el);
+    instance.show();
+    return instance;
+}
+
+function hideBsModal(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el || typeof bootstrap === 'undefined') return;
+    const instance = bootstrap.Modal.getInstance(el) || bootstrap.Modal.getOrCreateInstance(el);
+    instance.hide();
+}
+
+window.showBsModal = showBsModal;
+window.hideBsModal = hideBsModal;
+
 $(document).ready(function() {
     $('.order-modal-trigger').on('click', function() {
         const id = $(this).data('id');
         $('#quickOrderTitle').text('<?php echo __('order_header'); ?> #' + id);
-        $('#quickOrderModal').modal('show');
+        showBsModal('quickOrderModal');
         $('#quickOrderBody').html('<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></div>');
         $('#fullViewBtn').attr('href', 'view_order.php?id=' + id);
         $('#saveQuickOrderBtn').prop('disabled', true);
@@ -203,7 +393,7 @@ $(document).ready(function() {
                         mediaHtml += `
                             <div class="col-3 col-md-2" id="media-item-${file.id}">
                                 <div class="card h-100 shadow-sm border position-relative">
-                                    <button type="button" class="btn btn-danger btn-sm position-absolute top-0 end-0 p-1 line-height-1" style="z-index: 10; font-size: 0.6rem;" onclick="deleteMedia(${file.id})">
+                                    <button type="button" class="btn btn-danger btn-sm position-absolute top-0 end-0 p-1 line-height-1" style="z-index: 10; font-size: 0.6rem;" data-crm-action="delete-media" data-crm-id="${file.id}">
                                         <i class="fas fa-times"></i>
                                     </button>
                                     <div class="ratio ratio-1x1 bg-dark bg-opacity-25 border-secondary">
@@ -314,10 +504,16 @@ $(document).ready(function() {
                 
                 // Update print links in modal footer
                 const footerLinks = $('#quickOrderModal .modal-footer .dropdown-item');
-                footerLinks.eq(0).attr('onclick', `openUniversalPreview('print_order.php?id=${o.id}', '<?php echo __('order_header'); ?> #${o.id}')`);
-                footerLinks.eq(1).attr('onclick', `openReceptionLangModal(${o.id})`);
-                footerLinks.eq(2).attr('onclick', `openUniversalPreview('print_workshop.php?id=${o.id}', '<?php echo __('work_order'); ?> #${o.id}')`);
-                footerLinks.eq(3).attr('onclick', `openUniversalPreview('print_thermal.php?id=${o.id}', '<?php echo __('thermal_receipt'); ?> #${o.id}')`);
+                footerLinks.eq(0)
+                    .attr('data-preview-url', `print_order.php?id=${o.id}`)
+                    .attr('data-preview-title', `<?php echo e(__('order_header')); ?> #${o.id}`);
+                footerLinks.eq(1).attr('data-crm-id', o.id);
+                footerLinks.eq(2)
+                    .attr('data-preview-url', `print_workshop.php?id=${o.id}`)
+                    .attr('data-preview-title', `<?php echo e(__('work_order')); ?> #${o.id}`);
+                footerLinks.eq(3)
+                    .attr('data-preview-url', `print_thermal.php?id=${o.id}`)
+                    .attr('data-preview-title', `<?php echo e(__('thermal_receipt')); ?> #${o.id}`);
 
                 $('#saveQuickOrderBtn').prop('disabled', false);
                 
@@ -347,11 +543,7 @@ $(document).ready(function() {
             cache: false,
             success: function(res) {
                 if (res.success) {
-                    // Hide modal first
-                    const modalEl = document.getElementById('quickOrderModal');
-                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
-                    if (modalInstance) modalInstance.hide();
-                    
+                    hideBsModal('quickOrderModal');
                     // Small delay before reload to ensure UI state is clean
                     setTimeout(() => {
                         window.location.reload();
@@ -495,7 +687,11 @@ $(document).ready(function() {
                     $sel.append(opt).trigger('change');
                 }
                 // Fill device type
-                if (o.device_type) $('select[name="device_type"]').val(o.device_type);
+                if (o.device_type) {
+                    $('input[name="device_type"]').filter(function() {
+                        return this.value === o.device_type;
+                    }).prop('checked', true);
+                }
                 // Fill order type
                 if (o.order_type) $('select[name="order_type"]').val(o.order_type);
                 // Fill brand
@@ -518,7 +714,7 @@ $(document).ready(function() {
                 if (o.serial_number_2) $('input[name="serial_number_2"]').val(o.serial_number_2.toUpperCase());
                 // Appearance, PIN
                 if (o.appearance) $('input[name="appearance"]').val(o.appearance);
-                if (o.pin_code) $('input[name="pin_code"]').val(o.pin_code);
+                // PIN intentionally not copied from API payloads.
                 // Problem
                 if (o.problem_description) $('textarea[name="problem_description"]').val(o.problem_description);
                 if (o.technician_notes) $('textarea[name="technician_notes"]').val(o.technician_notes);
@@ -585,7 +781,9 @@ $(document).ready(function() {
         });
     }
 
-    $('.quick-status-btn').on('click', function() {
+    // Delegate: status items live inside Bootstrap dropdowns and must not rely on inline handlers.
+    $(document).on('click', '.quick-status-btn', function(e) {
+        e.preventDefault();
         const id = $(this).data('id');
         const status = $(this).data('status');
         if (!id || !status) return;
@@ -593,7 +791,10 @@ $(document).ready(function() {
         btn.prop('disabled', true);
 
         if (status === 'Repair Cancelled') {
+            // Re-enable if the operator dismisses the confirm dialog without accepting.
+            btn.prop('disabled', false);
             return showConfirm('<?php echo __('delete_confirm'); ?>', function() {
+                btn.prop('disabled', true);
                 const reason = window.prompt('<?php echo __('cancellation_reason'); ?>');
                 if (reason === null || !reason.trim()) {
                     btn.prop('disabled', false);
@@ -661,18 +862,20 @@ $(document).ready(function() {
     // Inline New Customer: AJAX submit and bind to New Order select
     $('#saveNewCustomerBtn').on('click', function() {
         const $panel = $('#newCustomerInlineForm');
-        const firstName = $('#inline_first_name').val().trim();
-        const lastName = $('#inline_last_name').val().trim();
-        const phone = $('#inline_phone').val().trim();
-        
+        const firstName = String($('#inline_first_name').val() || '').trim();
+        const lastName = String($('#inline_last_name').val() || '').trim();
+        const phone = String($('#inline_phone').val() || '').trim();
+
         if (!firstName || !lastName || !phone) {
             showAlert('<?php echo __('fill_required_fields'); ?>');
             return;
         }
-        
+
         const btn = $(this);
         btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> <?php echo __('saving'); ?>...');
 
+        const csrfFromForm = String($panel.closest('form').find('input[name="csrf_token"]').val() || '');
+        const csrfFromMeta = String($('meta[name="csrf-token"]').attr('content') || '');
         const formData = {
             first_name: firstName,
             last_name: lastName,
@@ -684,7 +887,7 @@ $(document).ready(function() {
             company_name: $('#inline_ares_name').val() || '',
             dic: $('#inline_ares_dic').val() || '',
             response_format: 'json',
-            csrf_token: $panel.closest('form').find('input[name="csrf_token"]').val()
+            csrf_token: csrfFromForm || csrfFromMeta
         };
 
         $.ajax({
@@ -717,10 +920,23 @@ $(document).ready(function() {
                     bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false }).hide();
                 }
             } else {
-                showAlert(res.message || '<?php echo __('add_client_error'); ?>');
+                showAlert((res && res.message) || '<?php echo __('add_client_error'); ?>');
             }
         }).fail(function(xhr) {
-            const message = xhr.responseJSON && xhr.responseJSON.message;
+            let message = xhr.responseJSON && xhr.responseJSON.message;
+            if (!message && xhr.responseText) {
+                try {
+                    const parsed = JSON.parse(xhr.responseText);
+                    if (parsed && parsed.message) {
+                        message = parsed.message;
+                    }
+                } catch (e) { /* non-JSON body (empty 500, HTML login, etc.) */ }
+            }
+            if (!message && xhr.status === 403) {
+                message = '<?php echo __('csrf_token_invalid'); ?>';
+            } else if (!message && xhr.status === 401) {
+                message = '<?php echo __('unauthorized'); ?>';
+            }
             showAlert(message || '<?php echo __('network_error_client'); ?>');
         }).always(function() {
             btn.prop('disabled', false).html('<i class="fas fa-check me-2"></i><?php echo __('save'); ?>');
@@ -728,9 +944,12 @@ $(document).ready(function() {
     });
 
     // Accounting Modal Logic
-    $('.accounting-btn').on('click', function() {
+    $(document).on('click', '.accounting-btn', function(e) {
+        e.preventDefault();
         const orderId = $(this).data('id');
-        $('#invoiceModal').modal('show');
+        if (!orderId) return;
+
+        showBsModal('invoiceModal');
         $('#invoiceForm').trigger('reset');
         $('#invoiceOrderId').val(orderId);
         $('#dynamic-items-container').html(`
@@ -766,8 +985,11 @@ $(document).ready(function() {
                 $('.item-price').val(res.total_amount);
             } else {
                 showAlert(res.message);
-                $('#invoiceModal').modal('hide');
+                hideBsModal('invoiceModal');
             }
+        }).fail(function() {
+            showAlert('<?php echo __('error'); ?>');
+            hideBsModal('invoiceModal');
         });
     });
 
@@ -807,8 +1029,19 @@ $(document).ready(function() {
     }
 
     $('#saveInvoiceBtn').on('click', function() {
-        const formData = $('#invoiceForm').serialize();
-        $(this).prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+        const form = document.getElementById('invoiceForm');
+        if (form && typeof form.reportValidity === 'function' && !form.reportValidity()) {
+            return;
+        }
+
+        let formData = $('#invoiceForm').serialize();
+        const csrf = $('meta[name="csrf-token"]').attr('content') || '';
+        if (csrf && formData.indexOf('csrf_token=') === -1) {
+            formData += (formData ? '&' : '') + 'csrf_token=' + encodeURIComponent(csrf);
+        }
+
+        const saveBtn = $(this);
+        saveBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
         
         $.post('api/create_invoice.php', formData, function(res) {
             if (res.success) {
@@ -816,25 +1049,33 @@ $(document).ready(function() {
                 location.reload();
             } else {
                 showAlert(res.message);
-                $('#saveInvoiceBtn').prop('disabled', false).text('<?php echo __('create_invoice'); ?>');
+                saveBtn.prop('disabled', false).text('<?php echo __('create_invoice'); ?>');
             }
+        }, 'json').fail(function(xhr) {
+            const message = (xhr.responseJSON && xhr.responseJSON.message) || '<?php echo __('error'); ?>';
+            showAlert(message);
+            saveBtn.prop('disabled', false).text('<?php echo __('create_invoice'); ?>');
         });
     });
 });
 </script>
 
-<script>
+<script nonce="<?php echo e(crmCspNonce()); ?>">
 function openReceptionLangModal(orderId) {
     $('#langOrderId').val(orderId);
-    $('#receptionLangModal').modal('show');
+    showBsModal('receptionLangModal');
 }
 
+// Keep page-action dispatcher (data-crm-action) able to call this handler.
+window.openReceptionLangModal = openReceptionLangModal;
+
 $(document).ready(function() {
-    $('.btn-lang-select').on('click', function() {
+    $(document).on('click', '.btn-lang-select', function() {
         const lang = $(this).data('lang');
         const orderId = $('#langOrderId').val();
-        $('#receptionLangModal').modal('hide');
+        hideBsModal('receptionLangModal');
         
+        // Client reception act only; workshop uses print_workshop.php (work order).
         const url = `print_reception_thermal.php?id=${orderId}&lang=${lang}`;
         openUniversalPreview(url, `<?php echo __('reception_act_thermal'); ?> #${orderId}`);
     });

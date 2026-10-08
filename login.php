@@ -5,44 +5,145 @@ require_once 'includes/functions.php';
 $error = false;
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
-function checkLoginAttempts($pdo) {
-    if (!isset($pdo)) return true; // if DB down, allow (handled below)
-    try {
-        $ip = $_SERVER['REMOTE_ADDR'];
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM login_attempts WHERE ip = ? AND created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
-        $stmt->execute([$ip]);
-        return $stmt->fetchColumn() < 5;
-    } catch (Exception $e) {
+const CRM_LOGIN_MAX_ATTEMPTS = 5;
+const CRM_LOGIN_WINDOW_MINUTES = 5;
+
+/**
+ * A fresh production deploy can reach the login page before the CLI-only
+ * schema migration has provisioned login_attempts. Treat only that known
+ * schema gap as a temporary degraded mode; other store failures remain
+ * fail-closed so the throttle cannot silently disappear on a live schema.
+ */
+function loginRateLimitSchemaUnavailable(Throwable $error): bool
+{
+    $code = (string)$error->getCode();
+    if (in_array($code, ['42S02', '42S22'], true)) {
         return true;
+    }
+
+    $message = strtolower($error->getMessage());
+    return strpos($message, 'login_attempts') !== false
+        && (
+            strpos($message, "doesn't exist") !== false
+            || strpos($message, 'does not exist') !== false
+            || strpos($message, 'unknown column') !== false
+        );
+}
+
+/**
+ * @return array{allowed:bool,retry_after:int}
+ */
+function getLoginRateLimitState($pdo, string $username) {
+    $allowed = ['allowed' => true, 'retry_after' => 0];
+    if (!($pdo instanceof PDO)) {
+        return $allowed;
+    }
+
+    $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    $usernameHash = hash('sha256', mb_strtolower(trim($username), 'UTF-8'));
+    $windowMinutes = CRM_LOGIN_WINDOW_MINUTES;
+    $maxAttempts = CRM_LOGIN_MAX_ATTEMPTS;
+
+    try {
+        // Drop expired rows so the sliding window stays accurate.
+        $pdo->exec(
+            'DELETE FROM login_attempts
+             WHERE created_at < DATE_SUB(NOW(), INTERVAL ' . (int)$windowMinutes . ' MINUTE)'
+        );
+
+        // Prefer scope with username_hash (migration 003). Fall back to IP-only
+        // if the column is missing so a partial schema cannot lock everyone out.
+        try {
+            $stmt = $pdo->prepare(
+                'SELECT COUNT(*) AS cnt,
+                        TIMESTAMPDIFF(SECOND, MIN(created_at), NOW()) AS age_seconds
+                 FROM login_attempts
+                 WHERE (ip = ? OR username_hash = ?)
+                   AND created_at > DATE_SUB(NOW(), INTERVAL ' . (int)$windowMinutes . ' MINUTE)'
+            );
+            $stmt->execute([$ip, $usernameHash]);
+        } catch (Throwable $schemaError) {
+            error_log('Login rate-limit scoped check failed, using IP-only: ' . $schemaError->getMessage());
+            $stmt = $pdo->prepare(
+                'SELECT COUNT(*) AS cnt,
+                        TIMESTAMPDIFF(SECOND, MIN(created_at), NOW()) AS age_seconds
+                 FROM login_attempts
+                 WHERE ip = ?
+                   AND created_at > DATE_SUB(NOW(), INTERVAL ' . (int)$windowMinutes . ' MINUTE)'
+            );
+            $stmt->execute([$ip]);
+        }
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $count = (int)($row['cnt'] ?? 0);
+        if ($count < $maxAttempts) {
+            return $allowed;
+        }
+
+        $ageSeconds = max(0, (int)($row['age_seconds'] ?? 0));
+        $windowSeconds = $windowMinutes * 60;
+        $retryAfter = max(1, $windowSeconds - $ageSeconds);
+
+        return ['allowed' => false, 'retry_after' => $retryAfter];
+    } catch (Throwable $e) {
+        if (loginRateLimitSchemaUnavailable($e)) {
+            // The migration runner is CLI-only. Keep login usable until the
+            // deployment can provision the store, while leaving an audit trail.
+            error_log('Login rate-limit schema unavailable; allowing login until CLI migration: ' . $e->getMessage());
+            return $allowed;
+        }
+
+        // Fail closed for runtime/permission/database failures on a provisioned store.
+        error_log('Login rate-limit check failed (blocking attempt): ' . $e->getMessage());
+        return false;
     }
 }
 
-function recordLoginAttempt($pdo, $success) {
-    if (!isset($pdo)) return;
+function recordLoginAttempt($pdo, string $username, $success): void {
+    if (!($pdo instanceof PDO)) {
+        return;
+    }
     try {
-        $ip = $_SERVER['REMOTE_ADDR'];
+        $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+        $usernameHash = hash('sha256', mb_strtolower(trim($username), 'UTF-8'));
         if ($success) {
-            $pdo->prepare("DELETE FROM login_attempts WHERE ip = ?")->execute([$ip]);
-        } else {
-            $pdo->prepare("INSERT INTO login_attempts (ip, created_at) VALUES (?, NOW())")->execute([$ip]);
+            try {
+                $pdo->prepare('DELETE FROM login_attempts WHERE ip = ? OR username_hash = ?')
+                    ->execute([$ip, $usernameHash]);
+            } catch (Throwable $schemaError) {
+                $pdo->prepare('DELETE FROM login_attempts WHERE ip = ?')->execute([$ip]);
+            }
+            return;
         }
-    } catch (Exception $e) {
-        // login_attempts table may not exist yet — ignore
+
+        try {
+            $pdo->prepare('INSERT INTO login_attempts (ip, username_hash, created_at) VALUES (?, ?, NOW())')
+                ->execute([$ip, $usernameHash]);
+        } catch (Throwable $schemaError) {
+            $pdo->prepare('INSERT INTO login_attempts (ip, created_at) VALUES (?, NOW())')
+                ->execute([$ip]);
+        }
+    } catch (Throwable $e) {
+        error_log('Login rate-limit record failed: ' . $e->getMessage());
     }
 }
 
 // ── Login form handler ────────────────────────────────────────────────────────
 if (isset($_POST['login'])) {
+    $username = trim($_POST['username'] ?? '');
+    $password = $_POST['password'] ?? '';
+
     // CSRF validation
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
         $error = __('csrf_invalid');
-    } elseif (!checkLoginAttempts($pdo ?? null)) {
-        $error = __('login_rate_limit');
     } else {
-        $username = trim($_POST['username'] ?? '');
-        $password = $_POST['password'] ?? '';
-
-        if (isset($pdo)) {
+        $rateLimit = getLoginRateLimitState($pdo ?? null, $username);
+        if ($rateLimit === false || (is_array($rateLimit) && empty($rateLimit['allowed']))) {
+            $retryAfter = is_array($rateLimit) ? (int)($rateLimit['retry_after'] ?? (CRM_LOGIN_WINDOW_MINUTES * 60)) : (CRM_LOGIN_WINDOW_MINUTES * 60);
+            $error = sprintf(__('login_rate_limit'), $retryAfter);
+        } elseif (!isset($pdo)) {
+            $error = __('login_error_db');
+        } else {
             // 1. Try Admin (users table)
             try {
                 $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
@@ -55,13 +156,15 @@ if (isset($_POST['login'])) {
 
             if ($user && password_verify($password, $user['password'])) {
                 session_regenerate_id(true); // Session Fixation protection
+                $_SESSION['session_created_at'] = time();
+                $_SESSION['last_activity_at'] = time();
                 $_SESSION['user_id']   = $user['id'];
                 $_SESSION['username']  = $user['username'];
                 $_SESSION['role']      = 'admin';
                 $_SESSION['full_name'] = $user['full_name'];
                 $_SESSION['tech_id']   = null;
                 invalidatePermissionsCache();
-                recordLoginAttempt($pdo, true);
+                recordLoginAttempt($pdo, $username, true);
                 header("Location: index.php");
                 exit;
             }
@@ -78,24 +181,27 @@ if (isset($_POST['login'])) {
 
             if ($tech && password_verify($password, $tech['password'])) {
                 session_regenerate_id(true);
+                $_SESSION['session_created_at'] = time();
+                $_SESSION['last_activity_at'] = time();
                 $_SESSION['user_id']   = 't' . $tech['id'];
                 $_SESSION['username']  = $tech['username'];
-                $_SESSION['role']      = (($tech['role'] ?? 'engineer') === 'admin') ? 'admin' : 'technician';
+                // Administrative sessions are created exclusively from the
+                // users table. Staff capabilities come from the explicit
+                // technician permission allowlist.
+                $_SESSION['role']      = 'technician';
                 $_SESSION['full_name'] = $tech['name'];
                 $_SESSION['tech_id']   = $tech['id'];
-                if ($_SESSION['role'] === 'technician') {
-                    $_SESSION['internal_role'] = $tech['role'] ?? 'engineer';
-                }
+                $_SESSION['internal_role'] = in_array(($tech['role'] ?? ''), ['engineer', 'manager'], true)
+                    ? $tech['role']
+                    : 'manager';
                 invalidatePermissionsCache();
-                recordLoginAttempt($pdo, true);
+                recordLoginAttempt($pdo, $username, true);
                 header("Location: index.php");
                 exit;
             }
 
-            recordLoginAttempt($pdo, false);
+            recordLoginAttempt($pdo, $username, false);
             $error = __('login_error_auth');
-        } else {
-            $error = __('login_error_db');
         }
     }
 }
@@ -114,8 +220,9 @@ if (isset($_SESSION['user_id'])) {
     <title><?php echo e(__('login_title')); ?> - Repair CRM</title>
     <!-- Preconnect for performance -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+          crossorigin="anonymous">
     <link rel="stylesheet" href="assets/css/style.css">
     <link rel="stylesheet" href="assets/css/login.css">
 </head>

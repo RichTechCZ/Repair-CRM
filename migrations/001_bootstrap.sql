@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS `technicians` (
     `created_at`     TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `last_seen`      TIMESTAMP     NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `username` (`username`)
+    UNIQUE KEY `username` (`username`),
+    FULLTEXT KEY `ft_technicians_search` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -97,10 +98,13 @@ CREATE TABLE IF NOT EXISTS `customers` (
     `dic`           VARCHAR(20)   DEFAULT NULL,
     `company`       VARCHAR(100)  DEFAULT NULL,
     `phone`         VARCHAR(20)   DEFAULT NULL,
+    `phone_search`  VARCHAR(32)   DEFAULT NULL,
     `email`         VARCHAR(100)  DEFAULT NULL,
     `address`       TEXT          DEFAULT NULL,
     `created_at`    TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`)
+    PRIMARY KEY (`id`),
+    KEY `idx_customers_phone_search` (`phone_search`),
+    FULLTEXT KEY `ft_customers_search` (`first_name`, `last_name`, `company`, `phone`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -116,7 +120,7 @@ CREATE TABLE IF NOT EXISTS `orders` (
     `serial_number`        VARCHAR(100)  DEFAULT NULL,
     `serial_number_2`      VARCHAR(100)  DEFAULT NULL,
     `appearance`           TEXT          DEFAULT NULL,
-    `pin_code`             VARCHAR(50)   DEFAULT NULL,
+    `pin_code`             TEXT          DEFAULT NULL,
     `priority`             ENUM('Normal','High') DEFAULT 'Normal',
     `problem_description`  TEXT          DEFAULT NULL,
     `technician_notes`     TEXT          DEFAULT NULL,
@@ -136,6 +140,8 @@ CREATE TABLE IF NOT EXISTS `orders` (
     KEY `technician_id` (`technician_id`),
     KEY `status` (`status`),
     KEY `created_at` (`created_at`),
+    KEY `idx_orders_status_technician` (`status`, `technician_id`),
+    FULLTEXT KEY `ft_orders_search` (`device_brand`, `device_model`, `problem_description`, `serial_number`, `serial_number_2`),
     CONSTRAINT `orders_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`),
     CONSTRAINT `orders_ibfk_2` FOREIGN KEY (`technician_id`) REFERENCES `technicians` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -252,6 +258,7 @@ CREATE TABLE IF NOT EXISTS `invoices` (
     KEY `order_id` (`order_id`),
     KEY `customer_id` (`customer_id`),
     KEY `fk_invoice_parent` (`parent_id`),
+    KEY `idx_invoices_reporting` (`order_id`, `invoice_type`, `status`, `payment_date`, `id`),
     CONSTRAINT `fk_invoice_parent` FOREIGN KEY (`parent_id`) REFERENCES `invoices` (`id`) ON DELETE SET NULL,
     CONSTRAINT `invoices_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE SET NULL,
     CONSTRAINT `invoices_ibfk_2` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`)
