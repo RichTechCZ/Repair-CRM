@@ -42,6 +42,7 @@ Root AGENTS.md -> includes/AGENTS.md
 - Assignable keys: only `getAvailablePermissions()` / `getAllowedPermissionKeys()`.
 - `setTechPermissions()` whitelist-filters input and calls `purgeObsoleteTechPermissions()`.
 - **Never reintroduce** `view_all_orders` / `edit_orders` — they contradicted isolation and were never enforced.
+- `footer.php` renders the phone bottom tab bar (`.ios-tabbar`: Dashboard, Orders, New order, one contextual section, Menu) from `$nav_items`, so it respects permissions; `header.php` carries the iOS web-app meta tags and loads `mobile.css`/`mobile.js`. The «New order» tab opens `#newOrderModal` or navigates to `orders.php?new_order=1`.
 
 ## Work Guidance
 - New shared auth/scope/error helpers go here, not duplicated in endpoints.

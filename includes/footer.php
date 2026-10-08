@@ -64,7 +64,48 @@
     </div>
 </div>
 
-
+<?php
+if (!empty($nav_items) && isset($_SESSION['user_id'])):
+    $tab_visible = [];
+    foreach ($nav_items as $tab_item) {
+        if (!empty($tab_item['visible'])) {
+            $tab_visible[basename($tab_item['href'])] = $tab_item;
+        }
+    }
+    $tab_icons = [
+        'customers.php' => 'fa-user-group',
+        'inventory.php' => 'fa-boxes-stacked',
+        'reports.php' => 'fa-chart-line',
+        'statistics.php' => 'fa-chart-pie',
+    ];
+    $tab_last = null;
+    foreach (['customers.php', 'inventory.php', 'reports.php', 'statistics.php'] as $tab_candidate) {
+        if (isset($tab_visible[$tab_candidate])) {
+            $tab_last = $tab_visible[$tab_candidate];
+            break;
+        }
+    }
+    $tab_current = basename($_SERVER['PHP_SELF']);
+    $tab_last_file = $tab_last ? basename($tab_last['href']) : 'settings.php';
+?>
+<nav class="ios-tabbar d-lg-none" aria-label="<?php echo e(__('menu')); ?>">
+    <a class="ios-tabbar__item<?php echo $tab_current === 'index.php' ? ' is-active' : ''; ?>" href="index.php"<?php echo $tab_current === 'index.php' ? ' aria-current="page"' : ''; ?>>
+        <i class="fas fa-house" aria-hidden="true"></i><span><?php echo e(__('dashboard')); ?></span>
+    </a>
+    <a class="ios-tabbar__item<?php echo $tab_current === 'orders.php' ? ' is-active' : ''; ?>" href="orders.php"<?php echo $tab_current === 'orders.php' ? ' aria-current="page"' : ''; ?>>
+        <i class="fas fa-screwdriver-wrench" aria-hidden="true"></i><span><?php echo e(__('orders')); ?></span>
+    </a>
+    <a class="ios-tabbar__item ios-tabbar__item--primary" href="orders.php?new_order=1" data-tab-action="new-order" aria-label="<?php echo e(__('new_order')); ?>">
+        <i class="fas fa-plus" aria-hidden="true"></i><span><?php echo e(__('new_order')); ?></span>
+    </a>
+    <a class="ios-tabbar__item<?php echo $tab_current === $tab_last_file ? ' is-active' : ''; ?>" href="<?php echo e($tab_last ? $tab_last['href'] : 'settings.php'); ?>"<?php echo $tab_current === $tab_last_file ? ' aria-current="page"' : ''; ?>>
+        <i class="fas <?php echo e($tab_icons[$tab_last_file] ?? 'fa-gear'); ?>" aria-hidden="true"></i><span><?php echo e($tab_last ? $tab_last['label'] : __('settings')); ?></span>
+    </a>
+    <button type="button" class="ios-tabbar__item" data-tab-action="more" aria-controls="sidebar" aria-expanded="false">
+        <i class="fas fa-bars" aria-hidden="true"></i><span><?php echo e(__('menu')); ?></span>
+    </button>
+</nav>
+<?php endif; ?>
 
 </body>
 </html>

@@ -11,6 +11,7 @@ Root AGENTS.md -> assets/AGENTS.md
 - `js/print.js` — CSP-safe print/close and opt-in auto-print behavior for standalone documents.
 - `js/main.js` — shared UI (sidebar, global modals, Select2/Fancybox init) and the explicit `data-crm-action` delegation allowlist used instead of inline event attributes. Accounting row actions (`edit-invoice`, `create-credit-note`, `export-pohoda`, `export-s3`, `delete-invoice`, `open-preview`, …) require this allowlist on the server; page scripts must expose handlers on `window.*`. Universal document preview accepts same-origin HTTP(S) URLs only and never interpolates a URL into HTML.
 - Page-heavy interactive logic still lives in `includes/partials/*_scripts.php` (PHP i18n); prefer extracting pure JS here with a small `window.*Config` bag when touching those pages again.
+- `css/mobile.css` + `js/mobile.js` — the iPhone/phone layer (loaded below 992px): safe-area insets, 44pt targets, 16px inputs (no iOS zoom), bottom-sheet modals, and the bottom tab bar behaviour. Keep it additive to `style.css`, reuse its tokens, and add no glass/neon effects.
 
 ## Work Guidance
 - New shared browser helpers go in `js/main.js` or a dedicated `js/*.js` file linked from `includes/header.php` / the page.

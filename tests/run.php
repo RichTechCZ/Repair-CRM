@@ -849,5 +849,23 @@ $_SESSION['_perms_at'] = time();
 assertTrue(hasPermission('admin_access'), 'fresh cached permissions must be honoured');
 unset($_SESSION['_perms'], $_SESSION['_perms_at'], $_SESSION['role'], $_SESSION['tech_id']);
 
+$footerSource = (string)file_get_contents(__DIR__ . '/../includes/footer.php');
+$headerSource = (string)file_get_contents(__DIR__ . '/../includes/header.php');
+assertTrue(
+    strpos($footerSource, 'class="ios-tabbar d-lg-none"') !== false
+        && strpos($headerSource, 'assets/css/mobile.css') !== false
+        && strpos($headerSource, 'viewport-fit=cover') !== false,
+    'phone layout must ship the tab bar, mobile stylesheet and safe-area viewport'
+);
+$mobileCss = (string)file_get_contents(__DIR__ . '/../assets/css/mobile.css');
+assertTrue(
+    strpos($mobileCss, 'env(safe-area-inset-bottom') !== false && strpos($mobileCss, 'font-size: 16px') !== false,
+    'phone stylesheet must respect safe areas and keep 16px inputs (no iOS zoom)'
+);
+assertTrue(
+    strpos((string)file_get_contents(__DIR__ . '/../assets/js/mobile.js'), 'nonce') === false,
+    'mobile.js must stay a plain external script (CSP nonce is applied by the template)'
+);
+
 echo "OK: security and financial regression checks passed\n";
 

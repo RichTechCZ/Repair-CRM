@@ -1,0 +1,306 @@
+/*
+ * iPhone / phone layer (loaded only below 992px).
+ * Follows Apple HIG: safe areas, 44pt targets, bottom tab bar, sheets, 16px inputs.
+ * Reuses the existing design tokens from style.css; no new colours or effects.
+ */
+:root {
+    --tabbar-height: 3.25rem;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --tap-min: 2.75rem; /* 44pt */
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    scroll-behavior: auto;
+}
+
+body {
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+    padding-bottom: calc(var(--tabbar-height) + var(--safe-bottom));
+}
+
+a, button, .btn, input, select, textarea, label, summary, [role="button"] {
+    touch-action: manipulation;
+}
+
+/* ── Safe areas & shell ─────────────────────────────────────────────── */
+.app-content {
+    padding-left: max(0.75rem, var(--safe-left));
+    padding-right: max(0.75rem, var(--safe-right));
+}
+
+.topbar-shell {
+    position: sticky;
+    top: 0;
+    z-index: 1030;
+    padding-top: var(--safe-top);
+    margin-bottom: 0.75rem !important;
+    background: var(--bg-canvas);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.topbar-user-chip__copy,
+.app-footer {
+    display: none !important;
+}
+
+.topbar-menu {
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+}
+
+/* ── Touch targets (44pt) and 16px fields (prevents iOS zoom-on-focus) ─ */
+.btn,
+.form-control,
+.form-select,
+.dropdown-item,
+.nav-link,
+.page-link,
+.select2-container .select2-selection--single {
+    min-height: var(--tap-min);
+}
+
+.btn-sm {
+    min-height: var(--tap-min);
+    padding-left: 0.9rem;
+    padding-right: 0.9rem;
+}
+
+input.form-control,
+select.form-select,
+textarea.form-control,
+.select2-container .select2-selection__rendered,
+.select2-search__field,
+.search-shell input {
+    font-size: 16px !important;
+}
+
+.form-check-input {
+    width: 1.35rem;
+    height: 1.35rem;
+}
+
+.form-switch .form-check-input {
+    width: 2.6rem;
+}
+
+.select2-container .select2-selection--single .select2-selection__rendered {
+    line-height: calc(var(--tap-min) - 2px);
+}
+
+.select2-container .select2-selection--single .select2-selection__arrow {
+    height: var(--tap-min);
+}
+
+/* ── Drawer (opened by the tab bar «More») ─────────────────────────── */
+.app-sidebar {
+    width: min(86vw, 20rem);
+    padding-top: calc(var(--safe-top) + 0.75rem);
+    padding-bottom: calc(var(--safe-bottom) + 0.75rem);
+    padding-left: max(0.75rem, var(--safe-left));
+    overscroll-behavior: contain;
+}
+
+.app-sidebar .nav-link {
+    min-height: 3rem;
+    font-size: 1.0625rem;
+}
+
+/* ── Bottom tab bar ─────────────────────────────────────────────────── */
+.ios-tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1040;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    align-items: stretch;
+    height: calc(var(--tabbar-height) + var(--safe-bottom));
+    padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
+    background: var(--bg-elevated);
+    border-top: 1px solid var(--border-strong);
+}
+
+.ios-tabbar__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    min-width: 0;
+    padding: 0.25rem 0.1rem;
+    border: 0;
+    background: transparent;
+    color: var(--text-tertiary);
+    font-size: 0.625rem; /* 10pt tab label */
+    font-weight: 600;
+    line-height: 1.1;
+    text-decoration: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.ios-tabbar__item i {
+    font-size: 1.2rem;
+    line-height: 1.5rem;
+}
+
+.ios-tabbar__item span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ios-tabbar__item.is-active,
+.ios-tabbar__item[aria-expanded="true"] {
+    color: var(--accent-strong);
+}
+
+.ios-tabbar__item:active {
+    opacity: 0.6;
+}
+
+.ios-tabbar__item--primary {
+    color: var(--text-secondary);
+}
+
+.ios-tabbar__item--primary i {
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    margin-top: -0.35rem;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #15181d;
+    font-size: 1.05rem;
+}
+
+body.sidebar-open .ios-tabbar,
+body.keyboard-open .ios-tabbar,
+body.modal-open .ios-tabbar {
+    display: none;
+}
+
+body.keyboard-open,
+body.modal-open {
+    padding-bottom: 0;
+}
+
+/* ── Modals become bottom sheets / full-height forms ───────────────── */
+@media (max-width: 575.98px) {
+    .modal-dialog {
+        margin: 0;
+        max-width: none;
+        min-height: 100%;
+        align-items: flex-end;
+    }
+
+    .modal-content {
+        width: 100%;
+        max-height: calc(100dvh - var(--safe-top) - 0.5rem);
+        border-radius: 1rem 1rem 0 0 !important;
+        border-left: 0;
+        border-right: 0;
+        border-bottom: 0;
+    }
+
+    .modal-body {
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+
+    .modal-header {
+        position: relative;
+        padding-top: 1.1rem;
+    }
+
+    /* grabber handle, purely visual */
+    .modal-header::before {
+        content: "";
+        position: absolute;
+        top: 0.4rem;
+        left: 50%;
+        width: 2.25rem;
+        height: 0.25rem;
+        margin-left: -1.125rem;
+        border-radius: 999px;
+        background: var(--border-strong);
+    }
+
+    .modal-footer {
+        position: sticky;
+        bottom: 0;
+        padding-bottom: calc(0.75rem + var(--safe-bottom));
+        background: var(--bg-panel);
+        gap: 0.5rem;
+    }
+
+    .modal-footer > .btn {
+        flex: 1 1 0;
+    }
+
+    /* Full-height form for the long «new order» entry screen */
+    #newOrderModal .modal-content {
+        height: 100dvh;
+        max-height: 100dvh;
+        border-radius: 0 !important;
+    }
+
+    #newOrderModal .modal-header {
+        padding-top: calc(0.6rem + var(--safe-top));
+    }
+}
+
+/* ── Cards from tables: larger, tappable, calmer ───────────────────── */
+@media (max-width: 767.98px) {
+    .table-mobile-cards tbody tr {
+        margin: 0.5rem 0;
+        padding: 0.8rem 0.85rem;
+    }
+
+    .table-mobile-cards tbody td a,
+    .table-mobile-cards tbody td .btn,
+    .table-mobile-cards tbody td .dropdown-toggle {
+        min-height: var(--tap-min);
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .table-mobile-cards tbody td a[href^="tel:"] {
+        font-weight: 600;
+        color: var(--accent-strong);
+    }
+
+    .page-actions .btn,
+    .workspace-overview__actions .btn {
+        flex: 1 1 auto;
+    }
+
+    .status-pill {
+        font-size: 0.8125rem;
+        padding: 0.3rem 0.65rem;
+    }
+}
+
+/* Toasts must clear the tab bar */
+.toast-container {
+    bottom: calc(var(--tabbar-height) + var(--safe-bottom)) !important;
+    padding-left: max(0.75rem, var(--safe-left)) !important;
+    padding-right: max(0.75rem, var(--safe-right)) !important;
+}
+
+/* Horizontal scrollers keep momentum on iOS */
+.table-responsive,
+.table-scroll-touch {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+}

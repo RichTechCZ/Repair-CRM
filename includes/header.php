@@ -79,6 +79,12 @@ $page_title = $page_titles[$current_page] ?? $company_name;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0f1115">
+    <meta name="color-scheme" content="dark">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="<?php echo e($company_name); ?>">
     <title><?php echo e($company_name); ?> - <?php echo e($page_title); ?></title>
     <!-- CSRF token for AJAX requests -->
     <meta name="csrf-token" content="<?php echo e($_SESSION['csrf_token'] ?? ''); ?>">
@@ -105,6 +111,9 @@ $page_title = $page_titles[$current_page] ?? $company_name;
     <!-- Custom CSS -->
     <link rel="stylesheet" href="assets/css/style.css?v=<?php echo (int)filemtime(__DIR__ . '/../assets/css/style.css'); ?>">
 
+    <!-- Phone / iPhone layer -->
+    <link rel="stylesheet" href="assets/css/mobile.css?v=<?php echo (int)@filemtime(__DIR__ . '/../assets/css/mobile.css'); ?>" media="(max-width: 991.98px)">
+
     <!-- JQuery -->
     <script nonce="<?php echo e(crmCspNonce()); ?>" src="https://code.jquery.com/jquery-3.6.0.min.js"
             integrity="sha384-vtXRMe3mGCbOeY7l30aIg8H9p3GdeSe4IFlP6G8JMa7o7lXvnz3GFKzPxzJdPfGK"
@@ -115,6 +124,7 @@ $page_title = $page_titles[$current_page] ?? $company_name;
             crossorigin="anonymous"></script>
     <!-- Custom JS (filemtime busts browser cache after deploys) -->
     <script nonce="<?php echo e(crmCspNonce()); ?>" src="assets/js/main.js?v=<?php echo (int)@filemtime(__DIR__ . '/../assets/js/main.js'); ?>"></script>
+    <script nonce="<?php echo e(crmCspNonce()); ?>" src="assets/js/mobile.js?v=<?php echo (int)@filemtime(__DIR__ . '/../assets/js/mobile.js'); ?>" defer></script>
     <!-- Select2 JS -->
     <script nonce="<?php echo e(crmCspNonce()); ?>" src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"
             integrity="sha384-d3UHjPdzJkZuk5H3qKYMLRyWLAQBJbby2yr2Q58hXXtAGF8RSNO9jpLDlKKPv5v3"
