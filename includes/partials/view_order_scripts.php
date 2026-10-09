@@ -1,6 +1,11 @@
 <?php
 /** View-order page scripts (PHP-rendered i18n). Included from view_order.php */
 if (!isset($order)) { return; }
+// Translations and tokens are emitted as JSON string literals so quotes or
+// markup in a translation can never break out of the surrounding script.
+$crmJs = static function ($value): string {
+    return (string)json_encode((string)$value, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
+};
 ?>
 <script<?php
     $crmScriptNonce = function_exists('crmCspNonce') ? (string)crmCspNonce() : '';
@@ -57,19 +62,20 @@ $(document).ready(function() {
     $('#expressInvoiceForm').on('submit', function(e) {
         e.preventDefault();
         const btn = $(this).find('button[type="submit"]');
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> <?php echo __("saving"); ?>...');
+        const invoiceBtnHtml = btn.html();
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> ').append(document.createTextNode(<?php echo $crmJs(__('saving')); ?> + '...'));
         
         $.post('api/create_express_invoice.php', $(this).serialize(), function(res) {
             if(res.success) {
                 // Just reload to show updated invoice status and amounts
                 location.reload();
             } else {
-                btn.prop('disabled', false).html('<i class="fas fa-plus me-2"></i><?php echo __("create_invoice"); ?>');
-                showAlert('<?php echo __("error"); ?>: ' + res.message);
+                btn.prop('disabled', false).html(invoiceBtnHtml);
+                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + res.message);
             }
         }).fail(function(xhr) {
-            btn.prop('disabled', false).html('<i class="fas fa-plus me-2"></i><?php echo __("create_invoice"); ?>');
-            const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : '<?php echo __("error"); ?>';
+            btn.prop('disabled', false).html(invoiceBtnHtml);
+            const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : <?php echo $crmJs(__('error')); ?>;
             showAlert(msg);
         });
     });
@@ -90,12 +96,12 @@ $(document).ready(function() {
         }
 
         if (status === 'Issued' && !isSelfPickup && !isReclamation && (isNaN(finalCost) || finalCost <= 0)) {
-            showAlert('<?php echo __('required_final_cost_for_issue'); ?>');
+            showAlert(<?php echo $crmJs(__('required_final_cost_for_issue')); ?>);
             return false;
         }
 
         if ((status === 'Issued Without Repair' || status === 'Repair Cancelled') && !cancellationReason.trim()) {
-            showAlert('<?php echo __('cancellation_reason'); ?>');
+            showAlert(<?php echo $crmJs(__('cancellation_reason')); ?>);
             return false;
         }
 
@@ -111,14 +117,13 @@ $(document).ready(function() {
     $('#statusForm select[name="status"]').on('change', syncStatusConditionalFields);
     syncStatusConditionalFields();
     
-    // ... existing scripts ...
     $('#editOrderDatesForm').on('submit', function(e) {
         e.preventDefault();
         $.post('api/update_order_dates.php', $(this).serialize(), function(res) {
             if(res.success) {
                 location.reload();
             } else {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
+                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + res.message);
             }
         });
     });
@@ -135,25 +140,15 @@ $(document).ready(function() {
             if(res.success) {
                 location.reload();
             } else {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
+                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + res.message);
             }
         });
     });
 
-    // Initialize Fancybox 5
-    if (typeof Fancybox !== 'undefined') {
-        Fancybox.bind("[data-fancybox]", {
-            dragToClose: false,
-            Image: {
-                zoom: true,
-            },
-        });
-    }
-
     // Select2 is optional: a missing/broken plugin must not kill mode toggle or form submit.
     if (typeof $.fn.select2 === 'function') {
         $('.select2-customer').select2({
-            placeholder: "<?php echo __('search_client_placeholder'); ?>",
+            placeholder: <?php echo $crmJs(__('search_client_placeholder')); ?>,
             allowClear: true,
             width: '100%'
         });
@@ -192,11 +187,22 @@ $(document).ready(function() {
     $addPartForm.find('input[name="mode"]').on('change', syncAddPartMode);
 
     if (typeof $.fn.select2 === 'function' && $inventorySelect.length) {
+        const partAsText = item => $('<span>').text(item.text || '');
         $inventorySelect.select2({
             dropdownParent: $addPartModal,
-            placeholder: "<?php echo __('search_part_placeholder'); ?>",
+            placeholder: <?php echo $crmJs(__('search_part_placeholder')); ?>,
             allowClear: true,
-            width: '100%'
+            width: '100%',
+            minimumInputLength: 0,
+            ajax: {
+                url: 'api/search_inventory.php',
+                dataType: 'json',
+                delay: 250,
+                data: params => ({ q: params.term || '', page: params.page || 1 }),
+                processResults: data => ({ results: data.results || [], pagination: { more: !!(data.pagination && data.pagination.more) } })
+            },
+            templateResult: item => item.loading ? item.text : partAsText(item),
+            templateSelection: partAsText
         });
     }
 
@@ -217,11 +223,11 @@ $(document).ready(function() {
         $.post('api/update_shipping.php', $(this).serialize(), function(res) {
             if(res.success) {
                 if (!isSelfPickup) {
-                    showAlert('<?php echo __('shipping_updated'); ?>');
+                    showAlert(<?php echo $crmJs(__('shipping_updated')); ?>);
                 }
                 location.reload();
             } else {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
+                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + res.message);
             }
         });
     });
@@ -243,14 +249,14 @@ $(document).ready(function() {
         const qty = parseInt($addPartForm.find('input[name="quantity"]').val(), 10);
 
         if (!Number.isFinite(qty) || qty < 1) {
-            showAlert('<?php echo __('missing_data'); ?>');
+            showAlert(<?php echo $crmJs(__('missing_data')); ?>);
             $addPartForm.find('input[name="quantity"]').trigger('focus');
             return;
         }
 
         if (!isManual) {
             if (!$inventorySelect.val()) {
-                showAlert('<?php echo __('select_part_from_warehouse'); ?>');
+                showAlert(<?php echo $crmJs(__('select_part_from_warehouse')); ?>);
                 if (typeof $.fn.select2 === 'function' && $inventorySelect.data('select2')) {
                     $inventorySelect.select2('open');
                 } else {
@@ -264,7 +270,7 @@ $(document).ready(function() {
             const priceRaw = $manualPartFields.find('input[name="price"]').val();
             const price = parseFloat(priceRaw);
             if (!partName || !source || priceRaw === '' || !Number.isFinite(price) || price < 0) {
-                showAlert('<?php echo __('missing_data'); ?>');
+                showAlert(<?php echo $crmJs(__('missing_data')); ?>);
                 return;
             }
         }
@@ -284,14 +290,14 @@ $(document).ready(function() {
                     return;
                 }
                 $btn.prop('disabled', false).html(oldHtml);
-                showAlert('<?php echo __('error'); ?>: ' + ((res && res.message) ? res.message : '<?php echo __('error'); ?>'));
+                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + ((res && res.message) ? res.message : <?php echo $crmJs(__('error')); ?>));
             },
             error: function(xhr) {
                 $btn.prop('disabled', false).html(oldHtml);
                 const message = (xhr.responseJSON && xhr.responseJSON.message)
                     ? xhr.responseJSON.message
-                    : '<?php echo __('network_error'); ?>';
-                showAlert('<?php echo __('error'); ?>: ' + message);
+                    : <?php echo $crmJs(__('network_error')); ?>;
+                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + message);
             }
         });
     });
@@ -313,14 +319,14 @@ $(document).ready(function() {
                     return;
                 }
                 $btn.prop('disabled', false).html(oldHtml);
-                showAlert('<?php echo __('error'); ?>: ' + ((res && res.message) ? res.message : '<?php echo __('error'); ?>'));
+                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + ((res && res.message) ? res.message : <?php echo $crmJs(__('error')); ?>));
             },
             error: function(xhr) {
                 $btn.prop('disabled', false).html(oldHtml);
                 const message = (xhr.responseJSON && xhr.responseJSON.message)
                     ? xhr.responseJSON.message
-                    : '<?php echo __('network_error'); ?>';
-                showAlert('<?php echo __('error'); ?>: ' + message);
+                    : <?php echo $crmJs(__('network_error')); ?>;
+                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + message);
             }
         });
     });
@@ -340,18 +346,18 @@ $(document).ready(function() {
             success: function(res) {
                 $('#uploadProgress').addClass('d-none');
                 if (res && res.success) {
-                    showAlert('<?php echo __('files_uploaded'); ?>' + res.count);
+                    showAlert(<?php echo $crmJs(__('files_uploaded')); ?> + res.count);
                     location.reload();
                 } else {
-                    const message = (res && res.message) ? res.message : '<?php echo __('upload_error'); ?>';
-                    showAlert('<?php echo __('error'); ?>: ' + message);
+                    const message = (res && res.message) ? res.message : <?php echo $crmJs(__('upload_error')); ?>;
+                    showAlert(<?php echo $crmJs(__('error') . ': '); ?> + message);
                 }
             },
             error: function(xhr) {
                 $('#uploadProgress').addClass('d-none');
                 const message = xhr.responseJSON && xhr.responseJSON.message
                     ? xhr.responseJSON.message
-                    : '<?php echo __('upload_error'); ?>';
+                    : <?php echo $crmJs(__('upload_error')); ?>;
                 showAlert(message);
             }
         });
@@ -362,7 +368,7 @@ $(document).ready(function() {
         e.preventDefault();
         const btn = $(this).find('button[type="submit"]');
         const oldHtml = btn.html();
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> <?php echo __('saving'); ?>...');
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> ').append(document.createTextNode(<?php echo $crmJs(__('saving')); ?> + '...'));
 
         const parseApiPayload = function(text) {
             if (!text) {
@@ -399,11 +405,11 @@ $(document).ready(function() {
                 }
                 btn.prop('disabled', false).html(oldHtml);
                 if (res && res.message) {
-                    showAlert('<?php echo __('error'); ?>: ' + res.message);
+                    showAlert(<?php echo $crmJs(__('error') . ': '); ?> + res.message);
                     return;
                 }
                 const snippet = (text || '').toString().replace(/\s+/g, ' ').slice(0, 180);
-                showAlert('<?php echo __('error'); ?>: <?php echo __('network_error'); ?>'
+                showAlert(<?php echo $crmJs(__('error') . ': ' . __('network_error')); ?>
                     + (xhr && xhr.status ? ' [' + xhr.status + ']' : '')
                     + (snippet ? ' — ' + snippet : ''));
             },
@@ -416,7 +422,7 @@ $(document).ready(function() {
                     return;
                 }
                 const snippet = text.toString().replace(/\s+/g, ' ').slice(0, 180);
-                showAlert('<?php echo __('network_error'); ?>'
+                showAlert(<?php echo $crmJs(__('network_error')); ?>
                     + (xhr && xhr.status ? ' [' + xhr.status + ']' : '')
                     + (snippet ? ' — ' + snippet : ''));
             }
@@ -426,7 +432,7 @@ $(document).ready(function() {
     // Initialize Select2 in modal
     $('.select2-modal-customer').select2({
         dropdownParent: $('#editOrderFullModal'),
-        placeholder: "<?php echo __('search_client_placeholder'); ?>",
+        placeholder: <?php echo $crmJs(__('search_client_placeholder')); ?>,
         minimumInputLength: 0,
         ajax: {
             url: 'api/search_customers.php',
@@ -451,15 +457,15 @@ $(document).ready(function() {
 });
 
 function deletePart(id) {
-    showConfirm('<?php echo __('confirm_delete_part'); ?>', function() {
-        $.post('api/delete_order_item.php', {id: id, csrf_token: '<?php echo $_SESSION['csrf_token'] ?? ''; ?>'}, function(res) {
+    showConfirm(<?php echo $crmJs(__('confirm_delete_part')); ?>, function() {
+        $.post('api/delete_order_item.php', {id: id, csrf_token: <?php echo $crmJs($_SESSION['csrf_token'] ?? ''); ?>}, function(res) {
             if (res.success) {
                 location.reload();
             } else {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
+                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + res.message);
             }
         });
-    });
+    }, undefined, 'danger');
 }
 
 function openEditPartModal(item) {
@@ -468,17 +474,16 @@ function openEditPartModal(item) {
     $('#edit_item_quantity').val(item.quantity);
     $('#edit_item_price').val(item.price);
     
-    var editModal = new bootstrap.Modal(document.getElementById('editPartModal'));
-    editModal.show();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('editPartModal')).show();
 }
 
 function testTechTG(id) {
     if (!id) return;
-    $.post('api/test_tech_tg.php', {id: id, csrf_token: '<?php echo $_SESSION['csrf_token'] ?? ''; ?>'}, function(res) {
+    $.post('api/test_tech_tg.php', {id: id, csrf_token: <?php echo $crmJs($_SESSION['csrf_token'] ?? ''); ?>}, function(res) {
         if (res.success) {
-            showAlert('<?php echo __('test_msg_sent'); ?>');
+            showAlert(<?php echo $crmJs(__('test_msg_sent')); ?>);
         } else {
-            showAlert('<?php echo __('error'); ?>: ' + res.message);
+            showAlert(<?php echo $crmJs(__('error') . ': '); ?> + res.message);
         }
     });
 }
@@ -487,7 +492,7 @@ function deleteMedia(id) {
     const mediaNode = $('#media-item-' + id);
     const requestData = {
         id: id,
-        csrf_token: '<?php echo $_SESSION['csrf_token'] ?? ''; ?>'
+        csrf_token: <?php echo $crmJs($_SESSION['csrf_token'] ?? ''); ?>
     };
 
     const performDelete = function() {
@@ -502,9 +507,9 @@ function deleteMedia(id) {
                         $(this).remove();
                     });
                 } else {
-                    const message = (res && res.message) ? res.message : '<?php echo __('error'); ?>';
+                    const message = (res && res.message) ? res.message : <?php echo $crmJs(__('error')); ?>;
                     if (typeof showAlert === 'function') {
-                        showAlert('<?php echo __('error'); ?>: ' + message);
+                        showAlert(<?php echo $crmJs(__('error') . ': '); ?> + message);
                     } else {
                         alert('Error: ' + message);
                     }
@@ -513,9 +518,9 @@ function deleteMedia(id) {
             error: function(xhr) {
                 const message = xhr.responseJSON && xhr.responseJSON.message
                     ? xhr.responseJSON.message
-                    : '<?php echo __('error'); ?>';
+                    : <?php echo $crmJs(__('error')); ?>;
                 if (typeof showAlert === 'function') {
-                    showAlert('<?php echo __('error'); ?>: ' + message);
+                    showAlert(<?php echo $crmJs(__('error') . ': '); ?> + message);
                 } else {
                     alert('Error: ' + message);
                 }
@@ -524,14 +529,14 @@ function deleteMedia(id) {
     };
 
     if (typeof showConfirm !== 'function') {
-        if (confirm('<?php echo __('confirm_delete_file'); ?>')) {
+        if (confirm(<?php echo $crmJs(__('confirm_delete_file')); ?>)) {
             performDelete();
         }
         return;
     }
-    showConfirm('<?php echo __('confirm_delete_file'); ?>', function() {
+    showConfirm(<?php echo $crmJs(__('confirm_delete_file')); ?>, function() {
         performDelete();
-    });
+    }, undefined, 'danger');
 }
 
 // Show animated modal when shipping method is required for Issued status
@@ -553,14 +558,14 @@ function showStatusConfirmModal(form) {
     const modal = $('#statusConfirmModal');
     const status = form.find('select[name="status"]').val();
     const statusLabels = {
-        'Accepted': '<?php echo getStatusLabel("Accepted"); ?>',
-        'Diagnostics': '<?php echo getStatusLabel("Diagnostics"); ?>',
-        'Approval': '<?php echo getStatusLabel("Approval"); ?>',
-        'In Repair': '<?php echo getStatusLabel("In Repair"); ?>',
-        'Ready': '<?php echo getStatusLabel("Ready"); ?>',
-        'Issued': '<?php echo getStatusLabel("Issued"); ?>',
-        'Issued Without Repair': '<?php echo getStatusLabel("Issued Without Repair"); ?>',
-        'Repair Cancelled': '<?php echo getStatusLabel("Repair Cancelled"); ?>'
+        'Accepted': <?php echo $crmJs(getStatusLabel('Accepted')); ?>,
+        'Diagnostics': <?php echo $crmJs(getStatusLabel('Diagnostics')); ?>,
+        'Approval': <?php echo $crmJs(getStatusLabel('Approval')); ?>,
+        'In Repair': <?php echo $crmJs(getStatusLabel('In Repair')); ?>,
+        'Ready': <?php echo $crmJs(getStatusLabel('Ready')); ?>,
+        'Issued': <?php echo $crmJs(getStatusLabel('Issued')); ?>,
+        'Issued Without Repair': <?php echo $crmJs(getStatusLabel('Issued Without Repair')); ?>,
+        'Repair Cancelled': <?php echo $crmJs(getStatusLabel('Repair Cancelled')); ?>
     };
     
     $('#confirmStatusText').text(statusLabels[status] || status);
@@ -577,7 +582,7 @@ function showStatusConfirmModal(form) {
     // Handle confirm button
     $('#confirmStatusBtn').off('click').on('click', function() {
         const btn = $(this);
-        const confirmLabel = '<?php echo __("confirm"); ?>';
+        const confirmLabel = <?php echo $crmJs(__('confirm')); ?>;
         const restoreBtn = function() {
             btn.prop('disabled', false).html(confirmLabel);
         };
@@ -610,20 +615,20 @@ function showStatusConfirmModal(form) {
 
                 restoreBtn();
                 if (res && res.message) {
-                    showAlert('<?php echo __('error'); ?>: ' + res.message);
+                    showAlert(<?php echo $crmJs(__('error') . ': '); ?> + res.message);
                 } else if (typeof raw === 'string' && raw.trim() !== '') {
-                    showAlert('<?php echo __('error'); ?>: ' + raw.trim());
+                    showAlert(<?php echo $crmJs(__('error') . ': '); ?> + raw.trim());
                 } else {
-                    showAlert('<?php echo __('error'); ?>');
+                    showAlert(<?php echo $crmJs(__('error')); ?>);
                 }
             }).fail(function(xhr) {
                 restoreBtn();
                 const text = (xhr && xhr.responseText) ? xhr.responseText : '';
-                showAlert('<?php echo __('error'); ?>' + (text ? ': ' + text : ''));
+                showAlert(<?php echo $crmJs(__('error')); ?> + (text ? ': ' + text : ''));
             });
         } catch (err) {
             restoreBtn();
-            showAlert('<?php echo __('error'); ?>');
+            showAlert(<?php echo $crmJs(__('error')); ?>);
         }
     });
 }
@@ -649,15 +654,15 @@ function goToShipping() {
 }
 
 function deleteOrder(id) {
-    showConfirm('<?php echo __('confirm_delete_order_full'); ?>', function() {
-        $.post('api/delete_order.php', {id: id, csrf_token: '<?php echo $_SESSION['csrf_token'] ?? ''; ?>'}, function(res) {
+    showConfirm(<?php echo $crmJs(__('confirm_delete_order_full')); ?>, function() {
+        $.post('api/delete_order.php', {id: id, csrf_token: <?php echo $crmJs($_SESSION['csrf_token'] ?? ''); ?>}, function(res) {
             if (res.success) {
-                showAlert('<?php echo __('order_deleted'); ?>');
+                showAlert(<?php echo $crmJs(__('order_deleted')); ?>);
                 window.location.href = 'orders.php';
             } else {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
+                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + res.message);
             }
         });
-    });
+    }, undefined, 'danger');
 }
 </script>

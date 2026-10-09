@@ -41,7 +41,7 @@ require_once __DIR__ . '/includes/partials/thermal_receipt_css.php';
 $supplier = crmThermalSupplierProfile();
 
 // Prefer snapshot on invoice; fall back to accounting settings.
-$is_vat_payer = !empty($invoice['is_vat_payer']) || $supplier['is_vat'];
+$is_vat_payer = !empty($invoice['is_vat_payer']); // invoice snapshot only
 $is_credit = (($invoice['invoice_type'] ?? '') === 'credit_note');
 
 $currency = $invoice['currency'] ?: 'Kč';

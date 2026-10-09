@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/MyInvoiceApiClient.php';
+require_once __DIR__ . '/InvoicePolicy.php';
 
 function normalizeMyInvoiceCurrency(string $currency): string {
     $currency = trim($currency);
@@ -54,31 +55,8 @@ function createLocalInvoiceForCompletedOrder(PDO $pdo, int $orderId, $finalCost 
         return ['success' => false, 'error' => 'Final cost is missing or zero'];
     }
 
-    $prefix = get_setting('acc_invoice_prefix', date('Y'));
-    $nextNumber = (int)get_setting('acc_invoice_next_number', '1');
-    $lock = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'acc_invoice_next_number' FOR UPDATE");
-    $lock->execute();
-    $lockedValue = $lock->fetchColumn();
-    if ($lockedValue !== false) {
-        $nextNumber = max(1, (int)$lockedValue);
-    }
-
-    do {
-        $invoiceNumber = $prefix . str_pad((string)$nextNumber, 4, '0', STR_PAD_LEFT);
-        $dupe = $pdo->prepare('SELECT 1 FROM invoices WHERE invoice_number = ? LIMIT 1');
-        $dupe->execute([$invoiceNumber]);
-        if (!$dupe->fetchColumn()) {
-            break;
-        }
-        $nextNumber++;
-    } while (true);
-
-    $pdo->prepare("REPLACE INTO system_settings (setting_key, setting_value) VALUES ('acc_invoice_next_number', ?)")
-        ->execute([(string)($nextNumber + 1)]);
-
-    $isVatPayer = get_setting('acc_is_vat_payer', '0') == '1';
-    $vatRate = (float)get_setting('acc_vat_rate', '21');
-    $vatAmount = $isVatPayer ? $price * ($vatRate / 100) : 0;
+    $invoiceNumber = crmReserveInvoiceNumber($pdo);
+    $amounts = crmInvoiceAmountsFromCustomerTotal($price);
     $currency = get_setting('currency', 'Kč');
     $today = date('Y-m-d');
     $due = date('Y-m-d', strtotime('+14 days'));
@@ -97,9 +75,9 @@ function createLocalInvoiceForCompletedOrder(PDO $pdo, int $orderId, $finalCost 
         $today,
         $today,
         $due,
-        $isVatPayer ? ($price + $vatAmount) : $price,
-        $vatAmount,
-        $isVatPayer ? 1 : 0,
+        $amounts['total'],
+        $amounts['vat'],
+        $amounts['payer'] ? 1 : 0,
         $currency,
         'Auto-created from order #' . $orderId,
     ]);
@@ -111,7 +89,7 @@ function createLocalInvoiceForCompletedOrder(PDO $pdo, int $orderId, $finalCost 
     }
 
     $item = $pdo->prepare('INSERT INTO invoice_items (invoice_id, item_name, quantity, unit, price, vat_rate) VALUES (?, ?, 1, ?, ?, ?)');
-    $item->execute([$invoiceId, $itemName, 'ks', $price, $isVatPayer ? $vatRate : 0]);
+    $item->execute([$invoiceId, $itemName, 'ks', $amounts['net'], $amounts['rate']]);
 
     return ['success' => true, 'id' => $invoiceId, 'created' => true];
 }
@@ -136,6 +114,19 @@ function cancelAutoInvoicesForOrder(PDO $pdo, int $orderId): int {
     $stmt->execute([$orderId]);
     $ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
+    // An invoice already sent to MyInvoice is a legal document there: cancelling only the
+    // local copy would make the two systems disagree. Keep it and leave it to the accountant
+    // (credit note), and say so in the log.
+    $synced = $pdo->prepare("SELECT 1 FROM invoices WHERE id = ? AND myinvoice_invoice_id IS NOT NULL");
+    $ids = array_values(array_filter($ids, static function ($invoiceId) use ($synced, $orderId) {
+        $synced->execute([(int)$invoiceId]);
+        if ($synced->fetchColumn()) {
+            error_log('Auto invoice #' . (int)$invoiceId . ' for order #' . $orderId . ' is synced to MyInvoice; not cancelled automatically.');
+            return false;
+        }
+        return true;
+    }));
+
     if (!$ids) {
         return 0;
     }
@@ -155,7 +146,9 @@ function syncInvoiceToMyInvoice(PDO $pdo, int $invoiceId): array {
 
     $client = new MyInvoiceApiClient();
     if (!$client->isConfigured()) {
-        return markMyInvoiceSyncFailure($pdo, $invoiceId, 'MyInvoice API token is not configured.');
+        // Visible in the invoice's sync status and the server log: a missing env value must not fail silently.
+        error_log('MyInvoice sync skipped: MYINVOICE_API_TOKEN and MYINVOICE_API_BASE_URL must both be set in the environment.');
+        return markMyInvoiceSyncFailure($pdo, $invoiceId, 'MyInvoice is not configured: set MYINVOICE_API_TOKEN and MYINVOICE_API_BASE_URL in .env.');
     }
 
     $invoice = loadLocalInvoiceForMyInvoice($pdo, $invoiceId);

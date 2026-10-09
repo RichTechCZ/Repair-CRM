@@ -1,6 +1,11 @@
 <?php
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+// Page-level guard independent of header.php's permission map (defense in depth).
+if (!hasPermission('edit_customers')) {
+    header('Location: index.php');
+    exit;
+}
 require_once 'includes/header.php';
 
 $id = $_GET['id'] ?? null;
@@ -98,8 +103,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             <label class="form-label"><?php echo __('ico'); ?></label>
                             <div class="input-group">
                                 <input type="text" name="ico" id="ico_input" class="form-control" value="<?php echo htmlspecialchars($customer['ico'] ?? ''); ?>">
-                                <button class="btn btn-info text-white" type="button" id="btn_fetch_ares">
-                                    <i class="fas fa-search"></i>
+                                <button class="btn btn-outline-secondary" type="button" id="btn_fetch_ares" aria-label="<?php echo e(__('fetch_ares')); ?>">
+                                    <i class="fas fa-search" aria-hidden="true"></i>
                                 </button>
                             </div>
                         </div>
@@ -143,6 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     </div>
 </div>
 
+<?php $crmJsFlags = JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE; ?>
 <script nonce="<?php echo e(crmCspNonce()); ?>">
 $(document).ready(function() {
     $('input[name="customer_type"]').on('change', function() {
@@ -155,17 +161,17 @@ $(document).ready(function() {
 
     $('#btn_fetch_ares').on('click', function() {
         const ico = $('#ico_input').val().trim();
-        if (!ico) return showAlert('<?php echo __('enter_ico_prompt'); ?>');
+        if (!ico) return showAlert(<?php echo json_encode(__('enter_ico_prompt'), $crmJsFlags); ?>);
         
         const btn = $(this);
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" aria-hidden="true"></span>');
 
         $.ajax({
             url: `https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty/${ico}`,
             method: 'GET',
             dataType: 'json',
             success: function(data) {
-                btn.prop('disabled', false).html('<i class="fas fa-search"></i>');
+                btn.prop('disabled', false).html('<i class="fas fa-search" aria-hidden="true"></i>');
                 if (data && data.obchodniJmeno) {
                     $('#ares_name').val(data.obchodniJmeno);
                     if (data.dic) {
@@ -177,28 +183,28 @@ $(document).ready(function() {
                         $('#address_field').val(addr.trim());
                     }
                 } else {
-                    showAlert('<?php echo __('ares_data_not_found'); ?>');
+                    showAlert(<?php echo json_encode(__('ares_data_not_found'), $crmJsFlags); ?>);
                 }
             },
             error: function() {
-                btn.prop('disabled', false).html('<i class="fas fa-search"></i>');
-                showAlert('<?php echo __('ares_fetch_error'); ?>');
+                btn.prop('disabled', false).html('<i class="fas fa-search" aria-hidden="true"></i>');
+                showAlert(<?php echo json_encode(__('ares_fetch_error'), $crmJsFlags); ?>);
             }
         });
     });
 });
 
 function deleteCustomer(id) {
-    showConfirm('<?php echo __('confirm_delete_customer'); ?>', function() {
-        $.post('api/delete_customer.php', {id: id, csrf_token: '<?php echo $_SESSION['csrf_token'] ?? ''; ?>'}, function(res) {
+    showConfirm(<?php echo json_encode(__('confirm_delete_customer'), $crmJsFlags); ?>, function() {
+        $.post('api/delete_customer.php', {id: id, csrf_token: <?php echo json_encode($_SESSION['csrf_token'] ?? '', $crmJsFlags); ?>}, function(res) {
             if (res.success) {
-                showAlert('<?php echo __('customer_deleted'); ?>');
+                showAlert(<?php echo json_encode(__('customer_deleted'), $crmJsFlags); ?>);
                 window.location.href = 'customers.php';
             } else {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
+                showAlert(<?php echo json_encode(__('error') . ': ', $crmJsFlags); ?> + res.message);
             }
         });
-    });
+    }, undefined, 'danger');
 }
 </script>
 

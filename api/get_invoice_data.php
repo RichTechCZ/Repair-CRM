@@ -3,6 +3,7 @@ ob_start();
 require_once '../includes/config.php';
 require_once '../includes/functions.php';
 require_once __DIR__ . '/../models/InvoiceAutomation.php';
+require_once __DIR__ . '/../models/InvoicePolicy.php';
 
 if (ob_get_length()) ob_clean();
 header('Content-Type: application/json');
@@ -37,10 +38,8 @@ try {
     }
     unset($order['pin_code']);
 
-    $prefix = get_setting('acc_invoice_prefix', date('Y'));
-    $next_num = get_setting('acc_invoice_next_number', '1');
-    // Format: Prefix + 4 digits (e.g. 20260001)
-    $invoice_number = $prefix . str_pad($next_num, 4, '0', STR_PAD_LEFT);
+    // Suggestion from the shared invoice series; create_invoice.php reserves under lock.
+    $invoice_number = crmSuggestInvoiceNumber($pdo);
 
     // The stored final cost is the customer charge. Do not add order item prices:
     // they may already be included and would double-count invoice revenue.

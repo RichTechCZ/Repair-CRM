@@ -1,18 +1,26 @@
     </main>
 
     <footer class="app-footer">
-        <p>&copy; <?php echo date('Y'); ?> Repair CRM - <?php echo __('system_title'); ?></p>
+        <p>&copy; <?php echo date('Y'); ?> <?php echo e((string)get_setting('company_name', 'Repair CRM')); ?> - <?php echo __('system_title'); ?></p>
     </footer>
 </div> <!-- /#content -->
 
 <div id="appStatusLive" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
 
+<?php $crmFooterJsFlags = JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE; ?>
+<script nonce="<?php echo e(crmCspNonce()); ?>">
+    window.LANG_PREVIEW_LOADING = <?php echo json_encode(__('preview_loading'), $crmFooterJsFlags); ?>;
+    window.LANG_PREVIEW_FAILED = <?php echo json_encode(__('preview_load_failed'), $crmFooterJsFlags); ?>;
+    window.LANG_PREVIEW_SLOW = <?php echo json_encode(__('preview_load_slow'), $crmFooterJsFlags); ?>;
+    window.LANG_OPEN_NEW_TAB = <?php echo json_encode(__('open_in_new_tab'), $crmFooterJsFlags); ?>;
+</script>
+
 <!-- Universal Preview Modal -->
-<div class="modal fade" id="universalPreviewModal" tabindex="-1">
+<div class="modal fade" id="universalPreviewModal" tabindex="-1" aria-labelledby="universalPreviewTitle">
     <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header border-secondary py-2">
-                <h6 class="modal-title mb-0" id="universalPreviewTitle"><i class="fas fa-file-alt me-2 text-primary"></i>Preview</h6>
+                <h6 class="modal-title mb-0" id="universalPreviewTitle"><?php echo e(__('preview_btn')); ?></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-0" style="max-height: 85vh; overflow-y: auto; background: #f5f5f5;">
@@ -20,11 +28,11 @@
             </div>
             <div class="modal-footer border-secondary py-2">
                 <a href="#" id="previewOpenTabBtn" target="_blank" class="btn btn-outline-secondary btn-sm me-auto" data-crm-action="open-preview-new-tab">
-                    <i class="fas fa-external-link-alt me-1"></i><?php echo __('open_full_view'); ?>
+                    <i class="fas fa-external-link-alt me-1" aria-hidden="true"></i><?php echo __('open_full_view'); ?>
                 </a>
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal"><?php echo __('close'); ?></button>
                 <button type="button" class="btn btn-primary btn-sm" id="previewPrintBtn" disabled data-crm-action="print-preview">
-                    <i class="fas fa-print me-1"></i><?php echo __('print'); ?>
+                    <i class="fas fa-print me-1" aria-hidden="true"></i><?php echo __('print'); ?>
                 </button>
             </div>
         </div>
@@ -32,7 +40,7 @@
 </div>
 
 <!-- Global Alert Modal -->
-<div class="modal fade" id="globalAlertModal" tabindex="-1">
+<div class="modal fade" id="globalAlertModal" tabindex="-1" aria-labelledby="globalAlertTitle">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
@@ -41,14 +49,14 @@
             </div>
             <div class="modal-body" id="globalAlertBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal"><?php echo e(__('ok_btn')); ?></button>
             </div>
         </div>
     </div>
 </div>
 
 <!-- Global Confirm Modal -->
-<div class="modal fade" id="globalConfirmModal" tabindex="-1" data-bs-backdrop="static">
+<div class="modal fade" id="globalConfirmModal" tabindex="-1" data-bs-backdrop="static" aria-labelledby="globalConfirmTitle">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
@@ -58,7 +66,7 @@
             <div class="modal-body" id="globalConfirmBody"></div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="globalConfirmCancel"><?php echo __('cancel'); ?></button>
-                <button type="button" class="btn btn-danger" id="globalConfirmOk"><?php echo __('confirm'); ?></button>
+                <button type="button" class="btn btn-primary" id="globalConfirmOk"><?php echo __('confirm'); ?></button>
             </div>
         </div>
     </div>
@@ -85,7 +93,7 @@ if (!empty($nav_items) && isset($_SESSION['user_id'])):
             break;
         }
     }
-    $tab_current = basename($_SERVER['PHP_SELF']);
+    $tab_current = basename($_SERVER['SCRIPT_NAME']);
     $tab_last_file = $tab_last ? basename($tab_last['href']) : 'settings.php';
 ?>
 <nav class="ios-tabbar d-lg-none" aria-label="<?php echo e(__('menu')); ?>">

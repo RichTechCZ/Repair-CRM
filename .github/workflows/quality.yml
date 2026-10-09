@@ -14,5 +14,59 @@ jobs:
           php-version: '8.2'
       - name: Lint PHP
         run: find . -type f -name '*.php' -not -path './.git/*' -not -path './uploads/*' -print0 | xargs -0 -n1 php -l
+      - name: Lint JavaScript
+        run: for f in assets/js/*.js; do node --check "$f"; done
       - name: Run regression tests
         run: php tests/run.php
+
+  mysql-integration:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: crm_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      CRM_ENV: production
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_NAME: crm_ci
+      DB_USER: crm_app
+      DB_PASS: ci-app-password
+      DB_MIGRATION_USER: crm_migrator
+      DB_MIGRATION_PASS: ci-migration-password
+      CRM_TIMEZONE: Europe/Prague
+      # Throwaway key for CI only.
+      CRM_DATA_ENCRYPTION_KEY: a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s=
+      MYINVOICE_ENABLED: '0'
+      CRM_INTEGRATION_DB: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql
+      - name: Create least-privilege accounts
+        run: |
+          mysql -h127.0.0.1 -uroot -proot -e "
+            CREATE USER 'crm_migrator'@'%' IDENTIFIED BY 'ci-migration-password';
+            CREATE USER 'crm_app'@'%' IDENTIFIED BY 'ci-app-password';
+            GRANT ALL PRIVILEGES ON crm_ci.* TO 'crm_migrator'@'%';
+            GRANT SELECT, INSERT, UPDATE, DELETE ON crm_ci.* TO 'crm_app'@'%';
+            FLUSH PRIVILEGES;"
+      - name: Migrations (fresh install)
+        run: php run_migrations.php
+      - name: Migrations (second run must be idempotent)
+        run: php run_migrations.php
+      - name: Health check
+        run: |
+          mkdir -p uploads
+          php health.php | grep -q '"status":"ok"'
+      - name: Integration tests (web account, no DDL rights)
+        run: php tests/integration_mysql.php

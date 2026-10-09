@@ -25,7 +25,7 @@ if (function_exists('crmDecryptDevicePinInRow')) {
 }
 
 // Fetch items (parts) used
-$stmt = $pdo->prepare("SELECT oi.*, i.part_name FROM order_items oi JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
+$stmt = $pdo->prepare("SELECT oi.*, COALESCE(NULLIF(oi.part_name, ''), i.part_name) AS part_name FROM order_items oi LEFT JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ? ORDER BY oi.id");
 $stmt->execute([$id]);
 $items = $stmt->fetchAll();
 

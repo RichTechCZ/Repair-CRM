@@ -84,9 +84,12 @@ if (isset($_POST['add_tech']) && $is_admin_check) {
     $role = in_array($_POST['role'] ?? '', ['engineer', 'manager'], true)
         ? $_POST['role']
         : 'engineer';
-    $tg_id = $_POST['tech_tg'] ?? '';
+    $tg_id = trim((string)($_POST['tech_tg'] ?? ''));
+    // Bot identity is bound to the immutable numeric Telegram user id only; @usernames can be re-registered by others.
+    if ($tg_id !== '' && !preg_match('/^\d{3,20}$/', $tg_id)) { header("Location: settings.php?tab=staff&error=invalid_telegram_id"); exit; }
     $username = trim($_POST['tech_username'] ?? '');
     $password = $_POST['tech_password'] ?? '';
+    if ($password !== '' && strlen((string)$password) < 8) { header("Location: settings.php?tab=staff&error=short_password"); exit; }
 
     if (!empty($username)) {
         $stmt = $pdo->prepare("SELECT id FROM technicians WHERE username = ? UNION SELECT id FROM users WHERE username = ?");
@@ -118,10 +121,18 @@ if (isset($_POST['edit_tech'])) {
     $role = in_array($_POST['role'] ?? '', ['engineer', 'manager'], true)
         ? $_POST['role']
         : 'engineer';
-    $tg_id = $_POST['tech_tg'] ?? '';
+    $tg_id = trim((string)($_POST['tech_tg'] ?? ''));
+    // Bot identity is bound to the immutable numeric Telegram user id only; @usernames can be re-registered by others.
+    // An unchanged legacy @username is kept so other fields stay editable (the list flags it; the bot ignores it).
+    if ($tg_id !== '' && !preg_match('/^\d{3,20}$/', $tg_id)) {
+        $legacyTgStmt = $pdo->prepare('SELECT telegram_id FROM technicians WHERE id = ?');
+        $legacyTgStmt->execute([$id]);
+        if ($tg_id !== (string)$legacyTgStmt->fetchColumn()) { header("Location: settings.php?tab=staff&error=invalid_telegram_id"); exit; }
+    }
     $active = isset($_POST['is_active']) ? 1 : 0;
     $username = trim($_POST['tech_username'] ?? '');
     $password = $_POST['tech_password'] ?? '';
+    if ($password !== '' && strlen((string)$password) < 8) { header("Location: settings.php?tab=staff&error=short_password"); exit; }
     $engineer_rate = floatval($_POST['engineer_rate'] ?? 50);
 
     // Re-verify important fields if NOT admin
@@ -185,12 +196,23 @@ if (isset($_POST['save_permissions']) && $is_admin_check) {
     exit;
 }
 
-if (isset($_POST['change_admin_password']) && hasPermission('manage_passwords')) {
+// Administrator (users table) passwords: only an administrator session, re-authenticated with its
+// own current password, and every change is written to the audit log (system_errors, type audit).
+if (isset($_POST['change_admin_password']) && ($_SESSION['role'] ?? '') === 'admin') {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
+    $actorStmt = $pdo->prepare('SELECT username, password FROM users WHERE id = ?');
+    $actorStmt->execute([(int)$_SESSION['user_id']]);
+    $actor = $actorStmt->fetch();
+    if (!$actor || !password_verify((string)($_POST['current_password'] ?? ''), (string)$actor['password'])) {
+        log_error('Admin password change rejected: wrong current password', 'audit', 'actor=' . ($actor['username'] ?? '?') . ' target_id=' . (int)($_POST['admin_id'] ?? 0));
+        header("Location: settings.php?tab=admins&error=wrong_current_password");
+        exit;
+    }
     if (strlen((string)($_POST['new_password'] ?? '')) >= 8 && (int)($_POST['admin_id'] ?? 0) > 0) {
         $hashed = password_hash($_POST['new_password'], PASSWORD_DEFAULT);
         $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
-        $stmt->execute([$hashed, $_POST['admin_id']]);
+        $stmt->execute([$hashed, (int)$_POST['admin_id']]);
+        log_error('Admin password changed', 'audit', 'actor=' . $actor['username'] . ' target_id=' . (int)$_POST['admin_id'] . ' ip=' . ($_SERVER['REMOTE_ADDR'] ?? ''));
         
         if ($_POST['admin_id'] == $_SESSION['user_id'] && $_SESSION['role'] === 'admin') {
             session_destroy();
@@ -261,6 +283,8 @@ require_once 'includes/header.php';
         'username_taken' => 'settings_err_username_taken',
         'short_password' => 'settings_err_short_password',
         'tech_has_orders' => 'settings_err_tech_has_orders',
+        'invalid_telegram_id' => 'settings_err_invalid_telegram_id',
+        'wrong_current_password' => 'settings_err_wrong_current_password',
     ];
     $settings_error = $settings_error_keys[$_GET['error'] ?? ''] ?? null;
     if ($settings_error): ?>
@@ -288,7 +312,7 @@ require_once 'includes/header.php';
             <a class="nav-link <?php echo $active_tab == 'admins' ? 'active' : 'text-white-75'; ?>" href="?tab=admins"><i class="fas fa-user-shield me-2"></i><?php echo __('admin_tab'); ?></a>
         </li>
         <li class="nav-item">
-            <a class="nav-link <?php echo $active_tab == 'updates' ? 'active' : 'text-white-75'; ?>" href="?tab=updates" id="updatesNavLink"><i class="fas fa-cloud-download-alt me-2"></i><?php echo __('updates_tab'); ?> <span id="updateBadgeNav" class="badge bg-warning text-dark ms-1" style="display:none;">!</span></a>
+            <a class="nav-link <?php echo $active_tab == 'updates' ? 'active' : 'text-white-75'; ?>" href="?tab=updates" id="updatesNavLink"><i class="fas fa-cloud-download-alt me-2"></i><?php echo __('updates_tab'); ?> <span id="updateBadgeNav" class="status-pill status-pill--waiting ms-1" style="display:none;"><span aria-hidden="true">!</span><span class="visually-hidden"><?php echo e(__('update_available')); ?></span></span></a>
         </li>
         <?php endif; ?>
     </ul>
@@ -419,7 +443,10 @@ require_once 'includes/header.php';
                             <td>
                                 <?php if (!empty($t['telegram_id'])): ?>
                                     <code class="small"><?php echo htmlspecialchars($t['telegram_id']); ?></code>
-                                    <button class="btn btn-link btn-sm p-0 ms-1 text-info" title="Тест уведомления" data-crm-action="test-technician-telegram" data-crm-id="<?php echo (int)$t['id']; ?>"><i class="fab fa-telegram-plane"></i></button>
+                                    <?php if (!preg_match('/^\d+$/', (string)$t['telegram_id'])): ?>
+                                        <span class="status-pill status-pill--overdue"><?php echo e(__('settings_err_invalid_telegram_id')); ?></span>
+                                    <?php endif; ?>
+                                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-info" title="<?php echo e(__('test_notification')); ?>" aria-label="<?php echo e(__('test_notification') . ': ' . $t['name']); ?>" data-crm-action="test-technician-telegram" data-crm-id="<?php echo (int)$t['id']; ?>"><i class="fab fa-telegram-plane" aria-hidden="true"></i></button>
                                 <?php else: ?>
                                     <span class="text-muted small"><?php echo __('not_linked'); ?></span>
                                 <?php endif; ?>
@@ -428,14 +455,14 @@ require_once 'includes/header.php';
                             <td class="text-end">
                                 <div class="btn-group btn-group-sm">
                                     <?php if ($is_admin_user): ?>
-                                        <button class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#permModal<?php echo $t['id']; ?>"><i class="fas fa-shield-alt"></i></button>
+                                        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#permModal<?php echo $t['id']; ?>" aria-label="<?php echo e(__('permissions_title') . $t['name']); ?>"><i class="fas fa-shield-alt" aria-hidden="true"></i></button>
                                     <?php endif; ?>
-                                    <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editTechModal<?php echo $t['id']; ?>"><i class="fas fa-edit"></i></button>
+                                    <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editTechModal<?php echo $t['id']; ?>" aria-label="<?php echo e(__('edit_title') . $t['name']); ?>"><i class="fas fa-edit" aria-hidden="true"></i></button>
                                     <?php if ($is_admin_user): ?>
                                         <form method="POST" class="d-inline">
                                             <input type="hidden" name="csrf_token" value="<?php echo generateCsrfToken(); ?>">
                                             <input type="hidden" name="delete_tech" value="<?php echo $t['id']; ?>">
-                                            <button type="submit" class="btn btn-outline-danger" data-confirm="<?php echo __('delete_confirm'); ?>"><i class="fas fa-trash"></i></button>
+                                            <button type="submit" class="btn btn-outline-danger" data-confirm="<?php echo e(__('delete_confirm')); ?>" aria-label="<?php echo e(__('delete') . ': ' . $t['name']); ?>"><i class="fas fa-trash" aria-hidden="true"></i></button>
                                         </form>
                                     <?php endif; ?>
                                 </div>
@@ -453,7 +480,7 @@ require_once 'includes/header.php';
                 <div class="col-md-6 border-end border-secondary">
                     <h5 class="mb-3 text-white"><i class="fas fa-database me-2 text-secondary"></i><?php echo __('database_header'); ?></h5>
                     <div class="d-grid gap-2 mb-4">
-                        <button type="button" class="btn btn-success" data-crm-action="run-backup"><i class="fas fa-file-download me-2"></i><?php echo __('create_backup'); ?></button>
+                        <button type="button" class="btn btn-primary" data-crm-action="run-backup"><i class="fas fa-file-download me-2" aria-hidden="true"></i><?php echo __('create_backup'); ?></button>
                         <div id="backupResult" class="small"></div>
                     </div>
                     <h5 class="mb-3 text-white"><i class="fas fa-globe me-2 text-info"></i><?php echo __('system_langs'); ?></h5>
@@ -541,7 +568,7 @@ require_once 'includes/header.php';
                             <td><strong><?php echo htmlspecialchars($admin['username']); ?></strong></td>
                             <td><?php echo htmlspecialchars($admin['full_name']); ?></td>
                             <td><span class="status-pill status-pill--priority-high">Admin</span></td>
-                            <td class="text-end"><button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#adminPwdModal<?php echo $admin['id']; ?>"><i class="fas fa-key me-1"></i> <?php echo __('password_btn'); ?></button></td>
+                            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#adminPwdModal<?php echo $admin['id']; ?>"><i class="fas fa-key me-1" aria-hidden="true"></i> <?php echo __('password_btn'); ?></button></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -602,7 +629,7 @@ require_once 'includes/header.php';
 
                         <div class="alert alert-warning border-0 bg-warning bg-opacity-10 mt-3 mb-0 small">
                             <i class="fas fa-shield-alt me-2 text-warning"></i>
-                            Web installation is disabled. Deploy a verified immutable release outside the CRM, then run
+                            <?php echo e(__('web_install_disabled_notice')); ?>
                             <code>php run_migrations.php</code>.
                         </div>
                     </div>
@@ -624,10 +651,10 @@ require_once 'includes/header.php';
 </div>
 
 <!-- MODALS -->
-<div class="modal fade" id="addTechModal" tabindex="-1">
+<div class="modal fade" id="addTechModal" tabindex="-1" aria-labelledby="addTechModalTitle">
     <div class="modal-dialog"><div class="modal-content glass-card border-secondary text-white"><form method="POST">
         <?php echo csrfField(); ?>
-        <div class="modal-header border-secondary"><h5 class="modal-title"><?php echo __('add_employee_title'); ?></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header border-secondary"><h5 class="modal-title" id="addTechModalTitle"><?php echo __('add_employee_title'); ?></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
             <div class="mb-3"><label class="form-label text-white-75 small"><?php echo __('full_name_label'); ?></label><input type="text" name="tech_name" class="form-control" required></div>
             <div class="row">
@@ -646,7 +673,7 @@ require_once 'includes/header.php';
             <div class="row"><div class="col-md-6 mb-3"><label class="form-label">Email</label><input type="email" name="tech_email" class="form-control"></div><div class="col-md-6 mb-3"><label class="form-label"><?php echo __('phone_label'); ?></label><input type="text" name="tech_phone" class="form-control"></div></div>
             <div class="mb-3">
                 <label class="form-label">Telegram ID / Username</label>
-                <input type="text" name="tech_tg" class="form-control" placeholder="123456789 или @username">
+                <input type="text" name="tech_tg" class="form-control" placeholder="123456789">
                 <div class="form-text small"><?php echo __('tg_notification_hint'); ?></div>
             </div>
             <hr><h6 class="mb-3"><?php echo __('system_access_header'); ?></h6>
@@ -657,11 +684,11 @@ require_once 'includes/header.php';
 </div>
 
 <?php foreach ($techs as $t): ?>
-<div class="modal fade" id="editTechModal<?php echo $t['id']; ?>" tabindex="-1">
+<div class="modal fade" id="editTechModal<?php echo (int)$t['id']; ?>" tabindex="-1" aria-labelledby="editTechModalTitle<?php echo (int)$t['id']; ?>">
     <div class="modal-dialog"><div class="modal-content glass-card border-secondary text-white"><form method="POST">
         <?php echo csrfField(); ?>
         <input type="hidden" name="tech_id" value="<?php echo $t['id']; ?>">
-        <div class="modal-header border-secondary"><h5 class="modal-title"><?php echo __('edit_title'); ?><?php echo htmlspecialchars($t['name']); ?></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header border-secondary"><h5 class="modal-title" id="editTechModalTitle<?php echo (int)$t['id']; ?>"><?php echo __('edit_title'); ?><?php echo htmlspecialchars($t['name']); ?></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
             <?php if ($is_admin_user): ?>
             <div class="mb-3">
@@ -706,8 +733,8 @@ require_once 'includes/header.php';
             <div class="mb-3">
                 <label class="form-label">Telegram ID / Username</label>
                 <div class="input-group">
-                    <input type="text" name="tech_tg" class="form-control" value="<?php echo htmlspecialchars($t['telegram_id'] ?? ''); ?>" placeholder="123456789 или @username">
-                    <button class="btn btn-outline-info" type="button" data-crm-action="test-technician-telegram" data-crm-id="<?php echo (int)$t['id']; ?>"><i class="fab fa-telegram-plane"></i></button>
+                    <input type="text" name="tech_tg" class="form-control" value="<?php echo htmlspecialchars($t['telegram_id'] ?? ''); ?>" placeholder="123456789">
+                    <button class="btn btn-outline-secondary" type="button" data-crm-action="test-technician-telegram" data-crm-id="<?php echo (int)$t['id']; ?>" aria-label="<?php echo e(__('test_notification')); ?>"><i class="fab fa-telegram-plane" aria-hidden="true"></i></button>
                 </div>
             </div>
             <div class="mb-3"><label class="form-label"><?php echo __('new_password_label'); ?></label><input type="password" name="tech_password" class="form-control" placeholder="<?php echo __('password_placeholder'); ?>"></div>
@@ -730,11 +757,11 @@ require_once 'includes/header.php';
     </form></div></div>
 </div>
 
-<div class="modal fade" id="permModal<?php echo $t['id']; ?>" tabindex="-1">
+<div class="modal fade" id="permModal<?php echo (int)$t['id']; ?>" tabindex="-1" aria-labelledby="permModalTitle<?php echo (int)$t['id']; ?>">
     <div class="modal-dialog"><div class="modal-content glass-card border-secondary text-white"><form method="POST">
         <?php echo csrfField(); ?>
         <input type="hidden" name="tech_id" value="<?php echo $t['id']; ?>">
-        <div class="modal-header border-secondary bg-warning bg-opacity-10"><h5 class="modal-title"><?php echo __('permissions_title'); ?><?php echo htmlspecialchars($t['name']); ?></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header border-secondary"><h5 class="modal-title" id="permModalTitle<?php echo (int)$t['id']; ?>"><?php echo __('permissions_title'); ?><?php echo htmlspecialchars($t['name']); ?></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
             <div class="alert alert-info border-0 bg-info bg-opacity-10 text-white-75 small mb-3">
                 <i class="fas fa-info-circle me-1"></i><?php echo __('perm_orders_note'); ?>
@@ -743,30 +770,33 @@ require_once 'includes/header.php';
             <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="permissions[]" value="<?php echo $pk; ?>" id="p_<?php echo $t['id'].$pk; ?>" <?php echo in_array($pk, $tech_perms) ? 'checked' : ''; ?>><label class="form-check-label" for="p_<?php echo $t['id'].$pk; ?>"><strong><?php echo $pi['name']; ?></strong><div class="text-white-75 small"><?php echo $pi['desc']; ?></div></label></div>
             <?php endforeach; ?>
         </div>
-        <div class="modal-footer border-secondary"><button type="submit" name="save_permissions" class="btn btn-warning"><?php echo __('save_permissions_btn'); ?></button></div>
+        <div class="modal-footer border-secondary"><button type="submit" name="save_permissions" class="btn btn-primary"><?php echo __('save_permissions_btn'); ?></button></div>
     </form></div></div>
 </div>
 <?php endforeach; ?>
 
 <?php if ($is_admin_user): ?>
 <?php foreach ($admins as $admin): ?>
-<div class="modal fade" id="adminPwdModal<?php echo $admin['id']; ?>" tabindex="-1">
+<div class="modal fade" id="adminPwdModal<?php echo (int)$admin['id']; ?>" tabindex="-1" aria-labelledby="adminPwdModalTitle<?php echo (int)$admin['id']; ?>">
     <div class="modal-dialog modal-sm"><div class="modal-content glass-card border-secondary text-white"><form method="POST">
         <?php echo csrfField(); ?>
         <input type="hidden" name="admin_id" value="<?php echo $admin['id']; ?>">
-        <div class="modal-header border-secondary bg-danger bg-opacity-25 text-white"><h6 class="modal-title"><?php echo __('change_password_title'); ?></h6><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header border-secondary"><h6 class="modal-title" id="adminPwdModalTitle<?php echo (int)$admin['id']; ?>"><?php echo __('change_password_title'); ?></h6><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
-            <label class="form-label small text-white-75"><?php echo __('new_password_for'); ?> <?php echo htmlspecialchars($admin['username']); ?></label>
-            <input type="password" name="new_password" class="form-control" required minlength="6">
+            <label class="form-label small text-white-75" for="adminCurrentPwd<?php echo (int)$admin['id']; ?>"><?php echo __('your_current_password'); ?></label>
+            <input type="password" name="current_password" id="adminCurrentPwd<?php echo (int)$admin['id']; ?>" class="form-control mb-2" required autocomplete="current-password">
+            <label class="form-label small text-white-75" for="adminNewPwd<?php echo (int)$admin['id']; ?>"><?php echo __('new_password_for'); ?> <?php echo htmlspecialchars($admin['username']); ?></label>
+            <input type="password" name="new_password" id="adminNewPwd<?php echo (int)$admin['id']; ?>" class="form-control" required minlength="8" autocomplete="new-password">
         </div>
-        <div class="modal-footer border-secondary"><button type="submit" name="change_admin_password" class="btn btn-danger btn-sm"><?php echo __('save'); ?></button></div>
+        <div class="modal-footer border-secondary"><button type="submit" name="change_admin_password" class="btn btn-primary btn-sm"><?php echo __('save'); ?></button></div>
     </form></div></div>
 </div>
 <?php endforeach; ?>
 <?php endif; ?>
 
+<?php $crmJsFlags = JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE; ?>
 <script nonce="<?php echo e(crmCspNonce()); ?>">
-function testTechTG(id) { if (!id) return; $.post('api/test_tech_tg.php', {id: id, csrf_token: $('meta[name="csrf-token"]').attr('content')}, function(res) { if (res.success) { showAlert('OK'); } else { showAlert(res.message); } }); }
+function testTechTG(id) { if (!id) return; $.post('api/test_tech_tg.php', {id: id, csrf_token: $('meta[name="csrf-token"]').attr('content')}, function(res) { if (res.success) { showAlert(<?php echo json_encode(__('test_msg_sent'), $crmJsFlags); ?>); } else { showAlert(res.message); } }); }
 
 function triggerBackupDownload(path, filename) {
     var csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
@@ -797,7 +827,7 @@ function runBackup() {
             alert.className = res.success
                 ? 'alert alert-success p-2 mt-2'
                 : 'alert alert-danger p-2 mt-2';
-            alert.append(document.createTextNode(res.success ? '<?php echo __('done_js'); ?>' : (res.message || '<?php echo __('error_js'); ?>')));
+            alert.append(document.createTextNode(res.success ? <?php echo json_encode(__('done_js'), $crmJsFlags); ?> : (res.message || <?php echo json_encode(__('error_js'), $crmJsFlags); ?>)));
             if (res.success) {
                 const link = document.createElement('a');
                 link.href = '#';
@@ -818,7 +848,7 @@ function runBackup() {
             alert.className = 'alert alert-danger p-2 mt-2';
             alert.textContent = (xhr.responseJSON && xhr.responseJSON.message)
                 ? xhr.responseJSON.message
-                : '<?php echo __('error_js'); ?>';
+                : <?php echo json_encode(__('error_js'), $crmJsFlags); ?>;
             resultDiv.appendChild(alert);
         })
         .always(function() {
@@ -831,22 +861,22 @@ function runBackup() {
 <?php if ($is_admin_user): ?>
 <script nonce="<?php echo e(crmCspNonce()); ?>">
 const UPDATE_TRANSLATIONS = {
-    check_updates:     '<?php echo __('check_updates'); ?>',
-    checking_updates:  '<?php echo __('checking_updates'); ?>',
-    install_update:    '<?php echo __('install_update'); ?>',
-    installing_update: '<?php echo __('installing_update'); ?>',
-    update_available:  '<?php echo __('update_available'); ?>',
-    update_available_desc: '<?php echo __('update_available_desc'); ?>',
-    up_to_date:        '<?php echo __('up_to_date'); ?>',
-    up_to_date_desc:   '<?php echo __('up_to_date_desc'); ?>',
-    update_success:    '<?php echo __('update_success'); ?>',
-    update_error:      '<?php echo __('update_error'); ?>',
-    no_changelog:      '<?php echo __('no_changelog'); ?>',
-    last_check:        '<?php echo __('last_check'); ?>',
-    minutes_ago:       '<?php echo __('minutes_ago'); ?>',
-    migrations_ran:    '<?php echo __('migrations_ran'); ?>',
-    release_date:      '<?php echo __('release_date'); ?>',
-    build:             '<?php echo __('build'); ?>'
+    check_updates:     <?php echo json_encode(__('check_updates'), $crmJsFlags); ?>,
+    checking_updates:  <?php echo json_encode(__('checking_updates'), $crmJsFlags); ?>,
+    install_update:    <?php echo json_encode(__('install_update'), $crmJsFlags); ?>,
+    installing_update: <?php echo json_encode(__('installing_update'), $crmJsFlags); ?>,
+    update_available:  <?php echo json_encode(__('update_available'), $crmJsFlags); ?>,
+    update_available_desc: <?php echo json_encode(__('update_available_desc'), $crmJsFlags); ?>,
+    up_to_date:        <?php echo json_encode(__('up_to_date'), $crmJsFlags); ?>,
+    up_to_date_desc:   <?php echo json_encode(__('up_to_date_desc'), $crmJsFlags); ?>,
+    update_success:    <?php echo json_encode(__('update_success'), $crmJsFlags); ?>,
+    update_error:      <?php echo json_encode(__('update_error'), $crmJsFlags); ?>,
+    no_changelog:      <?php echo json_encode(__('no_changelog'), $crmJsFlags); ?>,
+    last_check:        <?php echo json_encode(__('last_check'), $crmJsFlags); ?>,
+    minutes_ago:       <?php echo json_encode(__('minutes_ago'), $crmJsFlags); ?>,
+    migrations_ran:    <?php echo json_encode(__('migrations_ran'), $crmJsFlags); ?>,
+    release_date:      <?php echo json_encode(__('release_date'), $crmJsFlags); ?>,
+    build:             <?php echo json_encode(__('build'), $crmJsFlags); ?>
 };
 
 function checkForUpdates(force = false) {
@@ -901,7 +931,7 @@ function checkForUpdates(force = false) {
                 const remoteBuild = (typeof data.remote_build !== 'undefined' && data.remote_build !== null && data.remote_build !== '')
                     ? data.remote_build
                     : '—';
-                rb.textContent = '<?php echo __('build'); ?>: ' + remoteBuild;
+                rb.textContent = UPDATE_TRANSLATIONS.build + ': ' + remoteBuild;
             }
             
             const rd = document.getElementById('remoteReleaseDate');
@@ -920,7 +950,7 @@ function checkForUpdates(force = false) {
                 statusArea.innerHTML = `<div class="alert alert-info border-0 bg-info bg-opacity-10 small mb-0">
                     <i class="fas fa-arrow-circle-up me-2 text-info"></i>
                     <strong>${UPDATE_TRANSLATIONS.update_available}</strong> ${escapeHtml(localLabel)} → ${escapeHtml(remoteLabel)}
-                    <div class="mt-1 text-white-75">Deploy this release through the external deployment process.</div>
+                    <div class="mt-1 text-white-75">${escapeHtml(<?php echo json_encode(__('deploy_release_notice'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>)}</div>
                 </div>`;
                 // Show badge
                 const badge = document.getElementById('updateBadgeNav');

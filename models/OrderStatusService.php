@@ -49,6 +49,19 @@ final class OrderStatusService
     }
 
     /**
+     * Money, parts and dates of a closed order feed revenue and engineer payouts;
+     * after closure only admins may change them (technicians cannot raise their own payout).
+     *
+     * @throws Exception
+     */
+    public static function assertClosedOrderEditable(string $canonicalStatus, bool $isAdmin): void
+    {
+        if (!$isAdmin && self::isTerminal($canonicalStatus)) {
+            throw new Exception(__('closed_order_edit_forbidden'));
+        }
+    }
+
+    /**
      * Customer collected the device in person — no carrier and no delivery expense.
      */
     public static function isSelfPickupShippingMethod($shippingMethod): bool
@@ -290,6 +303,18 @@ final class OrderStatusService
             return ['status_changed' => false, 'invoice_to_sync' => null];
         }
 
+        if ($canonicalNew === 'Issued' && $canonicalOld !== 'Issued') {
+            // Finance periods are keyed on shipping_date: every path into Issued
+            // (quick edit, full edit, Telegram, sync) must stamp it, or the order
+            // silently disappears from revenue and payroll.
+            $pdo->prepare('UPDATE orders SET shipping_date = IFNULL(shipping_date, CURRENT_TIMESTAMP) WHERE id = ?')
+                ->execute([$orderId]);
+        } elseif ($canonicalOld === 'Issued' && $canonicalNew !== 'Issued') {
+            // A reopened order is re-issued later: its finance period is the new handover,
+            // so the old handover date must not survive the reopen.
+            $pdo->prepare('UPDATE orders SET shipping_date = NULL WHERE id = ?')->execute([$orderId]);
+        }
+
         $wasConsuming = self::isInventoryConsuming($canonicalOld);
         $isConsuming = self::isInventoryConsuming($canonicalNew);
 
@@ -372,8 +397,8 @@ final class OrderStatusService
             return;
         }
 
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
-        $link = $protocol . ($_SERVER['HTTP_HOST'] ?? '') . '/view_order.php?id=' . $orderId;
+        // Configured origin, never the request Host header (empty in Telegram/CLI runs).
+        $link = crmPublicBaseUrl() . '/view_order.php?id=' . $orderId;
         $msg = sprintf(__('tg_new_order'), $orderId) . "\n";
         $msg .= sprintf(
             __('tg_device'),

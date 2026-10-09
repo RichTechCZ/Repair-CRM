@@ -19,13 +19,15 @@ if (!function_exists('crmCspNonce')) {
 }
 
 // Check if user is logged in
-if (!isset($_SESSION['user_id']) && basename($_SERVER['PHP_SELF']) != 'login.php') {
+if (!isset($_SESSION['user_id']) && basename($_SERVER['SCRIPT_NAME']) != 'login.php') {
     header("Location: login.php");
     exit;
 }
 
-// Access Control based on permissions
-$page = basename($_SERVER['PHP_SELF']);
+// Access Control based on permissions.
+// SCRIPT_NAME, not PHP_SELF: PHP_SELF includes PATH_INFO, so /edit_inventory.php/x would yield "x"
+// and skip the permission map while still executing edit_inventory.php.
+$page = basename($_SERVER['SCRIPT_NAME']);
 
 // Pages that require specific permissions
 $permission_pages = [
@@ -55,7 +57,7 @@ if ($page == 'reports.php') {
 
 // Resolve page title early so <title> is contextual (Trunk Test / browser tabs).
 $company_name = (string)get_setting('company_name', 'Repair CRM');
-$current_page = basename($_SERVER['PHP_SELF']);
+$current_page = basename($_SERVER['SCRIPT_NAME']);
 $page_titles = [
     'index.php' => __('dashboard'),
     'orders.php' => __('orders'),
@@ -194,12 +196,13 @@ $page_title = $page_titles[$current_page] ?? $company_name;
     window.LANG_CLOSE = '<?php echo __("close"); ?>';
     window.LANG_OPEN_NAVIGATION = '<?php echo __("open_navigation"); ?>';
     window.LANG_CLOSE_NAVIGATION = '<?php echo __("close_navigation"); ?>';
+    window.LANG_NETWORK_ERROR = <?php echo json_encode(__('network_error'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>;
     </script>
 </head>
-<body class="app-page app-page--<?php echo e(preg_replace('/[^a-z0-9_-]/i', '', pathinfo(basename($_SERVER['PHP_SELF']), PATHINFO_FILENAME))); ?>">
+<body class="app-page app-page--<?php echo e(preg_replace('/[^a-z0-9_-]/i', '', pathinfo(basename($_SERVER['SCRIPT_NAME']), PATHINFO_FILENAME))); ?>">
 <?php
 $company_name = (string)get_setting('company_name', 'Repair CRM');
-$current_page = basename($_SERVER['PHP_SELF']);
+$current_page = basename($_SERVER['SCRIPT_NAME']);
 $page_titles = [
     'index.php' => __('dashboard'),
     'orders.php' => __('orders'),
@@ -333,7 +336,10 @@ $user_initial = mb_strtoupper(mb_substr((string)($_SESSION['full_name'] ?? 'U'),
                 <span><?php echo e((($_SESSION['role'] ?? '') === 'admin') ? __('administrator') : __('technician')); ?></span>
             </div>
         </div>
-        <a href="logout.php" class="btn btn-outline-secondary btn-sm w-100"><?php echo __('logout'); ?></a>
+        <form method="post" action="logout.php" class="m-0">
+            <?php echo csrfField(); ?>
+            <button type="submit" class="btn btn-outline-secondary btn-sm w-100"><?php echo __('logout'); ?></button>
+        </form>
     </div>
 </aside>
 

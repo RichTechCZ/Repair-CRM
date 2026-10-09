@@ -25,7 +25,7 @@ if ($isCli) {
     if ($migrationUser !== '') {
         try {
             $pdo = new PDO(
-                'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
+                'mysql:host=' . DB_HOST . DB_PORT_DSN . ';dbname=' . DB_NAME . ';charset=utf8mb4',
                 $migrationUser,
                 $migrationPass,
                 [

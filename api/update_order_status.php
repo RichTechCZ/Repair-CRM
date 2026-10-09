@@ -83,6 +83,16 @@ try {
     $current_estimated = $order_data['estimated_cost'];
     $current_final = $order_data['final_cost'];
 
+    // Re-posting the same terminal status with a new final cost would bypass the
+    // terminal lock and change revenue/payout of a closed order.
+    if (
+        $final_cost !== null && $final_cost !== ''
+        // Forms prefill a NULL final cost with the estimate: compare with the revenue base actually in use.
+        && abs((float)$final_cost - (float)($current_final ?? $current_estimated ?? 0)) > 0.004
+    ) {
+        OrderStatusService::assertClosedOrderEditable($canonical_current_status, $is_admin);
+    }
+
     OrderStatusService::assertCanChangeFromTerminal(
         $canonical_current_status,
         $canonical_new_status,

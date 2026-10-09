@@ -22,6 +22,17 @@ function crmConfigurationFailure(string $logMessage, string $publicMessage = 'In
     exit($publicMessage);
 }
 
+// ── Timezone ─────────────────────────────────────────────────────────────────
+// Report periods compare PHP date() boundaries with MySQL NOW()/CURRENT_TIMESTAMP.
+// CRM_TIMEZONE pins both to one zone (see PDO init below); unset keeps host defaults.
+$crmTimezone = trim((string)(getenv('CRM_TIMEZONE') ?: ''));
+if ($crmTimezone !== '') {
+    if (!in_array($crmTimezone, timezone_identifiers_list(), true)) {
+        crmConfigurationFailure('CRM_TIMEZONE is not a valid timezone identifier: ' . $crmTimezone);
+    }
+    date_default_timezone_set($crmTimezone);
+}
+
 // ── Security Headers (sent before any output) ────────────────────────────────
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');
@@ -31,6 +42,10 @@ header('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
 // ── Session Security (must be set BEFORE session_start) ──────────────────────
 $trustProxyHttps = filter_var(getenv('CRM_TRUST_PROXY_HTTPS') ?: '0', FILTER_VALIDATE_BOOL);
 $sessionUsesHttps = requestUsesHttps($_SERVER, $trustProxyHttps);
+if ($sessionUsesHttps) {
+    // Browsers must never downgrade the CRM (and its session cookie) to plain HTTP.
+    header('Strict-Transport-Security: max-age=31536000');
+}
 ini_set('session.cookie_httponly', 1);
 ini_set('session.cookie_secure', $sessionUsesHttps ? 1 : 0);
 ini_set('session.use_strict_mode', 1);
@@ -38,7 +53,13 @@ ini_set('session.gc_maxlifetime', 7200);
 ini_set('session.cookie_samesite', 'Strict');
 ini_set('session.use_only_cookies', 1);
 
-session_start();
+// Machine endpoints (health checks, webhooks) define CRM_STATELESS before including this file:
+// they carry no cookies, so starting a session would only create one orphan session file per hit.
+if (defined('CRM_STATELESS')) {
+    $_SESSION = [];
+} else {
+    session_start();
+}
 
 $sessionNow = time();
 $idleTimeout = 2 * 60 * 60;
@@ -74,6 +95,11 @@ if (empty($_SESSION['csrf_token'])) {
 // ── Database ──────────────────────────────────────────────────────────────────
 $crmEnvironment = strtolower(trim((string)(getenv('CRM_ENV') ?: 'development')));
 $crmIsProduction = in_array($crmEnvironment, ['production', 'prod'], true);
+if ($crmIsProduction && PHP_SAPI !== 'cli') {
+    // Never rely on the host php.ini: stack traces and paths must not reach the browser.
+    ini_set('display_errors', '0');
+    ini_set('log_errors', '1');
+}
 $dbHost = trim((string)(getenv('DB_HOST') ?: ''));
 $dbName = trim((string)(getenv('DB_NAME') ?: ''));
 $dbUser = trim((string)(getenv('DB_USER') ?: ''));
@@ -99,6 +125,9 @@ if ($crmIsProduction) {
 }
 
 define('DB_HOST', $dbHost);
+// Optional non-default port (empty = driver default 3306).
+$dbPort = (int)(getenv('DB_PORT') ?: 0);
+define('DB_PORT_DSN', $dbPort > 0 && $dbPort < 65536 ? ';port=' . $dbPort : '');
 define('DB_NAME', $dbName);
 define('DB_USER', $dbUser);
 define('DB_PASS', $dbPass);
@@ -115,7 +144,7 @@ try {
     foreach (array_unique($db_hosts) as $db_host) {
         try {
             $pdo = new PDO(
-                "mysql:host=" . $db_host . ";dbname=" . DB_NAME . ";charset=utf8mb4",
+                "mysql:host=" . $db_host . DB_PORT_DSN . ";dbname=" . DB_NAME . ";charset=utf8mb4",
                 DB_USER,
                 DB_PASS,
                 [
@@ -132,6 +161,15 @@ try {
 
     if (!isset($pdo)) {
         throw $last_db_exception;
+    }
+    if ($crmTimezone !== '') {
+        // Prefer the named zone (correct across DST); without MySQL tz tables fall back to the
+        // numeric offset at request time.
+        try {
+            $pdo->exec("SET time_zone = " . $pdo->quote($crmTimezone));
+        } catch (PDOException $timezoneError) {
+            $pdo->exec("SET time_zone = " . $pdo->quote(date('P')));
+        }
     }
 } catch (PDOException $e) {
     crmConfigurationFailure('DB Connection Error: ' . $e->getMessage(), sprintf(__('db_error'), ''));
@@ -150,9 +188,11 @@ try {
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
             $_SESSION['session_created_at'] = $sessionNow;
             $_SESSION['last_activity_at'] = $sessionNow;
-        } else {
+        } elseif (($sessionNow - (int)($_SESSION['last_seen_written_at'] ?? 0)) >= 60) {
+            // Presence needs minute precision; avoid a row write on every page/API hit.
             $upd_stmt = $pdo->prepare("UPDATE technicians SET last_seen = NOW() WHERE id = ?");
             $upd_stmt->execute([$_SESSION['tech_id']]);
+            $_SESSION['last_seen_written_at'] = $sessionNow;
         }
     }
 } catch (PDOException $e) {
@@ -170,7 +210,9 @@ if (!defined('TG_BOT_TOKEN') && isset($pdo)) {
         $stmt->execute();
         $token = $stmt->fetchColumn();
         if ($token) define('TG_BOT_TOKEN', $token);
-    } catch (Exception $e) {}
+    } catch (Exception $e) {
+        error_log('Telegram token setting lookup failed: ' . $e->getMessage());
+    }
 }
 if (!defined('TG_BOT_TOKEN')) {
     define('TG_BOT_TOKEN', '');

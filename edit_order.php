@@ -55,18 +55,34 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 throw new InvalidArgumentException(__('missing_data'));
             }
 
+            $canonical_current = canonicalOrderStatus($current_order['status']);
             OrderStatusService::assertCanChangeFromTerminal(
-                canonicalOrderStatus($current_order['status']),
+                $canonical_current,
                 $canonical_status,
                 $is_admin
             );
-            OrderStatusService::assertIssuedRequirements(
-                $canonical_status,
-                $current_order['final_cost'] ?? null,
-                $current_order['shipping_method'] ?? null,
-                true,
-                $current_order['order_type'] ?? null
-            );
+
+            // Same closed-order lock as api/update_order_full.php: on a terminal order only admins
+            // may change revenue inputs (estimated cost is the revenue fallback; order type decides
+            // whether a final cost is required).
+            $posted_order_type = trim((string)($_POST['order_type'] ?? $current_order['order_type']));
+            $money_changed = abs((float)$estimated_cost_raw - (float)($current_order['estimated_cost'] ?? 0)) > 0.004
+                || $posted_order_type !== (string)($current_order['order_type'] ?? 'Non-Warranty');
+            if ($money_changed) {
+                OrderStatusService::assertClosedOrderEditable($canonical_current, $is_admin);
+            }
+
+            // Handover requirements guard the transition into Issued (or a change of what they were
+            // validated on); notes on an already issued legacy order must stay editable.
+            if ($canonical_status === 'Issued' && ($canonical_current !== 'Issued' || $money_changed)) {
+                OrderStatusService::assertIssuedRequirements(
+                    $canonical_status,
+                    $current_order['final_cost'] ?? null,
+                    $current_order['shipping_method'] ?? null,
+                    true,
+                    $posted_order_type
+                );
+            }
             OrderStatusService::assertCancellationReason(
                 $canonical_status,
                 null,
@@ -109,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $customer_id,
                 $technician_id,
                 trim((string)($_POST['device_type'] ?? $current_order['device_type'])),
-                trim((string)($_POST['order_type'] ?? $current_order['order_type'])),
+                $posted_order_type,
                 trim((string)($_POST['device_brand'] ?? $current_order['device_brand'])),
                 trim((string)($_POST['device_model'] ?? $current_order['device_model'])),
                 trim((string)($_POST['serial_number'] ?? $current_order['serial_number'])),
@@ -173,8 +189,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div class="d-flex align-items-center">
-        <a href="javascript:history.back()" class="btn btn-outline-secondary btn-sm me-3">
-            <i class="fas fa-arrow-left"></i> <?php echo __('back'); ?>
+        <a href="view_order.php?id=<?php echo (int)$order['id']; ?>" class="btn btn-outline-secondary btn-sm me-3"
+           data-crm-action="navigate-back" data-crm-explicit-return="0">
+            <i class="fas fa-arrow-left" aria-hidden="true"></i> <?php echo __('back'); ?>
         </a>
         <h1 class="mb-0"><?php echo __('edit_order_header'); ?><?php echo $order['id']; ?></h1>
     </div>
@@ -301,14 +318,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             ?>
                                 <div class="col-3 col-md-2" id="media-item-<?php echo $file['id']; ?>">
                                     <div class="card h-100 shadow-sm border position-relative">
-                                        <button type="button" class="btn btn-danger btn-sm position-absolute top-0 end-0 p-1" style="z-index: 10; font-size: 0.6rem;" data-crm-action="delete-media" data-crm-id="<?php echo (int)$file['id']; ?>">
-                                            <i class="fas fa-times"></i>
+                                        <button type="button" class="btn btn-danger btn-sm media-tile__remove position-absolute top-0 end-0 m-1 z-3" data-crm-action="delete-media" data-crm-id="<?php echo (int)$file['id']; ?>" aria-label="<?php echo e(__('delete') . ': ' . $file['file_name']); ?>">
+                                            <i class="fas fa-times" aria-hidden="true"></i>
                                         </button>
                                         <div class="ratio ratio-1x1 bg-dark bg-opacity-25">
                                             <?php if ($isVideo): ?>
                                                 <div class="d-flex align-items-center justify-content-center bg-dark"><i class="fas fa-video text-white"></i></div>
                                             <?php else: ?>
-                                                <img src="<?php echo $file['file_path']; ?>" class="object-fit-cover" alt="Photo">
+                                                <img src="<?php echo e(crmOrderAttachmentUrl((int)$file['id'])); ?>" class="object-fit-cover" alt="<?php echo e(__('attachment_photo_alt')); ?>">
                                             <?php endif; ?>
                                         </div>
                                     </div>
@@ -331,10 +348,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     </div>
 </div>
 
+<?php $crmJsFlags = JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE; ?>
 <script nonce="<?php echo e(crmCspNonce()); ?>">
 $(document).ready(function() {
     $('.select2-customer-remote').select2({
-        placeholder: "<?php echo __('search_client_placeholder'); ?>",
+        placeholder: <?php echo json_encode(__('search_client_placeholder'), $crmJsFlags); ?>,
         minimumInputLength: 0,
         ajax: {
             url: 'api/search_customers.php',
@@ -352,26 +370,26 @@ $(document).ready(function() {
     });
 
     $('.select2-brand').select2({
-        placeholder: "<?php echo __('brand_placeholder'); ?>",
+        placeholder: <?php echo json_encode(__('brand_placeholder'), $crmJsFlags); ?>,
         tags: true,
         width: '100%'
     });
 });
 
 function deleteOrder(id) {
-    showConfirm('<?php echo __('confirm_delete_order_full'); ?>', function() {
+    showConfirm(<?php echo json_encode(__('confirm_delete_order_full'), $crmJsFlags); ?>, function() {
         $.post('api/delete_order.php', {
             id: id,
             csrf_token: $('meta[name="csrf-token"]').attr('content')
         }, function(res) {
             if (res.success) {
-                showAlert('<?php echo __('order_deleted'); ?>');
+                showAlert(<?php echo json_encode(__('order_deleted'), $crmJsFlags); ?>);
                 window.location.href = 'orders.php';
             } else {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
+                showAlert(<?php echo json_encode(__('error') . ': ', $crmJsFlags); ?> + res.message);
             }
         });
-    });
+    }, undefined, 'danger');
 }
 
 function deleteMedia(id) {
@@ -381,7 +399,7 @@ function deleteMedia(id) {
         csrf_token: $('meta[name="csrf-token"]').attr('content')
     };
 
-    showConfirm('<?php echo __('confirm_delete_file'); ?>', function() {
+    showConfirm(<?php echo json_encode(__('confirm_delete_file'), $crmJsFlags); ?>, function() {
         $.ajax({
             url: 'api/delete_media.php',
             type: 'POST',
@@ -393,18 +411,18 @@ function deleteMedia(id) {
                         $(this).remove();
                     });
                 } else {
-                    const message = (res && res.message) ? res.message : '<?php echo __('error'); ?>';
-                    showAlert('<?php echo __('error'); ?>: ' + message);
+                    const message = (res && res.message) ? res.message : <?php echo json_encode(__('error'), $crmJsFlags); ?>;
+                    showAlert(<?php echo json_encode(__('error') . ': ', $crmJsFlags); ?> + message);
                 }
             },
             error: function(xhr) {
                 const message = xhr.responseJSON && xhr.responseJSON.message
                     ? xhr.responseJSON.message
-                    : '<?php echo __('error'); ?>';
-                showAlert('<?php echo __('error'); ?>: ' + message);
+                    : <?php echo json_encode(__('error'), $crmJsFlags); ?>;
+                showAlert(<?php echo json_encode(__('error') . ': ', $crmJsFlags); ?> + message);
             }
         });
-    });
+    }, undefined, 'danger');
 }
 </script>
 

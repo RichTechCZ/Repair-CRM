@@ -1,6 +1,11 @@
 <?php
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+// Page-level guard independent of header.php's permission map (defense in depth).
+if (!hasPermission('admin_access')) {
+    header('Location: index.php');
+    exit;
+}
 require_once 'includes/header.php';
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
@@ -44,11 +49,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $error = __('min_stock_alert_limit') . ': ' . __('missing_data');
     } else {
         $quantity = (int)$quantity_raw;
-        $cost_price = $cost_raw === '' ? 0.0 : (float)$cost_raw;
+        // Unknown purchase cost stays NULL (payroll falls back to the selling price).
+        $cost_price = $cost_raw === '' ? null : (float)$cost_raw;
         $sale_price = $sale_raw === '' ? 0.0 : (float)$sale_raw;
         $min_stock = $min_raw === '' ? 0 : (int)$min_raw;
 
         try {
+            $pdo->beginTransaction();
+            $lockStmt = $pdo->prepare('SELECT quantity FROM inventory WHERE id = ? FOR UPDATE');
+            $lockStmt->execute([$id]);
+            $lockedQuantity = (int)$lockStmt->fetchColumn();
+            // Apply the operator's change as a delta to the locked row: stock consumed by orders
+            // while this form was open must not be overwritten.
+            $originalRaw = $_POST['original_quantity'] ?? '';
+            if (is_numeric($originalRaw)) {
+                $quantity = max(0, $lockedQuantity + ($quantity - (int)$originalRaw));
+            }
             $update = $pdo->prepare("UPDATE inventory SET
                 part_name = ?,
                 sku = ?,
@@ -58,10 +74,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 min_stock = ?
                 WHERE id = ?");
             $update->execute([$part_name, $sku, $quantity, $cost_price, $sale_price, $min_stock, $id]);
+            $pdo->commit();
             $success = __("inventory_updated");
             $stmt->execute([$id]);
             $item = $stmt->fetch();
         } catch (Exception $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             error_log('edit_inventory error: ' . $e->getMessage());
             $error = __("error_prefix") . publicExceptionMessage($e);
         }
@@ -97,6 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <div class="col-md-6">
                     <label class="form-label"><?php echo __('stock_quantity'); ?></label>
                     <input type="number" name="quantity" class="form-control" value="<?php echo (int)$item['quantity']; ?>" min="0" step="1" required>
+                    <input type="hidden" name="original_quantity" value="<?php echo (int)$item['quantity']; ?>">
                 </div>
                 <div class="col-md-6">
                     <label class="form-label"><?php echo __('buy_price'); ?></label>

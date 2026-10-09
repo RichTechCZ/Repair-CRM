@@ -4,6 +4,8 @@
  * Handles all logic for Invoices, Items, Statuses and Conversions.
  */
 
+require_once __DIR__ . '/InvoicePolicy.php';
+
 class InvoiceManager {
     private $pdo;
 
@@ -74,7 +76,7 @@ private function getInvoiceStatusBadge($status) {
             $isCreditNote = false;
             $existingPaymentDate = null;
             if ($id) {
-                $invoiceLock = $this->pdo->prepare('SELECT invoice_type, payment_date FROM invoices WHERE id = ? FOR UPDATE');
+                $invoiceLock = $this->pdo->prepare('SELECT invoice_type, payment_date, is_vat_payer FROM invoices WHERE id = ? FOR UPDATE');
                 $invoiceLock->execute([$id]);
                 $existingInvoice = $invoiceLock->fetch(PDO::FETCH_ASSOC);
                 if ($existingInvoice === false) {
@@ -84,14 +86,23 @@ private function getInvoiceStatusBadge($status) {
                 $existingPaymentDate = $existingInvoice['payment_date'] ?? null;
                 $isCreditNote = $existingInvoiceType === 'credit_note';
             }
-            $invoice_number = $data['invoice_number'] ?? '';
+            $invoice_number = trim((string)($data['invoice_number'] ?? ''));
+            if ($invoice_number === '' && !$id) {
+                $invoice_number = crmReserveInvoiceNumber($this->pdo);
+            } elseif ($invoice_number !== '') {
+                crmAdvanceInvoiceCounterPast($this->pdo, $invoice_number);
+            }
             $customer_id = (int)($data['customer_id'] ?? 0);
             $date_issue = !empty($data['date_issue']) ? $data['date_issue'] : date('Y-m-d');
             $date_tax = !empty($data['date_tax']) ? $data['date_tax'] : $date_issue;
             $date_due = !empty($data['date_due']) ? $data['date_due'] : date('Y-m-d', strtotime('+14 days'));
             
             $status = !empty($data['status']) ? $data['status'] : 'issued';
-            $is_vat_payer = (isset($data['is_vat_payer']) && ($data['is_vat_payer'] == '1' || $data['is_vat_payer'] === true)) ? 1 : 0;
+            // VAT status is server-side: today's policy for a new invoice, the stored snapshot for an
+            // existing one. The browser flag is ignored (see models/InvoicePolicy.php).
+            $is_vat_payer = $id
+                ? (int)!empty($existingInvoice['is_vat_payer'])
+                : (crmInvoiceVatPolicy()['payer'] ? 1 : 0);
             $payment_method = !empty($data['payment_method']) ? $data['payment_method'] : 'bank_transfer';
             $payment_date = ($status == 'paid') ? ($existingPaymentDate ?: date('Y-m-d')) : null;
             
@@ -117,7 +128,7 @@ private function getInvoiceStatusBadge($status) {
             if (!in_array($status, ['draft', 'issued', 'paid', 'overdue', 'cancelled'], true)) {
                 throw new InvalidArgumentException('Invalid invoice status.');
             }
-            if (!in_array($payment_method, ['bank_transfer', 'cash', 'card'], true)) {
+            if (!in_array($payment_method, ['bank_transfer', 'cash', 'card', 'cod'], true)) {
                 throw new InvalidArgumentException('Invalid payment method.');
             }
             foreach ([$date_issue, $date_tax, $date_due] as $dateValue) {
@@ -238,7 +249,7 @@ private function getInvoiceStatusBadge($status) {
         if (!in_array($status, ['draft', 'issued', 'paid', 'overdue', 'cancelled'], true)) {
             throw new InvalidArgumentException('Invalid invoice status.');
         }
-        if ($payment_method !== null && !in_array($payment_method, ['bank_transfer', 'cash', 'card'], true)) {
+        if ($payment_method !== null && !in_array($payment_method, ['bank_transfer', 'cash', 'card', 'cod'], true)) {
             throw new InvalidArgumentException('Invalid payment method.');
         }
         // Re-marking an already paid invoice must not move its original payment date.

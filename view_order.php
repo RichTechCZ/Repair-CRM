@@ -1,6 +1,8 @@
 <?php
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+require_once 'includes/upload_security.php';
+require_once 'models/InvoicePolicy.php';
 require_once 'includes/header.php';
 
 $id = $_GET['id'] ?? $_GET['order_id'] ?? null;
@@ -44,7 +46,6 @@ try {
 }
 
 // Fetch all available parts for the dropdown (limit 500 max to prevent HTML crash)
-$inventory = $pdo->query("SELECT id, part_name, quantity, sale_price FROM inventory ORDER BY part_name ASC LIMIT 500")->fetchAll();
 
 // Fetch active technicians for edit modal
 $techs = getActiveTechnicians();
@@ -72,6 +73,17 @@ try {
     $status_log = $stmt->fetchAll();
 } catch (Exception $e) {
     $status_log = [];
+}
+
+// "Status date" is when the order entered its current status (order_status_log), not
+// orders.updated_at, which MySQL bumps on every field edit.
+$status_date = $order['updated_at'];
+$current_canonical_status = canonicalOrderStatus((string)$order['status']);
+foreach ($status_log as $log_row) {
+    if (canonicalOrderStatus((string)$log_row['new_status']) === $current_canonical_status) {
+        $status_date = $log_row['changed_at'];
+        break;
+    }
 }
 ?>
 
@@ -106,12 +118,12 @@ try {
             <span><?php echo __('back'); ?></span>
         </a>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#editOrderFullModal">
-            <i class="fas fa-edit"></i>
+            <i class="fas fa-edit" aria-hidden="true"></i>
             <span><?php echo __('edit'); ?></span>
         </button>
         <?php if(hasPermission('admin_access')): ?>
         <button class="btn btn-outline-danger" data-crm-action="delete-order" data-crm-id="<?php echo (int)$order['id']; ?>">
-            <i class="fas fa-trash"></i>
+            <i class="fas fa-trash" aria-hidden="true"></i>
             <span><?php echo __('delete'); ?></span>
         </button>
         <?php endif; ?>
@@ -156,7 +168,7 @@ try {
                         <h6><?php echo __('pin'); ?></h6>
                         <div class="alert alert-warning bg-transparent border border-warning py-2 mb-0">
                             <?php if ($pinDecryptFailed): ?>
-                                <span class="text-warning"><?php echo e(__('not_found')); ?> — PIN encrypted, re-enter in edit</span>
+                                <span class="text-warning"><?php echo e(__('not_found')); ?> — <?php echo e(__('pin_reenter_notice')); ?></span>
                             <?php else: ?>
                                 <code class="text-warning"><?php echo htmlspecialchars($order['pin_code'] ?: '---'); ?></code>
                             <?php endif; ?>
@@ -224,14 +236,19 @@ try {
                     </table>
                 </div>
                 <?php else: ?>
-                <div class="text-white-75 small mb-4"><?php echo __('not_found'); ?></div>
+                <div class="mb-4">
+                    <div class="empty-state">
+                        <div class="empty-state__mark" aria-hidden="true"></div>
+                        <p class="mb-0"><?php echo e(__('not_found')); ?></p>
+                    </div>
+                </div>
                 <?php endif; ?>
 
                 <!-- Media Section -->
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h6 class="mb-0"><?php echo __('media_files'); ?></h6>
-                    <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#uploadMediaModal">
-                        <i class="fas fa-upload me-1"></i> <?php echo __('upload'); ?>
+                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#uploadMediaModal">
+                        <i class="fas fa-upload me-1" aria-hidden="true"></i> <?php echo __('upload'); ?>
                     </button>
                 </div>
                 <div class="row g-2 mb-4">
@@ -241,30 +258,36 @@ try {
                     $attachments = $stmt_files->fetchAll();
                     
                     if(empty($attachments)): ?>
-                        <div class="col-12 text-white-75 small"><?php echo __('no_media_files'); ?></div>
+                        <div class="col-12">
+                            <div class="empty-state">
+                                <div class="empty-state__mark" aria-hidden="true"></div>
+                                <p class="mb-0"><?php echo e(__('no_media_files')); ?></p>
+                            </div>
+                        </div>
                     <?php else:
                         foreach($attachments as $file): 
                             $is_video = strpos($file['file_type'], 'video') !== false;
                     ?>
                         <div class="col-6 col-md-3" id="media-item-<?php echo $file['id']; ?>">
                             <div class="card h-100 shadow-sm border position-relative">
-                                <?php if ($_SESSION['role'] == 'admin'): ?>
-                                <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1 z-3 shadow-sm"
-                                        data-crm-action="delete-media" data-crm-id="<?php echo (int)$file['id']; ?>" style="padding: 2px 6px; font-size: 10px;">
-                                    <i class="fas fa-times"></i>
+                                <?php if (hasPermission('admin_access')): ?>
+                                <button type="button" class="btn btn-sm btn-danger media-tile__remove position-absolute top-0 end-0 m-1 z-3"
+                                        data-crm-action="delete-media" data-crm-id="<?php echo (int)$file['id']; ?>"
+                                        aria-label="<?php echo e(__('delete') . ': ' . $file['file_name']); ?>">
+                                    <i class="fas fa-times" aria-hidden="true"></i>
                                 </button>
                                 <?php endif; ?>
 
                                 <?php if($is_video): ?>
-                                    <a href="<?php echo $file['file_path']; ?>" data-fancybox="gallery" data-type="video" data-caption="<?php echo htmlspecialchars($file['file_name']); ?>">
+                                    <a href="<?php echo e(crmOrderAttachmentUrl((int)$file['id'])); ?>" data-fancybox="gallery" data-type="video" data-caption="<?php echo htmlspecialchars($file['file_name']); ?>">
                                         <div class="ratio ratio-1x1 bg-dark d-flex align-items-center justify-content-center">
                                             <i class="fas fa-video fa-2x text-white"></i>
                                         </div>
                                     </a>
                                 <?php else: ?>
-                                    <a href="<?php echo $file['file_path']; ?>" data-fancybox="gallery" data-type="image" data-caption="<?php echo htmlspecialchars($file['file_name']); ?>">
+                                    <a href="<?php echo e(crmOrderAttachmentUrl((int)$file['id'])); ?>" data-fancybox="gallery" data-type="image" data-caption="<?php echo htmlspecialchars($file['file_name']); ?>">
                                         <div class="ratio ratio-1x1">
-                                            <img src="<?php echo $file['file_path']; ?>" class="card-img-top object-fit-cover" alt="Photo">
+                                            <img src="<?php echo e(crmOrderAttachmentUrl((int)$file['id'])); ?>" class="card-img-top object-fit-cover" alt="<?php echo e(__('attachment_photo_alt')); ?>">
                                         </div>
                                     </a>
                                 <?php endif; ?>
@@ -275,12 +298,12 @@ try {
                                     <div class="text-white-75 d-flex justify-content-center align-items-center" style="font-size: 0.75rem;">
                                         <i class="far fa-clock me-1"></i>
                                         <span><?php echo date('d.m.Y H:i', strtotime($file['created_at'])); ?></span>
-                                        <a href="javascript:void(0)" class="ms-1 text-primary edit-attachment-date" 
-                                           data-id="<?php echo $file['id']; ?>" 
+                                        <button type="button" class="btn btn-link p-0 ms-1 text-primary edit-attachment-date"
+                                           data-id="<?php echo (int)$file['id']; ?>"
                                            data-date="<?php echo date('Y-m-d\TH:i', strtotime($file['created_at'])); ?>"
-                                           title="<?php echo __('edit'); ?>">
-                                            <i class="fas fa-calendar-alt" style="font-size: 0.7rem;"></i>
-                                        </a>
+                                           aria-label="<?php echo e(__('edit_upload_date')); ?>">
+                                            <i class="fas fa-calendar-alt" aria-hidden="true"></i>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -295,7 +318,8 @@ try {
                     </button>
                 </div>
                 
-                <table class="table table-sm border align-middle">
+                <div class="table-responsive">
+                <table class="table table-sm border align-middle table-mobile-cards mb-0">
                     <thead class="bg-transparent border-bottom">
                         <tr>
                             <th><?php echo __('part_name'); ?></th>
@@ -313,27 +337,35 @@ try {
                             $parts_total += $sum;
                         ?>
                         <tr>
-                            <td><?php echo htmlspecialchars($item['part_name']); ?></td>
-                            <td class="text-center"><?php echo $item['quantity']; ?></td>
-                            <td class="text-end"><?php echo formatMoney($item['price']); ?></td>
-                            <td class="text-end fw-bold"><?php echo formatMoney($sum); ?></td>
-                            <td class="text-end">
+                            <td data-label="<?php echo e(__('part_name')); ?>"><?php echo htmlspecialchars($item['part_name']); ?></td>
+                            <td class="text-center" data-label="<?php echo e(__('quantity')); ?>"><?php echo $item['quantity']; ?></td>
+                            <td class="text-end" data-label="<?php echo e(__('price')); ?>"><?php echo formatMoney($item['price']); ?></td>
+                            <td class="text-end fw-bold" data-label="<?php echo e(__('sum')); ?>"><?php echo formatMoney($sum); ?></td>
+                            <td class="text-end mobile-row-actions" data-label="">
                                 <div class="btn-group btn-group-sm">
-                                    <button class="btn btn-outline-primary" data-crm-action="edit-order-part" data-crm-item="<?php echo e(json_encode($item, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>" title="<?php echo __('edit'); ?>">
-                                        <i class="fas fa-edit"></i>
+                                    <button type="button" class="btn btn-outline-primary" data-crm-action="edit-order-part" data-crm-item="<?php echo e(json_encode($item, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>" title="<?php echo __('edit'); ?>" aria-label="<?php echo e(__('edit') . ': ' . $item['part_name']); ?>">
+                                        <i class="fas fa-edit" aria-hidden="true"></i>
                                     </button>
-                                    <button class="btn btn-outline-danger" data-crm-action="delete-part" data-crm-id="<?php echo (int)$item['id']; ?>" title="<?php echo __('delete'); ?>">
-                                        <i class="fas fa-trash"></i>
+                                    <button type="button" class="btn btn-outline-danger" data-crm-action="delete-part" data-crm-id="<?php echo (int)$item['id']; ?>" title="<?php echo __('delete'); ?>" aria-label="<?php echo e(__('delete') . ': ' . $item['part_name']); ?>">
+                                        <i class="fas fa-trash" aria-hidden="true"></i>
                                     </button>
                                 </div>
                             </td>
                         </tr>
                         <?php endforeach; ?>
                         <?php if(empty($order_items)): ?>
-                        <tr><td colspan="5" class="text-center text-white-75 py-3"><?php echo __('no_parts'); ?></td></tr>
+                        <tr>
+                            <td colspan="5">
+                                <div class="empty-state">
+                                    <div class="empty-state__mark" aria-hidden="true"></div>
+                                    <p class="mb-0"><?php echo e(__('no_parts')); ?></p>
+                                </div>
+                            </td>
+                        </tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
+                </div>
             </div>
         </div>
     </div>
@@ -357,7 +389,7 @@ try {
                     <div>
                         <div class="mb-3">
                             <label class="form-label"><?php echo __('technician'); ?></label>
-                            <select name="technician_id" class="form-select mb-2" <?php echo $_SESSION['role'] != 'admin' ? 'disabled' : ''; ?>>
+                            <select name="technician_id" class="form-select mb-2" <?php echo !hasPermission('admin_access') ? 'disabled' : ''; ?>>
                                 <option value="">-- <?php echo __('edit'); ?> --</option>
                                 <?php $techs = getActiveTechnicians(); foreach($techs as $t): ?>
                                 <option value="<?php echo $t['id']; ?>" <?php echo $order['technician_id'] == $t['id'] ? 'selected' : ''; ?>>
@@ -365,7 +397,7 @@ try {
                                 </option>
                                 <?php endforeach; ?>
                             </select>
-                            <?php if ($_SESSION['role'] != 'admin'): ?>
+                            <?php if (!hasPermission('admin_access')): ?>
                                 <input type="hidden" name="technician_id" value="<?php echo $order['technician_id']; ?>">
                             <?php endif; ?>
                         </div>
@@ -373,10 +405,10 @@ try {
                             <label class="form-label d-flex justify-content-between align-items-center">
                                 <span><?php echo __('status'); ?></span>
                                 <span class="text-white-75 small">
-                                    <span id="display_updated_at"><?php echo date('d.m.Y H:i', strtotime($order['updated_at'])); ?></span>
-                                    <a href="javascript:void(0)" class="ms-1 text-primary" data-bs-toggle="modal" data-bs-target="#editOrderDatesModal" title="<?php echo __('edit'); ?>">
-                                        <i class="fas fa-calendar-alt"></i>
-                                    </a>
+                                    <span id="display_updated_at"><?php echo date('d.m.Y H:i', strtotime($status_date)); ?></span>
+                                    <button type="button" class="btn btn-link p-0 ms-1 text-primary align-baseline" data-bs-toggle="modal" data-bs-target="#editOrderDatesModal" aria-label="<?php echo e(__('edit_order_dates')); ?>">
+                                        <i class="fas fa-calendar-alt" aria-hidden="true"></i>
+                                    </button>
                                 </span>
                             </label>
                             <select name="status" class="form-select mb-2">
@@ -411,7 +443,7 @@ try {
                                 <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
                             </div>
                         </div>
-                        <?php if ($_SESSION['role'] == 'admin'): ?>
+                        <?php if (hasPermission('admin_access')): ?>
                         <div class="mb-3">
                             <label class="form-label"><?php echo __('extra_expenses'); ?></label>
                             <div class="input-group">
@@ -420,10 +452,10 @@ try {
                             </div>
                         </div>
                         <?php endif; ?>
-                        <button type="submit" class="btn btn-success w-100 mb-2"><?php echo __('update_status'); ?></button>
+                        <button type="submit" class="btn btn-primary w-100 mb-2"><?php echo __('update_status'); ?></button>
                         <div class="dropdown">
-                            <button class="btn btn-outline-info w-100 dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                <i class="fas fa-print me-2"></i> <?php echo __('print'); ?>
+                            <button class="btn btn-outline-secondary w-100 dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-print me-2" aria-hidden="true"></i> <?php echo __('print'); ?>
                             </button>
                             <ul class="dropdown-menu w-100 shadow">
                                 <li><a class="dropdown-item py-2" href="#" data-crm-action="open-preview" data-preview-url="print_order.php?id=<?php echo (int)$order['id']; ?>" data-preview-title="Order #<?php echo (int)$order['id']; ?>"><i class="fas fa-file-invoice me-2 text-primary"></i> <?php echo __('a4_invoice'); ?></a></li>
@@ -479,7 +511,14 @@ try {
         <!-- Express Invoice Block -->
         <?php if ($show_invoice): 
             // Fetch existing invoice for this order (first one)
-            $stmt_inv = $pdo->prepare("SELECT * FROM invoices WHERE order_id = ? ORDER BY created_at DESC LIMIT 1");
+            // The express form edits the order's regular invoice: never a credit note, and an active invoice
+            // is preferred over a cancelled one.
+            $stmt_inv = $pdo->prepare(
+                "SELECT * FROM invoices
+                 WHERE order_id = ? AND (invoice_type IS NULL OR invoice_type <> 'credit_note')
+                 ORDER BY (status = 'cancelled') ASC, created_at DESC, id DESC
+                 LIMIT 1"
+            );
             $stmt_inv->execute([$id]);
             $existing_invoice = $stmt_inv->fetch();
             
@@ -498,9 +537,7 @@ try {
             <div class="card-header bg-transparent border-bottom-0 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="fas fa-file-invoice-dollar me-2 text-success"></i><?php echo __('invoice'); ?></h5>
                 <?php if($existing_invoice): ?>
-                    <span class="badge <?php echo $existing_invoice['status'] == 'paid' ? 'bg-success' : 'bg-warning text-white'; ?>">
-                        <?php echo __($existing_invoice['status']); ?>
-                    </span>
+                    <?php echo getInvoiceStatusBadge($existing_invoice['status']); ?>
                 <?php endif; ?>
             </div>
             <div class="card-body">
@@ -510,7 +547,7 @@ try {
                     
                     <div class="mb-3">
                         <label class="form-label"><?php echo __('invoice_number'); ?></label>
-                        <input type="text" name="invoice_number" class="form-control" value="<?php echo $existing_invoice['invoice_number'] ?? $order['id']; ?>" required>
+                        <input type="text" name="invoice_number" class="form-control" value="<?php echo e($existing_invoice['invoice_number'] ?? crmSuggestInvoiceNumber($pdo)); ?>" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label"><?php echo __('item_description'); ?></label>
@@ -556,22 +593,22 @@ try {
                     </div>
                     
                     <div class="d-flex gap-2">
-                        <button type="submit" class="btn <?php echo $existing_invoice ? 'btn-primary' : 'btn-success'; ?> flex-grow-1">
+                        <button type="submit" class="btn btn-primary flex-grow-1">
                             <i class="fas fa-<?php echo $existing_invoice ? 'save' : 'plus'; ?> me-2"></i>
                             <?php echo $existing_invoice ? __('save') : __('create_invoice'); ?>
                         </button>
                         <?php if($existing_invoice): ?>
                         <a href="#" data-crm-action="open-preview"
                            data-preview-url="print_invoice.php?id=<?php echo (int)$existing_invoice['id']; ?>"
-                           data-preview-title="<?php echo e('Invoice #' . $existing_invoice['invoice_number']); ?>"
-                           class="btn btn-outline-secondary" title="<?php echo __('print'); ?>">
-                            <i class="fas fa-print"></i>
+                           data-preview-title="<?php echo e(__('invoice') . ' ' . $existing_invoice['invoice_number']); ?>"
+                           class="btn btn-outline-secondary" title="<?php echo __('print'); ?>" aria-label="<?php echo e(__('print')); ?>">
+                            <i class="fas fa-print" aria-hidden="true"></i>
                         </a>
                         <a href="#" data-crm-action="open-preview"
                            data-preview-url="print_invoice_thermal.php?id=<?php echo (int)$existing_invoice['id']; ?>"
-                           data-preview-title="<?php echo e('Receipt #' . $existing_invoice['invoice_number']); ?>"
-                           class="btn btn-outline-success" title="<?php echo __('thermal_receipt'); ?>">
-                            <i class="fas fa-receipt"></i>
+                           data-preview-title="<?php echo e(__('thermal_receipt') . ' ' . $existing_invoice['invoice_number']); ?>"
+                           class="btn btn-outline-secondary" title="<?php echo __('thermal_receipt'); ?>" aria-label="<?php echo e(__('thermal_receipt')); ?>">
+                            <i class="fas fa-receipt" aria-hidden="true"></i>
                         </a>
                         <?php endif; ?>
                     </div>
@@ -583,14 +620,14 @@ try {
 </div>
 
 <!-- Modal Add Part -->
-<div class="modal fade" id="addPartModal" tabindex="-1" data-bs-focus="false">
+<div class="modal fade" id="addPartModal" tabindex="-1" data-bs-focus="false" aria-labelledby="addPartModalTitle">
     <div class="modal-dialog">
         <div class="modal-content glass-card border-secondary text-white">
             <form id="addPartForm">
                 <?php echo csrfField(); ?>
                 <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title"><?php echo __('add_part_to_order'); ?></h5>
+                    <h5 class="modal-title" id="addPartModalTitle"><?php echo __('add_part_to_order'); ?></h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -604,13 +641,8 @@ try {
                         <label class="form-label" for="addPartInventoryId"><?php echo __('select_part_from_warehouse'); ?></label>
                         <?php /* required is enforced in JS: Select2 hides the native select and HTML5 required then silently blocks submit */ ?>
                         <select name="inventory_id" id="addPartInventoryId" class="form-select">
+                            <?php /* Options are loaded by search (api/search_inventory.php): the whole catalogue is not rendered. */ ?>
                             <option value=""><?php echo __('choose_option'); ?></option>
-                            <?php foreach ($inventory as $item): ?>
-                            <option value="<?php echo (int)$item['id']; ?>" data-stock="<?php echo (int)$item['quantity']; ?>">
-                                <?php echo htmlspecialchars((string)$item['part_name']); ?>
-                                (<?php echo __('in_stock'); ?>: <?php echo (int)$item['quantity']; ?>)
-                            </option>
-                            <?php endforeach; ?>
                         </select>
                     </div>
                     <div id="manualPartFields" class="d-none">
@@ -645,13 +677,13 @@ try {
 </div>
 
 <!-- Modal Upload Media -->
-<div class="modal fade" id="uploadMediaModal" tabindex="-1">
+<div class="modal fade" id="uploadMediaModal" tabindex="-1" aria-labelledby="uploadMediaModalTitle">
     <div class="modal-dialog">
         <div class="modal-content glass-card border-secondary text-white">
             <form id="uploadMediaForm" enctype="multipart/form-data">
                 <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title"><?php echo __('upload_media'); ?></h5>
+                    <h5 class="modal-title" id="uploadMediaModalTitle"><?php echo __('upload_media'); ?></h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -673,13 +705,13 @@ try {
 </div>
 
 <!-- Modal Edit Order Dates -->
-<div class="modal fade" id="editOrderDatesModal" tabindex="-1">
+<div class="modal fade" id="editOrderDatesModal" tabindex="-1" aria-labelledby="editOrderDatesModalTitle">
     <div class="modal-dialog">
         <div class="modal-content glass-card border-secondary text-white">
             <form id="editOrderDatesForm">
                 <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title"><?php echo __('edit_order_dates'); ?></h5>
+                    <h5 class="modal-title" id="editOrderDatesModalTitle"><?php echo __('edit_order_dates'); ?></h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -689,7 +721,7 @@ try {
                     </div>
                     <div class="mb-3">
                         <label class="form-label"><?php echo __('updated_at'); ?></label>
-                        <input type="datetime-local" name="updated_at" class="form-control" value="<?php echo date('Y-m-d\TH:i', strtotime($order['updated_at'])); ?>">
+                        <input type="datetime-local" name="updated_at" class="form-control" value="<?php echo date('Y-m-d\TH:i', strtotime($status_date)); ?>">
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -702,13 +734,13 @@ try {
 </div>
 
 <!-- Modal Edit Attachment Date -->
-<div class="modal fade" id="editAttachmentDateModal" tabindex="-1">
+<div class="modal fade" id="editAttachmentDateModal" tabindex="-1" aria-labelledby="editAttachmentDateModalTitle">
     <div class="modal-dialog">
         <div class="modal-content glass-card border-secondary text-white">
             <form id="editAttachmentDateForm">
                 <input type="hidden" name="attachment_id" id="edit_attachment_id">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title"><?php echo __('edit_upload_date'); ?></h5>
+                    <h5 class="modal-title" id="editAttachmentDateModalTitle"><?php echo __('edit_upload_date'); ?></h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -728,23 +760,23 @@ try {
 
 
 <!-- Shipping Required Modal (Animated) -->
-<div class="modal fade" id="shippingRequiredModal" tabindex="-1" data-bs-backdrop="static">
+<div class="modal fade" id="shippingRequiredModal" tabindex="-1" data-bs-backdrop="static" aria-labelledby="shippingRequiredModalTitle">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content glass-card border-warning border-3 text-white">
-            <div class="modal-header bg-warning bg-opacity-25 border-bottom-0">
-                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2 text-warning"></i><?php echo __('shipping_required_title'); ?></h5>
+        <div class="modal-content glass-card border-secondary text-white">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="shippingRequiredModalTitle"><i class="fas fa-exclamation-triangle me-2 text-warning" aria-hidden="true"></i><?php echo __('shipping_required_title'); ?></h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body text-center py-4">
                 <div class="mb-4">
-                    <i class="fas fa-shipping-fast fa-4x text-warning mb-3 animate-bounce"></i>
+                    <i class="fas fa-shipping-fast fa-4x text-warning mb-3 animate-bounce" aria-hidden="true"></i>
                 </div>
                 <h5><?php echo __('shipping_required_title'); ?></h5>
                 <p class="text-white-75 mb-0"><?php echo __('shipping_required_msg'); ?></p>
             </div>
             <div class="modal-footer border-top-0 justify-content-center">
-                <button type="button" class="btn btn-warning px-4" data-crm-action="go-to-shipping">
-                    <i class="fas fa-truck me-2"></i><?php echo __('specify_shipping'); ?>
+                <button type="button" class="btn btn-primary px-4" data-crm-action="go-to-shipping">
+                    <i class="fas fa-truck me-2" aria-hidden="true"></i><?php echo __('specify_shipping'); ?>
                 </button>
             </div>
         </div>
@@ -752,24 +784,24 @@ try {
 </div>
 
 <!-- Status Confirm Modal (Animated) -->
-<div class="modal fade" id="statusConfirmModal" tabindex="-1">
+<div class="modal fade" id="statusConfirmModal" tabindex="-1" aria-labelledby="statusConfirmModalTitle">
     <div class="modal-dialog modal-dialog-centered modal-sm">
-        <div class="modal-content glass-card border-success border-2 text-white">
-            <div class="modal-header bg-success bg-opacity-10 border-bottom-0">
-                <h5 class="modal-title"><i class="fas fa-check-circle me-2 text-success"></i><?php echo __('confirm_title'); ?></h5>
+        <div class="modal-content glass-card border-secondary text-white">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="statusConfirmModalTitle"><i class="fas fa-check-circle me-2 text-success" aria-hidden="true"></i><?php echo __('confirm_title'); ?></h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body text-center py-4">
                 <div class="mb-3">
-                    <i class="fas fa-clipboard-check fa-3x text-success"></i>
+                    <i class="fas fa-clipboard-check fa-3x text-success" aria-hidden="true"></i>
                 </div>
                 <p class="mb-0"><?php echo __('change_status_prompt'); ?></p>
                 <h4 class="text-success mt-2" id="confirmStatusText"></h4>
             </div>
             <div class="modal-footer border-top-0 justify-content-center">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?php echo __('cancel'); ?></button>
-                <button type="button" class="btn btn-success px-4" id="confirmStatusBtn">
-                    <i class="fas fa-check me-2"></i><?php echo __('confirm'); ?>
+                <button type="button" class="btn btn-primary px-4" id="confirmStatusBtn">
+                    <i class="fas fa-check me-2" aria-hidden="true"></i><?php echo __('confirm'); ?>
                 </button>
             </div>
         </div>
@@ -777,14 +809,14 @@ try {
 </div>
 
 <!-- Full Edit Order Modal -->
-<div class="modal fade" id="editOrderFullModal" tabindex="-1" data-bs-focus="false">
+<div class="modal fade" id="editOrderFullModal" tabindex="-1" data-bs-focus="false" aria-labelledby="editOrderFullModalTitle">
     <div class="modal-dialog modal-xl">
         <div class="modal-content glass-card border-secondary text-white">
             <form id="editOrderFullForm">
                 <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                 <input type="hidden" name="csrf_token" value="<?php echo e(generateCsrfToken()); ?>">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title"><?php echo __('edit_order_title'); ?> #<?php echo $order['id']; ?></h5>
+                    <h5 class="modal-title" id="editOrderFullModalTitle"><?php echo __('edit_order_title'); ?> #<?php echo $order['id']; ?></h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -828,7 +860,7 @@ try {
                         </div>
                         <div class="col-md-4">
                             <label class="form-label"><?php echo __('technician'); ?></label>
-                            <select name="technician_id" class="form-select" <?php echo $_SESSION['role'] != 'admin' ? 'disabled' : ''; ?>>
+                            <select name="technician_id" class="form-select" <?php echo !hasPermission('admin_access') ? 'disabled' : ''; ?>>
                                 <option value=""><?php echo __('choose_option'); ?></option>
                                 <?php 
                                 foreach($techs as $t): ?>
@@ -862,7 +894,7 @@ try {
                         </div>
                         <div class="col-md-4">
                             <label class="form-label"><?php echo __('pin'); ?></label>
-                            <input type="text" name="pin_code" class="form-control" value="<?php echo htmlspecialchars($pinDecryptFailed ? '' : ($order['pin_code'] ?? '')); ?>" placeholder="<?php echo $pinDecryptFailed ? e('Re-enter device PIN') : ''; ?>">
+                            <input type="text" name="pin_code" class="form-control" value="<?php echo htmlspecialchars($pinDecryptFailed ? '' : ($order['pin_code'] ?? '')); ?>" placeholder="<?php echo $pinDecryptFailed ? e(__('pin_reenter_placeholder')) : ''; ?>">
                         </div>
                         <div class="col-12">
                             <label class="form-label"><?php echo __('appearance'); ?></label>
@@ -890,7 +922,7 @@ try {
                                 <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
                             </div>
                         </div>
-                        <?php if ($_SESSION['role'] == 'admin'): ?>
+                        <?php if (hasPermission('admin_access')): ?>
                         <div class="col-md-4">
                             <label class="form-label"><?php echo __('extra_expenses'); ?></label>
                             <div class="input-group">
@@ -911,14 +943,14 @@ try {
 </div>
 
 <!-- Modal Edit Part -->
-<div class="modal fade" id="editPartModal" tabindex="-1">
+<div class="modal fade" id="editPartModal" tabindex="-1" aria-labelledby="editPartModalTitle">
     <div class="modal-dialog">
         <div class="modal-content glass-card border-secondary text-white">
             <form id="editPartForm">
                 <?php echo csrfField(); ?>
                 <input type="hidden" name="id" id="edit_item_id">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title"><?php echo __('edit_part_title'); ?></h5>
+                    <h5 class="modal-title" id="editPartModalTitle"><?php echo __('edit_part_title'); ?></h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">

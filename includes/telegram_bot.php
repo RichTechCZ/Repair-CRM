@@ -231,45 +231,16 @@ function telegramSaveMediaAttachment(PDO $pdo, int $orderId, string $fileId, ?st
     } catch (Throwable $e) {
         if (is_file($tempPath)) @unlink($tempPath);
         error_log("telegramSaveMediaAttachment error: " . $e->getMessage());
-        return ['success' => false, 'message' => 'Внутренняя ошибка сохранения: ' . $e->getMessage()];
+        return ['success' => false, 'message' => 'Внутренняя ошибка сохранения: ' . publicExceptionMessage($e)];
     }
 }
 
 /**
- * State Management (FSM) Helpers
+ * State Management (FSM) Helpers.
+ * telegram_bot_states is provisioned by migration 006; runtime code never runs DDL.
  */
-function telegramEnsureStateTable(PDO $pdo): void
-{
-    $driver = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-    if ($driver === 'sqlite') {
-        $pdo->exec(
-            "CREATE TABLE IF NOT EXISTS telegram_bot_states (
-                telegram_id VARCHAR(50) PRIMARY KEY,
-                state VARCHAR(50) NOT NULL,
-                order_id INTEGER DEFAULT NULL,
-                temp_data TEXT DEFAULT NULL,
-                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )"
-        );
-        return;
-    }
-
-    $pdo->exec(
-        "CREATE TABLE IF NOT EXISTS `telegram_bot_states` (
-            `telegram_id` VARCHAR(50) NOT NULL,
-            `state`       VARCHAR(50) NOT NULL,
-            `order_id`    INT(11)     DEFAULT NULL,
-            `temp_data`   TEXT        DEFAULT NULL,
-            `updated_at`  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (`telegram_id`),
-            KEY `idx_tg_state_updated` (`updated_at`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
-    );
-}
-
 function telegramGetState(PDO $pdo, string $telegramId): ?array
 {
-    telegramEnsureStateTable($pdo);
     $stmt = $pdo->prepare('SELECT state, order_id, temp_data FROM telegram_bot_states WHERE telegram_id = ?');
     $stmt->execute([$telegramId]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -292,7 +263,6 @@ function telegramGetState(PDO $pdo, string $telegramId): ?array
 
 function telegramSetState(PDO $pdo, string $telegramId, string $state, ?int $orderId = null, ?array $tempData = null): void
 {
-    telegramEnsureStateTable($pdo);
     $json = $tempData !== null ? json_encode($tempData, JSON_UNESCAPED_UNICODE) : null;
     $driver = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
 
@@ -320,7 +290,6 @@ function telegramSetState(PDO $pdo, string $telegramId, string $state, ?int $ord
 
 function telegramClearState(PDO $pdo, string $telegramId): void
 {
-    telegramEnsureStateTable($pdo);
     $stmt = $pdo->prepare('DELETE FROM telegram_bot_states WHERE telegram_id = ?');
     $stmt->execute([$telegramId]);
 }
@@ -331,8 +300,6 @@ function telegramClearState(PDO $pdo, string $telegramId): void
 function telegramResolveUser(PDO $pdo, $fromId, ?string $username = null): ?array
 {
     $fromIdStr = (string)$fromId;
-    $usernameClean = trim(ltrim((string)$username, '@'));
-    $usernameWithAt = "@" . $usernameClean;
 
     // Check system setting for admin chat ID (e.g. 2427615)
     $adminChatId = getStatusChangeAdminTelegramId();
@@ -344,11 +311,13 @@ function telegramResolveUser(PDO $pdo, $fromId, ?string $username = null): ?arra
                 GROUP_CONCAT(tp.permission) AS permissions
          FROM technicians t
          LEFT JOIN tech_permissions tp ON t.id = tp.technician_id
-         WHERE (t.telegram_id = ? OR t.telegram_id = ?) AND t.is_active = 1
+         WHERE t.telegram_id = ? AND t.is_active = 1
          GROUP BY t.id
          LIMIT 1"
     );
-    $stmt->execute([$fromIdStr, $usernameWithAt]);
+    // Match the immutable numeric Telegram user id only: @usernames can be released and
+    // claimed by someone else, which would hand them the technician's bot access.
+    $stmt->execute([$fromIdStr]);
     $tech = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($tech) {

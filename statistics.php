@@ -210,7 +210,10 @@ $summaryCards = [
                     </div>
                 </div>
                 <?php if ($timeline === []): ?>
-                    <div class="statistics-empty"><?php echo e(__('statistics_no_data')); ?></div>
+                    <div class="empty-state">
+                        <div class="empty-state__mark" aria-hidden="true"></div>
+                        <p class="mb-0"><?php echo e(__('statistics_no_data')); ?></p>
+                    </div>
                 <?php else: ?>
                     <div class="statistics-timeline">
                         <?php foreach ($timeline as $timelineRow): ?>
@@ -281,7 +284,14 @@ $summaryCards = [
                         </thead>
                         <tbody>
                             <?php if ($deviceRows === []): ?>
-                                <tr><td colspan="7" class="text-center text-muted py-4"><?php echo e(__('statistics_no_data')); ?></td></tr>
+                                <tr>
+                                    <td colspan="7">
+                                        <div class="empty-state">
+                                            <div class="empty-state__mark" aria-hidden="true"></div>
+                                            <p class="mb-0"><?php echo e(__('statistics_no_data')); ?></p>
+                                        </div>
+                                    </td>
+                                </tr>
                             <?php else: ?>
                                 <?php foreach ($deviceRows as $deviceType => $deviceRow): ?>
                                     <?php
@@ -318,7 +328,10 @@ $summaryCards = [
                     <span class="statistics-panel__count financial-number"><?php echo e((string)($summary['overdue'] ?? 0)); ?></span>
                 </div>
                 <?php if (empty($statistics['overdue_orders'])): ?>
-                    <div class="statistics-empty"><?php echo e(__('statistics_no_overdue')); ?></div>
+                    <div class="empty-state">
+                        <div class="empty-state__mark" aria-hidden="true"></div>
+                        <p class="mb-0"><?php echo e(__('statistics_no_overdue')); ?></p>
+                    </div>
                 <?php else: ?>
                     <div class="statistics-overdue-list">
                         <?php foreach ($statistics['overdue_orders'] as $overdueOrder): ?>
@@ -360,7 +373,14 @@ $summaryCards = [
                         </thead>
                         <tbody>
                             <?php if (empty($statistics['technicians'])): ?>
-                                <tr><td colspan="10" class="text-center text-muted py-4"><?php echo e(__('statistics_no_data')); ?></td></tr>
+                                <tr>
+                                    <td colspan="10">
+                                        <div class="empty-state">
+                                            <div class="empty-state__mark" aria-hidden="true"></div>
+                                            <p class="mb-0"><?php echo e(__('statistics_no_data')); ?></p>
+                                        </div>
+                                    </td>
+                                </tr>
                             <?php else: ?>
                                 <?php foreach ($statistics['technicians'] as $technician): ?>
                                     <tr>

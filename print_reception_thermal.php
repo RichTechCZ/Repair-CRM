@@ -6,6 +6,7 @@
  */
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+require_once 'includes/qr_code.php';
 
 if (!isset($_SESSION['user_id'])) {
     die(__('unauthorized'));
@@ -81,10 +82,9 @@ if ($publicToken === '' && !empty($order['public_status_token'])) {
 }
 $status_url = $publicToken !== ''
     ? crmOrderPublicStatusUrl($publicToken)
-    : 'https://app.servis.expert/status.php';
-$status_url_display = $publicToken !== ''
-    ? ('app.servis.expert/status.php?id=' . $publicToken)
-    : 'app.servis.expert/status.php';
+    : crmPublicBaseUrl() . '/status.php';
+// Printed without the scheme to stay short on 80 mm paper.
+$status_url_display = (string)preg_replace('#^https?://#', '', $status_url);
 $pin = trim((string)($order['pin_code'] ?? ''));
 $has_pin = $pin !== '';
 
@@ -367,7 +367,7 @@ $crmScriptNonce = function_exists('crmCspNonce') ? (string)crmCspNonce() : '';
 
     <div class="center qr">
         <img
-            src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&amp;margin=0&amp;data=<?php echo rawurlencode($status_url); ?>"
+            src="<?php echo e(crmQrDataUri($status_url)); ?>"
             alt="QR status"
             width="128"
             height="128">

@@ -131,8 +131,17 @@ switch ($action) {
         // Implementation for Pohoda XML
         require_once 'export_utils.php';
         $exporter = new AccountingExporter($pdo);
-        $file = $exporter->exportToPohoda($id);
-        echo json_encode(['success' => true, 'file' => $file]);
+        try {
+            $export = $exporter->exportToPohoda($id);
+            echo json_encode([
+                'success' => true,
+                'filename' => $export['filename'],
+                'mime' => $export['mime'],
+                'content' => base64_encode($export['content']),
+            ]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'error' => publicExceptionMessage($e)]);
+        }
         break;
 
     case 'export_s3money':
@@ -149,8 +158,17 @@ switch ($action) {
         // Implementation for S3 Money CSV
         require_once 'export_utils.php';
         $exporter = new AccountingExporter($pdo);
-        $file = $exporter->exportToS3Money($id);
-        echo json_encode(['success' => true, 'file' => $file]);
+        try {
+            $export = $exporter->exportToS3Money($id);
+            echo json_encode([
+                'success' => true,
+                'filename' => $export['filename'],
+                'mime' => $export['mime'],
+                'content' => base64_encode($export['content']),
+            ]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'error' => publicExceptionMessage($e)]);
+        }
         break;
 
     case 'get_order_data':

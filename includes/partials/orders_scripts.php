@@ -70,7 +70,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         activePhone = phone;
         const image = document.createElement('img');
-        image.src = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' + encodeURIComponent('tel:' + phone);
+        // Same-origin generator: customer phone numbers are not sent to a third-party service.
+        image.src = 'api/qr.php?d=' + encodeURIComponent('tel:' + phone);
         image.width = 120;
         image.height = 120;
         image.alt = 'QR: ' + phone;
@@ -391,15 +392,15 @@ $(document).ready(function() {
                     attachments.forEach(file => {
                         const isVideo = file.file_type.includes('video');
                         mediaHtml += `
-                            <div class="col-3 col-md-2" id="media-item-${file.id}">
+                            <div class="col-3 col-md-2" id="media-item-${(+file.id) || 0}">
                                 <div class="card h-100 shadow-sm border position-relative">
-                                    <button type="button" class="btn btn-danger btn-sm position-absolute top-0 end-0 p-1 line-height-1" style="z-index: 10; font-size: 0.6rem;" data-crm-action="delete-media" data-crm-id="${file.id}">
+                                    <button type="button" class="btn btn-danger btn-sm position-absolute top-0 end-0 p-1 line-height-1" style="z-index: 10; font-size: 0.6rem;" data-crm-action="delete-media" data-crm-id="${(+file.id) || 0}">
                                         <i class="fas fa-times"></i>
                                     </button>
                                     <div class="ratio ratio-1x1 bg-dark bg-opacity-25 border-secondary">
                                         ${isVideo ? 
                                             `<div class="d-flex align-items-center justify-content-center bg-dark"><i class="fas fa-video text-white"></i></div>` : 
-                                            `<img src="${file.file_path}" class="object-fit-cover" alt="Photo">`
+                                            `<img src="${escHTML(file.url)}" class="object-fit-cover" alt="${escHTML(<?php echo json_encode(__('attachment_photo_alt'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>)}">`
                                         }
                                     </div>
                                 </div>
@@ -523,8 +524,11 @@ $(document).ready(function() {
                 });
             } else {
                 const message = (res && res.message) ? res.message : '<?php echo __('error'); ?>';
-                $('#quickOrderBody').html('<div class="alert alert-danger">' + message + '</div>');
+                $('#quickOrderBody').html($('<div class="alert alert-danger"></div>').text(message));
             }
+        }).fail(function() {
+            // Expired session / 5xx: replace the spinner instead of spinning forever.
+            $('#quickOrderBody').html($('<div class="alert alert-danger"></div>').text(window.LANG_NETWORK_ERROR || '<?php echo e(__('error')); ?>'));
         });
     });
 
@@ -598,7 +602,9 @@ $(document).ready(function() {
             return $('<div class="customer-option"><div>' + title + '</div>' + meta + '</div>');
         },
         templateSelection: function(item) {
-            return item.text || item.name || '';
+            // escapeMarkup is a no-op (templateResult returns pre-escaped nodes), so the
+            // selection must be a text node: customer names are user-controlled.
+            return $('<span>').text(item.text || item.name || '');
         },
         escapeMarkup: function(markup) { return markup; }
     });
@@ -754,8 +760,9 @@ $(document).ready(function() {
         const toastEl = document.getElementById('quickStatusToast');
         const toastBody = document.getElementById('quickStatusToastBody');
         if (!toastEl || !toastBody) return showAlert(message);
-        toastEl.classList.remove('text-bg-success', 'text-bg-danger');
-        toastEl.classList.add(type === 'success' ? 'text-bg-success' : 'text-bg-danger');
+        toastEl.classList.remove('crm-toast--success', 'crm-toast--danger');
+        toastEl.classList.add(type === 'success' ? 'crm-toast--success' : 'crm-toast--danger');
+        toastEl.setAttribute('role', type === 'success' ? 'status' : 'alert');
         toastBody.textContent = message;
         const toast = new bootstrap.Toast(toastEl);
         toast.show();
@@ -801,7 +808,7 @@ $(document).ready(function() {
                     return;
                 }
                 performQuickStatusUpdate(id, status, btn, reason.trim());
-            });
+            }, undefined, 'danger');
         }
 
         performQuickStatusUpdate(id, status, btn);
@@ -968,9 +975,9 @@ $(document).ready(function() {
         
         $.get('api/get_invoice_data.php', {order_id: orderId}, function(res) {
             if (res.success) {
-                // Number and VS are now Order ID
-                $('#invoiceNumber').val(orderId);
-                $('#variableSymbol').val(orderId);
+                // Next number of the shared invoice series (reserved again under lock on save).
+                $('#invoiceNumber').val(res.next_invoice_number);
+                $('#variableSymbol').val(res.variable_symbol);
                 $('#dateIssue').val(res.date_issue);
                 $('#dateTax').val(res.date_tax);
                 $('#dateDue').val(res.date_due);
@@ -1129,19 +1136,20 @@ function deleteMedia(id) {
     }
     showConfirm('<?php echo __('confirm_delete_file'); ?>', function() {
         performDelete();
-    });
+    }, undefined, 'danger');
 }
 
 function deleteOrder(id) {
     showConfirm('<?php echo __('confirm_delete_order_full'); ?>', function() {
         $.post('api/delete_order.php', {id: id}, function(res) {
             if (res.success) {
-                showAlert('<?php echo __('order_deleted'); ?>');
                 location.reload();
             } else {
-                showAlert('<?php echo __('error'); ?>: ' + res.message);
+                showAlert((res && res.message) || '<?php echo e(__('error')); ?>');
             }
+        }).fail(function() {
+            showAlert(window.LANG_NETWORK_ERROR || '<?php echo e(__('error')); ?>');
         });
-    });
+    }, undefined, 'danger');
 }
 </script>

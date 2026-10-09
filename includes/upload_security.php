@@ -27,20 +27,53 @@ function crmEnsureUploadDirectory(string $uploadDirectory): void
     }
 
     $protectionFile = rtrim($uploadDirectory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . '.htaccess';
+    // Attachments are private customer data: the directory is never served directly.
+    // Files are delivered by api/media.php after the order authorization check.
     $protectionRules =
+        "# CRM-PRIVATE-UPLOADS v2 (served only through api/media.php)\n" .
         "Options -Indexes\n" .
-        "<FilesMatch \"(?i)\\.(php[0-9]?|phtml|phar|cgi|pl|py|sh|shtml)$\">\n" .
+        "<IfModule mod_authz_core.c>\n" .
         "    Require all denied\n" .
-        "</FilesMatch>\n" .
+        "</IfModule>\n" .
+        "<IfModule !mod_authz_core.c>\n" .
+        "    Order deny,allow\n" .
+        "    Deny from all\n" .
+        "</IfModule>\n" .
         "RemoveHandler .php .phtml .php3 .php4 .php5 .phar .cgi .pl .py .sh .shtml\n" .
         "RemoveType .php .phtml .php3 .php4 .php5 .phar .cgi .pl .py .sh .shtml\n";
 
-    if (!is_file($protectionFile)) {
+    $current = is_file($protectionFile) ? (string)file_get_contents($protectionFile) : '';
+    if (strpos($current, 'CRM-PRIVATE-UPLOADS v2') === false) {
         $written = file_put_contents($protectionFile, $protectionRules, LOCK_EX);
         if ($written === false) {
             throw new RuntimeException('Unable to protect the upload directory.');
         }
     }
+}
+
+/**
+ * Browser URL of an order attachment (authorized delivery, never the raw uploads/ path).
+ */
+function crmOrderAttachmentUrl(int $attachmentId): string
+{
+    return 'api/media.php?id=' . $attachmentId;
+}
+
+/**
+ * Absolute path of a stored "uploads/<name>" value, or null when it escapes uploads/ or is missing.
+ */
+function crmResolveStoredUploadPath(string $storedPath): ?string
+{
+    $uploadsRoot = realpath(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads');
+    if ($uploadsRoot === false) {
+        return null;
+    }
+    $relative = ltrim(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $storedPath), DIRECTORY_SEPARATOR);
+    $real = realpath(dirname(__DIR__) . DIRECTORY_SEPARATOR . $relative);
+    if ($real === false || !is_file($real) || !str_starts_with($real, rtrim($uploadsRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR)) {
+        return null;
+    }
+    return $real;
 }
 
 function crmNormalizeUploadedFiles(array $files): array

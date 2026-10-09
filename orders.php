@@ -24,7 +24,7 @@ if (isset($pdo)) {
         // Shared search path with Dashboard topbar: same scoring, same
         // optional-index fallback, same technician scoping.
         $orders_technician_id = null;
-        if (($_SESSION['role'] ?? '') === 'technician') {
+        if (isTechnicianScoped()) {
             $orders_technician_id = (int)($_SESSION['tech_id'] ?? 0);
         }
         $search_result = searchOrdersList(
@@ -61,16 +61,20 @@ if (isset($pdo)) {
             $serials = array_values(array_unique(array_filter($serials)));
             if (!empty($serials)) {
                 $sn_ph = implode(',', array_fill(0, count($serials), '?'));
+                // Scoped technicians count only their own orders: the badge must not reveal how many
+                // orders other technicians hold for the same device (matches api/get_imei_duplicates.php).
+                $dup_scope = isTechnicianScoped() ? ' AND technician_id = ?' : '';
+                $dup_scope_params = isTechnicianScoped() ? [(int)currentTechnicianId()] : [];
                 $dup_stmt = $pdo->prepare(
                     "SELECT sn, COUNT(*) AS cnt FROM (
                         SELECT serial_number AS sn FROM orders
-                            WHERE serial_number IN ($sn_ph) AND serial_number <> ''
+                            WHERE serial_number IN ($sn_ph) AND serial_number <> ''$dup_scope
                         UNION ALL
                         SELECT serial_number_2 AS sn FROM orders
-                            WHERE serial_number_2 IN ($sn_ph) AND serial_number_2 <> ''
+                            WHERE serial_number_2 IN ($sn_ph) AND serial_number_2 <> ''$dup_scope
                     ) AS combined GROUP BY sn HAVING cnt > 1"
                 );
-                $dup_stmt->execute(array_merge($serials, $serials));
+                $dup_stmt->execute(array_merge($serials, $dup_scope_params, $serials, $dup_scope_params));
                 foreach ($dup_stmt->fetchAll() as $dup_row) {
                     $imei_counts[$dup_row['sn']] = (int)$dup_row['cnt'];
                 }
@@ -129,32 +133,26 @@ $sla_new_hours = (int)get_setting('sla_new_hours', 24);
 $sla_progress_hours = (int)get_setting('sla_progress_hours', 72);
 $now_ts = time();
 
-// FIX #9 (stats): single query instead of 4 separate queries
+// Status tiles: one GROUP BY query for all groups.
 $s_new = $s_pending = $s_progress = $s_ready = 0;
 if (isset($pdo)) {
     try {
         $dashboard_technician_id = null;
-        if (($_SESSION['role'] ?? '') === 'technician') {
+        if (isTechnicianScoped()) {
             $dashboard_technician_id = (int)($_SESSION['tech_id'] ?? 0);
         }
-        $s_new = countOrdersByStatusGroup($dashboard_status_groups['new'], $dashboard_technician_id);
-        $s_pending = countOrdersByStatusGroup($dashboard_status_groups['pending'], $dashboard_technician_id);
-        $s_progress = countOrdersByStatusGroup($dashboard_status_groups['progress'], $dashboard_technician_id);
-        $s_ready = countOrdersByStatusGroup($dashboard_status_groups['ready'], $dashboard_technician_id);
+        $status_counts = countOrdersByStatusGroups($dashboard_status_groups, $dashboard_technician_id);
+        $s_new = $status_counts['new'];
+        $s_pending = $status_counts['pending'];
+        $s_progress = $status_counts['progress'];
+        $s_ready = $status_counts['ready'];
     } catch (PDOException $e) {
         error_log('orders.php stats error: ' . $e->getMessage());
     }
 }
 
-// FIX #5: Load technicians once (used in both New Order and Quick Edit modals)
-$techs_list = [];
-if (isset($pdo)) {
-    try {
-        $techs_list = $pdo->query(
-            'SELECT id, name FROM technicians WHERE is_active = 1 ORDER BY name ASC'
-        )->fetchAll();
-    } catch (PDOException $e) {}
-}
+// Technicians for the New Order and Quick Edit modals (request-cached helper).
+$techs_list = getActiveTechnicians();
 
 $order_form_error = trim((string)($_SESSION['order_form_error'] ?? ''));
 unset($_SESSION['order_form_error']);
@@ -250,7 +248,7 @@ unset($_SESSION['order_form_error']);
     <div class="card-body p-0">
         <div class="table-responsive table-scroll-touch orders-table-wrap">
             <table class="table table-hover align-middle mb-0 table-mobile-cards">
-                <thead class="bg-transparent sticky-top" style="z-index: 10;">
+                <thead class="bg-transparent sticky-top orders-table-head">
                     <tr>
                         <th class="ps-4">ID / <?php echo __('created'); ?></th>
                         <th><?php echo __('client'); ?></th>
@@ -316,7 +314,7 @@ unset($_SESSION['order_form_error']);
                                     <div class="small text-white-75">
                                         <i class="fas fa-barcode me-1"></i><?php echo __('sn1'); ?>: <?php echo htmlspecialchars($order['serial_number']); ?>
                                         <?php $sn1_count = $imei_counts[trim($order['serial_number'])] ?? 0; if ($sn1_count > 1): ?>
-                                            <span class="imei-dup-badge" data-sn="<?php echo htmlspecialchars(trim($order['serial_number']), ENT_QUOTES); ?>" title="<?php echo $sn1_count; ?> заявок с таким номером"><?php echo $sn1_count; ?></span>
+                                            <button type="button" class="imei-dup-badge" data-sn="<?php echo e(trim($order['serial_number'])); ?>" aria-label="<?php echo e(sprintf(__('imei_duplicates_count'), $sn1_count)); ?>"><?php echo (int)$sn1_count; ?></button>
                                         <?php endif; ?>
                                     </div>
                                 <?php endif; ?>
@@ -324,7 +322,7 @@ unset($_SESSION['order_form_error']);
                                     <div class="small text-white-75">
                                         <i class="fas fa-barcode me-1"></i><?php echo __('sn2'); ?>: <?php echo htmlspecialchars($order['serial_number_2']); ?>
                                         <?php $sn2_count = $imei_counts[trim($order['serial_number_2'])] ?? 0; if ($sn2_count > 1): ?>
-                                            <span class="imei-dup-badge" data-sn="<?php echo htmlspecialchars(trim($order['serial_number_2']), ENT_QUOTES); ?>" title="<?php echo $sn2_count; ?> заявок с таким номером"><?php echo $sn2_count; ?></span>
+                                            <button type="button" class="imei-dup-badge" data-sn="<?php echo e(trim($order['serial_number_2'])); ?>" aria-label="<?php echo e(sprintf(__('imei_duplicates_count'), $sn2_count)); ?>"><?php echo (int)$sn2_count; ?></button>
                                         <?php endif; ?>
                                     </div>
                                 <?php endif; ?>
@@ -508,43 +506,16 @@ unset($_SESSION['order_form_error']);
     </a>
 </div>
 
-<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1080;">
-    <div id="quickStatusToast" class="toast align-items-center text-bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true">
+<div class="toast-container crm-toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="quickStatusToast" class="toast crm-toast crm-toast--success align-items-center" role="status" aria-live="polite" aria-atomic="true">
         <div class="d-flex">
             <div class="toast-body" id="quickStatusToastBody"></div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="<?php echo e(__('close')); ?>"></button>
         </div>
     </div>
 </div>
 
 
-<style>
-/* ── IMEI duplicate badge ─────────────────────────────────────────────── */
-.imei-dup-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    margin-left: 4px;
-    border-radius: 9px;
-    background: #e74c3c;
-    color: #fff;
-    font-size: 10px;
-    font-weight: 700;
-    line-height: 1;
-    cursor: pointer;
-    vertical-align: middle;
-    transition: transform 0.15s ease, background 0.15s ease;
-    user-select: none;
-    white-space: nowrap;
-}
-.imei-dup-badge:hover {
-    background: #c0392b;
-    transform: scale(1.25);
-}
-</style>
 
 <!-- IMEI Duplicates Modal -->
 <div class="modal fade" id="imeiDuplicatesModal" tabindex="-1" aria-labelledby="imeiDuplicatesModalLabel" aria-hidden="true">
@@ -574,7 +545,7 @@ unset($_SESSION['order_form_error']);
 <div class="modal fade" id="newOrderModal" tabindex="-1" data-bs-focus="false" aria-labelledby="newOrderModalTitle">
     <div class="modal-dialog modal-lg">
         <div class="modal-content border-0 shadow">
-            <form action="api/add_order.php" method="POST" enctype="multipart/form-data">
+            <form action="api/add_order.php" method="POST" enctype="multipart/form-data" data-crm-once>
                 <?php echo csrfField(); ?> <!-- FIX #6: CSRF protection -->
                 <div class="modal-header new-order-modal__header">
                     <div class="new-order-modal__heading">
@@ -643,7 +614,7 @@ unset($_SESSION['order_form_error']);
                                                         <label class="form-label"><?php echo __('ico'); ?></label>
                                                         <div class="input-group">
                                                             <input type="text" name="ico" id="inline_ico_input" class="form-control" placeholder="12345678">
-                                                            <button class="btn btn-info text-white" type="button" id="inline_btn_fetch_ares">
+                                                            <button class="btn btn-outline-secondary" type="button" id="inline_btn_fetch_ares">
                                                                 <i class="fas fa-search me-1"></i> <?php echo __('fetch_ares'); ?>
                                                             </button>
                                                         </div>
@@ -751,8 +722,8 @@ unset($_SESSION['order_form_error']);
                             <div class="col-12 col-sm-6 col-md-3">
                                 <label class="form-label"><?php echo __('warranty_type'); ?></label>
                                 <select name="order_type" class="form-select" required>
-                                    <option value="Non-Warranty">🛠 <?php echo __('warranty_no'); ?></option>
-                                    <option value="Warranty">📜 <?php echo __('warranty_yes'); ?></option>
+                                    <option value="Non-Warranty"><?php echo __('warranty_no'); ?></option>
+                                    <option value="Warranty"><?php echo __('warranty_yes'); ?></option>
                                 </select>
                             </div>
                             <div class="col-12 col-sm-6 col-md-3">
@@ -992,7 +963,7 @@ unset($_SESSION['order_form_error']);
                         <div class="col-md-6">
                             <label class="form-label"><?php echo __('total_to_pay'); ?></label>
                             <div class="input-group">
-                                <input type="number" name="total_amount" id="totalAmount" class="form-control" step="0.01" required>
+                                <input type="number" id="totalAmount" class="form-control" step="0.01" readonly aria-readonly="true"><?php /* Display only: the server totals the item lines. */ ?>
                                 <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
                             </div>
                         </div>

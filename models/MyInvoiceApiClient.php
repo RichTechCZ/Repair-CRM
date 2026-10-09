@@ -25,7 +25,9 @@ class MyInvoiceApiClient {
     private ?int $supplierId;
 
     public function __construct(?string $baseUrl = null, ?string $token = null, ?int $supplierId = null) {
-        $configuredBaseUrl = $baseUrl ?: (getenv('MYINVOICE_API_BASE_URL') ?: get_setting('myinvoice_api_base_url', 'https://fakturace.43.157.31.121.sslip.io'));
+        // The bearer token lives in the environment, so its destination must too: a base URL taken
+        // from editable settings would let anyone with settings access redirect the token.
+        $configuredBaseUrl = $baseUrl ?: (string)(getenv('MYINVOICE_API_BASE_URL') ?: '');
         $this->baseUrl = rtrim($configuredBaseUrl, '/');
         $this->token = $token ?: (getenv('MYINVOICE_API_TOKEN') ?: '');
         $supplier = $supplierId ?? (getenv('MYINVOICE_SUPPLIER_ID') ?: null);

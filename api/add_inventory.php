@@ -9,7 +9,7 @@ api_bootstrap([
 $part_name = trim((string)($_POST['part_name'] ?? ''));
 $sku = trim((string)($_POST['sku'] ?? ''));
 $quantity_raw = $_POST['quantity'] ?? 0;
-$cost_raw = $_POST['cost_price'] ?? 0;
+$cost_raw = $_POST['cost_price'] ?? '';
 $sale_raw = $_POST['sale_price'] ?? 0;
 $min_raw = $_POST['min_stock'] ?? 5;
 
@@ -21,14 +21,15 @@ if (!is_numeric($quantity_raw) || !is_finite((float)$quantity_raw) || (float)$qu
     echo json_encode(['success' => false, 'message' => 'Invalid quantity']);
     exit;
 }
-if (!is_numeric($cost_raw) || !is_finite((float)$cost_raw) || (float)$cost_raw < 0
+if (($cost_raw !== '' && (!is_numeric($cost_raw) || !is_finite((float)$cost_raw) || (float)$cost_raw < 0))
     || !is_numeric($sale_raw) || !is_finite((float)$sale_raw) || (float)$sale_raw < 0
     || !is_numeric($min_raw) || !is_finite((float)$min_raw) || (float)$min_raw < 0 || floor((float)$min_raw) != (float)$min_raw) {
     echo json_encode(['success' => false, 'message' => 'Invalid numeric fields']);
     exit;
 }
 $quantity = (int)$quantity_raw;
-$cost_price = (float)$cost_raw;
+// Unknown purchase cost stays NULL so payroll falls back to the selling price (binding formula).
+$cost_price = $cost_raw === '' ? null : (float)$cost_raw;
 $sale_price = (float)$sale_raw;
 $min_stock = (int)$min_raw;
 

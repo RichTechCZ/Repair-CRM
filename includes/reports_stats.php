@@ -4,7 +4,7 @@
  *
  * Binding formulas (root AGENTS.md User Preferences):
  * - customer revenue = latest non-credit invoice total; fallback final_cost, then estimated_cost
- * - parts purchase cost = Σ qty × inventory.cost_price (fallback order_items.price)
+ * - parts purchase cost = Σ qty × order_items.cost_price snapshot (then inventory.cost_price, then order_items.price)
  * - never add order_items.price to an invoice total
  * - net profit = customer revenue − parts cost − extra expenses
  * - engineer payout = max(0, customer revenue − parts cost − extra expenses) × rate%
@@ -173,7 +173,7 @@ function getDetailedStatsBatch(PDO $pdo, string $start, string $end, ?int $scope
         LEFT JOIN (
             SELECT
                 oi.order_id,
-                SUM(oi.quantity * COALESCE(i.cost_price, oi.price, 0)) AS inventory_cost
+                SUM(oi.quantity * COALESCE(oi.cost_price, i.cost_price, oi.price, 0)) AS inventory_cost
             FROM order_items oi
             LEFT JOIN inventory i ON i.id = oi.inventory_id
             GROUP BY oi.order_id
@@ -290,11 +290,15 @@ function crmGetTechnicianPayroll(PDO $pdo, int $technicianId, string $start, str
             o.id,
             o.device_brand,
             o.device_model,
+            c.first_name AS customer_first_name,
+            c.last_name AS customer_last_name,
+            c.company AS customer_company,
             COALESCE(o.extra_expenses, 0) AS extra_expenses,
             COALESCE(latest_invoice.total_amount, o.final_cost, o.estimated_cost, 0) AS customer_total,
             COALESCE(parts.inventory_cost, 0) AS inventory_cost,
             COALESCE(latest_invoice.latest_payment_date, DATE(o.shipping_date)) AS finance_date
         FROM orders o
+        LEFT JOIN customers c ON c.id = o.customer_id
         LEFT JOIN (
             SELECT
                 order_id,
@@ -318,7 +322,7 @@ function crmGetTechnicianPayroll(PDO $pdo, int $technicianId, string $start, str
         LEFT JOIN (
             SELECT
                 oi.order_id,
-                SUM(oi.quantity * COALESCE(i.cost_price, oi.price, 0)) AS inventory_cost
+                SUM(oi.quantity * COALESCE(oi.cost_price, i.cost_price, oi.price, 0)) AS inventory_cost
             FROM order_items oi
             LEFT JOIN inventory i ON i.id = oi.inventory_id
             GROUP BY oi.order_id
@@ -354,6 +358,9 @@ function crmGetTechnicianPayroll(PDO $pdo, int $technicianId, string $start, str
             'id' => (int)$row['id'],
             'finance_date' => $row['finance_date'] ?? null,
             'device' => $device,
+            'customer' => trim((string)($row['customer_company'] ?? '')) !== ''
+                ? (string)$row['customer_company']
+                : trim(($row['customer_first_name'] ?? '') . ' ' . ($row['customer_last_name'] ?? '')),
             'customer_total' => $customerTotal,
             'parts_cost' => $partsCost,
             'extra_expenses' => $extra,

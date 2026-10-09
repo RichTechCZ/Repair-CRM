@@ -82,17 +82,21 @@ function sync_orders($data) {
                 continue;
             }
 
-            $newStatus = $shipping_date ? getOrderStatusStorageValue('Issued') : $local['status'];
-            OrderStatusService::assertIssuedRequirements(
-                canonicalOrderStatus($newStatus),
-                $amt,
-                $local['shipping_method'] ?? null,
-                true,
-                $local['order_type'] ?? null
-            );
+            $localCanonical = canonicalOrderStatus((string)$local['status']);
+            if (OrderStatusService::isTerminal($localCanonical) && $localCanonical !== 'Issued') {
+                // Cancelled / issued-without-repair orders are closed; only an admin may reopen them.
+                $pdo->rollBack();
+                echo "Skipped Order #$id: closed as {$localCanonical}\n";
+                continue;
+            }
 
+            $newStatus = $shipping_date ? getOrderStatusStorageValue('Issued') : $local['status'];
+            // The site's amount is the customer charge only at handover. Already issued
+            // (historical) or still open orders keep their CRM final cost.
+            $becomesIssued = canonicalOrderStatus($newStatus) === 'Issued' && $localCanonical !== 'Issued';
+            $amt = $becomesIssued ? $amt : ($local['final_cost'] !== null ? (float)$local['final_cost'] : null);
             $needsUpdate =
-                abs((float)$local['final_cost'] - $amt) > 0.01 ||
+                ($becomesIssued && abs((float)$local['final_cost'] - (float)$amt) > 0.01) ||
                 $local['status'] !== $newStatus ||
                 (
                     $shipping_date &&
@@ -104,6 +108,16 @@ function sync_orders($data) {
             if (!$needsUpdate) {
                 $pdo->rollBack();
                 continue;
+            }
+            if ($becomesIssued) {
+                // Only the handover itself is validated; already issued legacy rows are not re-checked every run.
+                OrderStatusService::assertIssuedRequirements(
+                    'Issued',
+                    $amt,
+                    $local['shipping_method'] ?? null,
+                    true,
+                    $local['order_type'] ?? null
+                );
             }
 
             $pdo->prepare(
@@ -119,6 +133,10 @@ function sync_orders($data) {
                 $newStatus,
                 $amt
             );
+            if ($shipping_date && canonicalOrderStatus($newStatus) === 'Issued') {
+                // Operational periods (status log) and finance periods (shipping_date) must agree.
+                OrderStatusService::syncStatusHistoryDate($pdo, $id, $newStatus, $shipping_date);
+            }
             $pdo->commit();
             $updated++;
             echo "Updated Order #$id\n";

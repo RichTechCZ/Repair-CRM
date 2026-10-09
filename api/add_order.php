@@ -103,7 +103,9 @@ try {
     $orderCreateStage = 'database_transaction';
     $pdo->beginTransaction();
     $initial_status = getDefaultOrderStatus();
-    $storedPinCode = crmEncryptSensitiveValue($pin_code);
+    // Never accept ciphertext from the browser: crmEncryptSensitiveValue() passes "enc:v1:" values
+    // through, so a copied ciphertext of another order would be decrypted for this one.
+    $storedPinCode = crmSensitiveDataIsEncrypted($pin_code) ? null : crmEncryptSensitiveValue($pin_code);
 
     $customerLock = $pdo->prepare('SELECT id FROM customers WHERE id = ? FOR UPDATE');
     $customerLock->execute([(int)$customer_id]);
@@ -154,9 +156,7 @@ try {
             $tech->execute([$technician_id]);
             $techData = $tech->fetch();
             if ($techData && $techData['telegram_id']) {
-                $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
-                $host = preg_replace('/[^A-Za-z0-9.:-]/', '', (string)($_SERVER['HTTP_HOST'] ?? 'app.servis.expert'));
-                $link = $protocol . ($host ?: 'app.servis.expert') . "/view_order.php?id=" . $order_id;
+                $link = crmPublicBaseUrl() . "/view_order.php?id=" . $order_id;
                 $msg  = sprintf(__('tg_new_order'), $order_id) . "\n";
                 $msg .= sprintf(__('tg_device'), telegramHtml("$device_brand $device_model")) . "\n";
                 $msg .= sprintf(__('tg_problem'), telegramHtml(mb_substr($problem_description, 0, 100))) . "\n";

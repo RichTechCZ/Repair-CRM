@@ -1,32 +1,39 @@
 <?php
+/**
+ * Accounting exports (Pohoda XML, S3 Money CSV).
+ *
+ * Exports are built in memory and returned to the authenticated POST request
+ * (accounting_actions.php); nothing is written to temp/, which is web-denied
+ * and would otherwise accumulate invoice data on disk.
+ */
 class AccountingExporter {
+    private const NS_INV = 'http://www.stormware.cz/schema/version_2/invoice.xsd';
+    private const NS_TYP = 'http://www.stormware.cz/schema/version_2/type.xsd';
+
     private $pdo;
-    private $exportDir;
 
     public function __construct($pdo) {
         $this->pdo = $pdo;
-        $this->exportDir = 'temp/exports/';
-        if (!is_dir($this->exportDir)) {
-            mkdir($this->exportDir, 0755, true);
-        }
     }
 
-    public function exportToPohoda($id) {
+    /**
+     * @return array{filename:string,mime:string,content:string}
+     */
+    public function exportToPohoda($id): array {
         $invoice = $this->getFullInvoice($id);
-        $company_name = get_setting('acc_company_name');
-        $ico = get_setting('acc_ico');
-        
+        $ico = (string)get_setting('acc_ico');
+
         $xml = new SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?>
-            <dat:dataPack id="INV' . $invoice['id'] . '" ico="' . $ico . '" application="Service" version="2.0" note="Export faktury" 
-            xmlns:dat="http://www.stormware.cz/schema/version_2/data.xsd" 
-            xmlns:inv="http://www.stormware.cz/schema/version_2/invoice.xsd" 
+            <dat:dataPack id="INV' . (int)$invoice['id'] . '" ico="' . $this->xml($ico) . '" application="Service" version="2.0" note="Export faktury"
+            xmlns:dat="http://www.stormware.cz/schema/version_2/data.xsd"
+            xmlns:inv="http://www.stormware.cz/schema/version_2/invoice.xsd"
             xmlns:typ="http://www.stormware.cz/schema/version_2/type.xsd"></dat:dataPack>');
 
         $item = $xml->addChild('dat:dataPackItem');
         $item->addAttribute('version', '2.0');
-        $item->addAttribute('id', $invoice['invoice_number']);
+        $item->addAttribute('id', (string)$invoice['invoice_number']);
 
-        $inv = $item->addChild('inv:invoice', null, 'http://www.stormware.cz/schema/version_2/invoice.xsd');
+        $inv = $item->addChild('inv:invoice', null, self::NS_INV);
         $inv->addAttribute('version', '2.0');
 
         $header = $inv->addChild('inv:invoiceHeader');
@@ -36,90 +43,121 @@ class AccountingExporter {
                 ? 'issuedCreditNotice'
                 : 'issuedInvoice'
         );
-        $header->addChild('inv:number', $invoice['invoice_number']);
-        $header->addChild('inv:date', $invoice['date_issue']);
-        $header->addChild('inv:dateTax', $invoice['date_tax']);
-        $header->addChild('inv:dateDue', $invoice['date_due']);
+        $header->addChild('inv:number', $this->xml($invoice['invoice_number']));
+        $header->addChild('inv:date', $this->xml($invoice['date_issue']));
+        $header->addChild('inv:dateTax', $this->xml($invoice['date_tax']));
+        $header->addChild('inv:dateDue', $this->xml($invoice['date_due']));
         $header->addChild('inv:text', 'Faktura za opravu zařízení');
 
-        // Supplier (My Company)
-        // Note: In Pohoda, supplier is often set in the profile, but we can include it
-        
-        // Partner (Customer)
+        // Partner (Customer). addChild() does not escape "&", so every text value goes through xml().
+        $customer = $invoice['customer'];
         $partner = $header->addChild('inv:partnerIdentity');
-        $address = $partner->addChild('typ:address', null, 'http://www.stormware.cz/schema/version_2/type.xsd');
-        $address->addChild('typ:company', $invoice['customer']['company'] ?: ($invoice['customer']['first_name'] . ' ' . $invoice['customer']['last_name']));
-        $address->addChild('typ:city', $this->parseCity($invoice['customer']['address']));
-        $address->addChild('typ:street', $this->parseStreet($invoice['customer']['address']));
-        if ($invoice['customer']['ico']) $address->addChild('typ:ico', $invoice['customer']['ico']);
-        if ($invoice['customer']['dic']) $address->addChild('typ:dic', $invoice['customer']['dic']);
+        $address = $partner->addChild('typ:address', null, self::NS_TYP);
+        $address->addChild('typ:company', $this->xml($this->partnerName($customer)));
+        $address->addChild('typ:city', $this->xml($this->parseCity((string)($customer['address'] ?? ''))));
+        $address->addChild('typ:street', $this->xml($this->parseStreet((string)($customer['address'] ?? ''))));
+        if (!empty($customer['ico'])) $address->addChild('typ:ico', $this->xml($customer['ico']));
+        if (!empty($customer['dic'])) $address->addChild('typ:dic', $this->xml($customer['dic']));
 
         $header->addChild('inv:paymentType', $this->mapPaymentMethod($invoice['payment_method']));
-        
-        // Items
+
         $invItems = $inv->addChild('inv:invoiceDetail');
         foreach ($invoice['items'] as $row) {
             $invItem = $invItems->addChild('inv:invoiceItem');
-            $invItem->addChild('inv:text', $row['item_name']);
-            $invItem->addChild('inv:quantity', $row['quantity']);
-            $invItem->addChild('inv:unit', $row['unit']);
+            $invItem->addChild('inv:text', $this->xml($row['item_name']));
+            $invItem->addChild('inv:quantity', $this->xml($row['quantity']));
+            $invItem->addChild('inv:unit', $this->xml($row['unit']));
             $invItem->addChild('inv:payVat', $invoice['is_vat_payer'] ? 'true' : 'false');
             $invItem->addChild('inv:rateVAT', $this->mapVatRate($row['vat_rate']));
-            
+
             $homeCurr = $invItem->addChild('inv:homeCurrency');
-            $homeCurr->addChild('typ:unitPrice', $row['price'], 'http://www.stormware.cz/schema/version_2/type.xsd');
+            $homeCurr->addChild('typ:unitPrice', $this->xml($row['price']), self::NS_TYP);
         }
 
-        $filename = 'Pohoda_' . str_replace('/', '-', $invoice['invoice_number']) . '_' . date('YmdHis') . '.xml';
-        $xml->asXML($this->exportDir . $filename);
-        return $filename;
+        return [
+            'filename' => 'Pohoda_' . $this->fileToken($invoice['invoice_number']) . '_' . date('YmdHis') . '.xml',
+            'mime' => 'application/xml',
+            'content' => (string)$xml->asXML(),
+        ];
     }
 
-    public function exportToS3Money($id) {
+    /**
+     * @return array{filename:string,mime:string,content:string}
+     */
+    public function exportToS3Money($id): array {
         $invoice = $this->getFullInvoice($id);
-        $filename = 'S3Money_' . str_replace('/', '-', $invoice['invoice_number']) . '_' . date('YmdHis') . '.csv';
-        
-        $fp = fopen($this->exportDir . $filename, 'w');
+
+        $fp = fopen('php://temp', 'w+');
         // Simple S3 Money CSV header
         fputcsv($fp, ['CisloDokladu', 'DatumVystaveni', 'DatumSplatnosti', 'Partner', 'Text', 'Castka', 'DPH']);
-        
         foreach ($invoice['items'] as $item) {
             fputcsv($fp, [
                 $invoice['invoice_number'],
                 $invoice['date_issue'],
                 $invoice['date_due'],
-                $invoice['customer']['company'] ?: ($invoice['customer']['first_name'] . ' ' . $invoice['customer']['last_name']),
-                $item['item_name'],
+                $this->csvText($this->partnerName($invoice['customer'])),
+                $this->csvText((string)$item['item_name']),
                 $item['price'] * $item['quantity'],
-                $item['vat_rate']
+                $item['vat_rate'],
             ]);
         }
-        
+        rewind($fp);
+        $content = (string)stream_get_contents($fp);
         fclose($fp);
-        return $filename;
+
+        return [
+            'filename' => 'S3Money_' . $this->fileToken($invoice['invoice_number']) . '_' . date('YmdHis') . '.csv',
+            'mime' => 'text/csv',
+            'content' => $content,
+        ];
     }
 
     private function getFullInvoice($id) {
         $stmt = $this->pdo->prepare("SELECT * FROM invoices WHERE id = ?");
         $stmt->execute([$id]);
         $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
-        
+        if (!$invoice) {
+            throw new RuntimeException(__('not_found'));
+        }
+
         $stmt = $this->pdo->prepare("SELECT * FROM customers WHERE id = ?");
         $stmt->execute([$invoice['customer_id']]);
-        $invoice['customer'] = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        $stmt = $this->pdo->prepare("SELECT * FROM invoice_items WHERE invoice_id = ?");
+        $invoice['customer'] = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        $stmt = $this->pdo->prepare("SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY id");
         $stmt->execute([$id]);
         $invoice['items'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
+
         return $invoice;
+    }
+
+    private function partnerName(array $customer): string {
+        $company = trim((string)($customer['company'] ?? ''));
+        if ($company !== '') {
+            return $company;
+        }
+        return trim(($customer['first_name'] ?? '') . ' ' . ($customer['last_name'] ?? ''));
+    }
+
+    private function xml($value): string {
+        return htmlspecialchars((string)$value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+    }
+
+    /** Neutralise spreadsheet formula injection in free-text CSV cells. */
+    private function csvText(string $value): string {
+        return preg_match('/^[=+\-@\t\r]/', $value) ? "'" . $value : $value;
+    }
+
+    private function fileToken($invoiceNumber): string {
+        return preg_replace('/[^A-Za-z0-9_-]/', '-', (string)$invoiceNumber);
     }
 
     private function mapPaymentMethod($method) {
         switch ($method) {
             case 'bank_transfer': return 'draft';
             case 'cash': return 'cash';
-            case 'card': return 'card';
+            case 'card': return 'creditcard'; // Pohoda typ:paymentType enum
+            case 'cod': return 'delivery'; // dobírka
             default: return 'draft';
         }
     }

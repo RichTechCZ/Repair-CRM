@@ -444,6 +444,15 @@ final class TelegramBotRouter
                 }
 
                 $price = (float)$priceRaw;
+                $statusStmt = $pdo->prepare('SELECT status FROM orders WHERE id = ?');
+                $statusStmt->execute([$orderId]);
+                try {
+                    OrderStatusService::assertClosedOrderEditable(canonicalOrderStatus((string)$statusStmt->fetchColumn()), !empty($user['is_admin']));
+                } catch (Exception $e) {
+                    telegramClearState($pdo, (string)$fromId);
+                    telegramSend($chatId, "❌ " . telegramHtml($e->getMessage()));
+                    return;
+                }
                 $stmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, part_name, source, quantity, price) VALUES (?, NULL, ?, ?, 1, ?)");
                 $stmt->execute([$orderId, $partName, $source, $price]);
 
@@ -979,9 +988,10 @@ final class TelegramBotRouter
                 throw new Exception("Заявка не найдена.");
             }
 
+            OrderStatusService::assertClosedOrderEditable(canonicalOrderStatus((string)$order['status']), !empty($user['is_admin']));
             $orderIsConsuming = in_array(canonicalOrderStatus($order['status']), ['Ready', 'Issued'], true);
 
-            $invStmt = $pdo->prepare("SELECT part_name, quantity, sale_price FROM inventory WHERE id = ? FOR UPDATE");
+            $invStmt = $pdo->prepare("SELECT part_name, quantity, sale_price, cost_price FROM inventory WHERE id = ? FOR UPDATE");
             $invStmt->execute([$inventoryId]);
             $inv = $invStmt->fetch(PDO::FETCH_ASSOC);
 
@@ -993,8 +1003,8 @@ final class TelegramBotRouter
                 throw new Exception("Недостаточно остатка на складе.");
             }
 
-            $insertStmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, part_name, quantity, price) VALUES (?, ?, ?, 1, ?)");
-            $insertStmt->execute([$orderId, $inventoryId, $inv['part_name'], $inv['sale_price']]);
+            $insertStmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, part_name, quantity, price, cost_price) VALUES (?, ?, ?, 1, ?, ?)");
+            $insertStmt->execute([$orderId, $inventoryId, $inv['part_name'], $inv['sale_price'], $inv['cost_price']]);
 
             if ($orderIsConsuming) {
                 changeInventoryQuantity($inventoryId, -1);
@@ -1006,7 +1016,7 @@ final class TelegramBotRouter
             self::sendOrderPartsMenu($pdo, $chatId, $user, $orderId, $messageId);
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
-            telegramAnswerCallbackQuery($callbackId, "Ошибка: " . $e->getMessage(), true);
+            telegramAnswerCallbackQuery($callbackId, "Ошибка: " . publicExceptionMessage($e), true);
         }
     }
 
@@ -1077,6 +1087,7 @@ final class TelegramBotRouter
             if (!$item) {
                 throw new Exception("Деталь не найдена.");
             }
+            OrderStatusService::assertClosedOrderEditable(canonicalOrderStatus((string)$item['status']), !empty($user['is_admin']));
 
             if (in_array(canonicalOrderStatus($item['status']), ['Ready', 'Issued'], true) && !empty($item['inventory_id'])) {
                 changeInventoryQuantity($item['inventory_id'], (int)$item['quantity']);
@@ -1091,7 +1102,7 @@ final class TelegramBotRouter
             self::sendOrderPartsMenu($pdo, $chatId, $user, $orderId, $messageId);
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
-            telegramAnswerCallbackQuery($callbackId, "Ошибка: " . $e->getMessage(), true);
+            telegramAnswerCallbackQuery($callbackId, "Ошибка: " . publicExceptionMessage($e), true);
         }
     }
 
@@ -1155,7 +1166,7 @@ final class TelegramBotRouter
             return;
         }
 
-        $stmt = $pdo->prepare('SELECT status, final_cost, estimated_cost FROM orders WHERE id = ?');
+        $stmt = $pdo->prepare('SELECT status, final_cost, estimated_cost, order_type, shipping_method FROM orders WHERE id = ?');
         $stmt->execute([$orderId]);
         $order = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -1173,8 +1184,14 @@ final class TelegramBotRouter
             return;
         }
 
-        // Issued requires final cost unless this is a reclamation/warranty job
-        if ($canonicalNew === 'Issued' && !OrderStatusService::isReclamationOrderType($order['order_type'] ?? null)) {
+        // Issued needs a stored handover method; the bot cannot ask for one.
+        if ($canonicalNew === 'Issued' && !OrderStatusService::issuedShippingSatisfied($order['shipping_method'] ?? null)) {
+            telegramAnswerCallbackQuery($callbackId, "Сначала укажите способ выдачи в CRM.", true);
+            return;
+        }
+
+        // Issued requires final cost unless Warranty («Рекламация») or Self Pickup (binding rule).
+        if ($canonicalNew === 'Issued' && OrderStatusService::issuedRequiresFinalCost($order['order_type'] ?? null, $order['shipping_method'] ?? null)) {
             $cost = $order['final_cost'] !== null ? (float)$order['final_cost'] : ((float)($order['estimated_cost'] ?? 0));
             if ($cost <= 0) {
                 telegramAnswerCallbackQuery($callbackId);
@@ -1220,6 +1237,26 @@ final class TelegramBotRouter
             $currentStatus = $order['status'];
             $costToUse = $finalCost !== null ? $finalCost : ($order['final_cost'] ?? $order['estimated_cost']);
 
+            // Re-validate under the row lock: the order may have changed while the bot waited for input.
+            $canonicalCurrent = canonicalOrderStatus($currentStatus);
+            $canonicalNew = canonicalOrderStatus($newStatus);
+            OrderStatusService::assertCanChangeFromTerminal($canonicalCurrent, $canonicalNew, !empty($user['is_admin']));
+            OrderStatusService::assertIssuedRequirements(
+                $canonicalNew,
+                $costToUse,
+                $order['shipping_method'] ?? null,
+                true,
+                $order['order_type'] ?? null
+            );
+            OrderStatusService::assertCancellationReason(
+                $canonicalNew,
+                $cancelReason,
+                crmMigrationColumnExists($pdo, 'orders', 'cancellation_reason'),
+                true,
+                $order['cancellation_reason'] ?? null
+            );
+            $newStatus = getOrderStatusStorageValue($canonicalNew);
+
             if ($finalCost !== null) {
                 $updCost = $pdo->prepare("UPDATE orders SET final_cost = ? WHERE id = ?");
                 $updCost->execute([$finalCost, $orderId]);
@@ -1261,7 +1298,7 @@ final class TelegramBotRouter
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             error_log("commitStatusChange error: " . $e->getMessage());
-            telegramSend($chatId, "❌ Ошибка при смене статуса: " . telegramHtml($e->getMessage()));
+            telegramSend($chatId, "❌ Ошибка при смене статуса: " . telegramHtml(publicExceptionMessage($e)));
         }
     }
 
@@ -1316,44 +1353,35 @@ final class TelegramBotRouter
                 break;
         }
 
-        $batch = getDetailedStatsBatch($pdo, $startDate, $endDate);
-
         if (!empty($user['is_admin']) && empty($user['technician_id'])) {
-            // Admin overall workshop report
+            // Admin overall workshop report. Keys come from crmEmptyDetailedStats().
+            $all = getDetailedStatsBatch($pdo, $startDate, $endDate)['all'];
             $text = "📈 <b>Финансовый отчет СЦ {$periodTitle}</b>\n";
             $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
-            $text .= "💰 <b>Выручка от клиентов:</b> " . formatMoney($batch['total_revenue']) . "\n";
-            $text .= "🔩 <b>Себестоимость запчастей:</b> " . formatMoney($batch['total_parts_cost']) . "\n";
-            $text .= "🧾 <b>Доп. расходы:</b> " . formatMoney($batch['total_extra_expenses']) . "\n";
-            $text .= "👨‍🔧 <b>Выплаты мастерам:</b> " . formatMoney($batch['total_engineer_payouts']) . "\n";
+            $text .= "💰 <b>Выручка от клиентов:</b> " . formatMoney($all['revenue']) . "\n";
+            $text .= "🔩 <b>Себестоимость запчастей:</b> " . formatMoney($all['parts_cost']) . "\n";
+            $text .= "🧾 <b>Доп. расходы:</b> " . formatMoney($all['expenses']) . "\n";
+            $text .= "👨‍🔧 <b>Выплаты мастерам:</b> " . formatMoney($all['earnings']) . "\n";
             $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
-            $text .= "⭐️ <b>Чистый доход СЦ:</b> <b>" . formatMoney($batch['total_sc_income']) . "</b>\n";
+            $text .= "⭐️ <b>Чистый доход СЦ:</b> <b>" . formatMoney($all['sc_income']) . "</b>\n";
         } else {
-            // Technician personal report
+            // Technician personal report, scoped to this technician only.
             $techId = (int)$user['technician_id'];
-            $stats = $batch['by_technician'][$techId] ?? [
-                'name' => $user['name'],
-                'completed_count' => 0,
-                'customer_total' => 0.0,
-                'parts_cost' => 0.0,
-                'extra_expenses' => 0.0,
-                'rate' => $user['rate'],
-                'earn_base' => 0.0,
-                'engineer_payout' => 0.0,
-            ];
+            $batch = getDetailedStatsBatch($pdo, $startDate, $endDate, $techId);
+            $stats = $batch['by_technician'][$techId] ?? crmEmptyDetailedStats((float)($user['rate'] ?? 50));
 
             $text = "📊 <b>Ваш отчет {$periodTitle}</b>\n";
             $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
             $text .= "👨‍🔧 <b>Мастер:</b> " . telegramHtml($user['name']) . "\n";
-            $text .= "🏷 <b>Ваша ставка:</b> " . (float)$stats['rate'] . "%\n";
-            $text .= "📦 <b>Выдано заказов:</b> <b>" . (int)$stats['completed_count'] . " шт.</b>\n";
-            $text .= "💰 <b>Сумма выполненных работ:</b> " . formatMoney($stats['customer_total']) . "\n";
+            $text .= "🏷 <b>Ваша ставка:</b> " . (float)$stats['engineer_rate'] . "%\n";
+            $text .= "📦 <b>Выдано заказов:</b> <b>" . (int)$stats['finance_orders'] . " шт.</b>\n";
+            $text .= "💰 <b>Сумма выполненных работ:</b> " . formatMoney($stats['revenue']) . "\n";
             $text .= "🔩 <b>Запчасти (себестоимость):</b> " . formatMoney($stats['parts_cost']) . "\n";
-            if ((float)$stats['extra_expenses'] > 0) {
-                $text .= "🧾 <b>Доп. расходы:</b> " . formatMoney($stats['extra_expenses']) . "\n";
+            if ((float)$stats['expenses'] > 0) {
+                $text .= "🧾 <b>Доп. расходы:</b> " . formatMoney($stats['expenses']) . "\n";
             }
             $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
-            $text .= "💵 <b>ВАШ ЗАРАБОТОК:</b> <b>" . formatMoney($stats['engineer_payout']) . "</b>\n";
+            $text .= "💵 <b>ВАШ ЗАРАБОТОК:</b> <b>" . formatMoney($stats['earnings']) . "</b>\n";
         }
 
         $keyboard = [
@@ -1402,7 +1430,7 @@ final class TelegramBotRouter
     public static function executeOrderSearch(PDO $pdo, $chatId, array $user, string $query): void
     {
         $techId = !empty($user['is_admin']) ? null : $user['technician_id'];
-        $result = searchOrdersList($pdo, $query, $techId, null, 1, 6);
+        $result = searchOrdersList($pdo, $query, $techId, null, 6, 0, false);
         $orders = $result['orders'] ?? [];
 
         if (empty($orders)) {

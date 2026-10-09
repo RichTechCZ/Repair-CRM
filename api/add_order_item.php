@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/api_bootstrap.php';
+require_once __DIR__ . '/../models/OrderStatusService.php';
 api_bootstrap([
     'post' => true,
     'csrf' => true,
@@ -58,6 +59,7 @@ try {
     if (!currentUserCanEditOrder($order_id)) {
         throw new Exception(__('access_denied_msg'));
     }
+    OrderStatusService::assertClosedOrderEditable(canonicalOrderStatus((string)$order['status']), hasPermission('admin_access'));
 
     // Parts are only physically consumed while the order is in a repaired/handed-over
     // state. In every other status the stock is adjusted later by the status change.
@@ -68,7 +70,7 @@ try {
         $stmt->execute([$order_id, $manual_part_name, $manual_source, $qty, (float)$manual_price]);
     } else {
         // Get current price from inventory and verify stock availability
-        $stmt = $pdo->prepare("SELECT sale_price, part_name, quantity FROM inventory WHERE id = ? FOR UPDATE");
+        $stmt = $pdo->prepare("SELECT sale_price, cost_price, part_name, quantity FROM inventory WHERE id = ? FOR UPDATE");
         $stmt->execute([$inventory_id]);
         $inventory_item = $stmt->fetch();
         if (!$inventory_item) {
@@ -81,8 +83,9 @@ try {
             throw new Exception(__('insufficient_stock'));
         }
 
-        $stmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, quantity, price) VALUES (?, ?, ?, ?)");
-        $stmt->execute([$order_id, $inventory_id, $qty, $inventory_item['sale_price']]);
+        // cost_price is snapshotted: later inventory price edits must not rewrite paid payroll.
+        $stmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, quantity, price, cost_price) VALUES (?, ?, ?, ?, ?)");
+        $stmt->execute([$order_id, $inventory_id, $qty, $inventory_item['sale_price'], $inventory_item['cost_price']]);
 
         if ($order_is_consuming) {
             changeInventoryQuantity($inventory_id, -$qty);

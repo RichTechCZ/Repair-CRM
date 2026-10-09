@@ -66,6 +66,10 @@ CRM_ENV=production
 CRM_DATA_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
 # Set to 1 only behind a trusted TLS-terminating reverse proxy.
 CRM_TRUST_PROXY_HTTPS=0
+# Zone the existing data was written in; pins PHP and the MySQL session for report periods.
+CRM_TIMEZONE=Europe/Prague
+# Public HTTPS origin for QR codes and customer status links.
+CRM_PUBLIC_BASE_URL=https://your-domain.com
 
 # Telegram Bot (optional)
 TG_BOT_TOKEN=
@@ -133,7 +137,12 @@ server {
         deny all;
     }
     
-    location ~ /(backup_db|includes|models|migrations) {
+    # uploads/ holds private order attachments; they are served only by api/media.php.
+    location ~ /(backup_db|includes|models|migrations|uploads|tools|tests|temp) {
+        deny all;
+    }
+
+    location ~ ^/(cron|run_migrations|set_tg|analyze_import|find_missing|parse_new_dump|verify_migration)\.php$ {
         deny all;
     }
 }
@@ -156,12 +165,30 @@ CRM_ADMIN_USERNAME="<admin-user>" CRM_ADMIN_PASSWORD="<strong-admin-password>" p
 
 Then open `https://your-domain.com/login.php` and sign in with the account you created.
 
+### 8. Scheduled housekeeping and monitoring
+
+```bash
+# crontab: hourly cleanup of expired rate-limit/login/Telegram rows, old error logs, backup rotation (keeps 14)
+0 * * * * cd /path/to/Repair-CRM && php cron.php >> /var/log/repair-crm-cron.log 2>&1
+```
+
+`https://your-domain.com/health.php` returns `200 {"status":"ok"}` when the database answers, all migrations are applied and `uploads/` is writable, otherwise `503` with the failing check names. Use it for uptime monitoring and before switching traffic to a new release.
+
+Accounting settings: this business is not a VAT payer, so keep "VAT payer" unchecked; invoice totals equal the order final cost.
+
 ## Verification
 
 Run the dependency-free regression suite after changing security or financial rules:
 
 ```bash
 php tests/run.php
+```
+
+With a disposable, migrated database (name ending in `_test`, `_ci` or `_audit`) also run the MySQL integration suite; CI does both on every push:
+
+```bash
+php run_migrations.php
+CRM_INTEGRATION_DB=1 php tests/integration_mysql.php
 ```
 
 ## Project structure

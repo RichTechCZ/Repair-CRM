@@ -6,6 +6,9 @@ $error = false;
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 const CRM_LOGIN_MAX_ATTEMPTS = 5;
+// Per-account ceiling across all IPs. Higher than the per-IP limit so a stranger cannot
+// lock the real administrator out with five guesses, while distributed guessing still stops.
+const CRM_LOGIN_MAX_ACCOUNT_ATTEMPTS = 20;
 const CRM_LOGIN_WINDOW_MINUTES = 5;
 
 /**
@@ -55,17 +58,18 @@ function getLoginRateLimitState($pdo, string $username) {
         // if the column is missing so a partial schema cannot lock everyone out.
         try {
             $stmt = $pdo->prepare(
-                'SELECT COUNT(*) AS cnt,
+                'SELECT SUM(ip = ?) AS ip_cnt,
+                        SUM(username_hash = ?) AS user_cnt,
                         TIMESTAMPDIFF(SECOND, MIN(created_at), NOW()) AS age_seconds
                  FROM login_attempts
                  WHERE (ip = ? OR username_hash = ?)
                    AND created_at > DATE_SUB(NOW(), INTERVAL ' . (int)$windowMinutes . ' MINUTE)'
             );
-            $stmt->execute([$ip, $usernameHash]);
+            $stmt->execute([$ip, $usernameHash, $ip, $usernameHash]);
         } catch (Throwable $schemaError) {
             error_log('Login rate-limit scoped check failed, using IP-only: ' . $schemaError->getMessage());
             $stmt = $pdo->prepare(
-                'SELECT COUNT(*) AS cnt,
+                'SELECT COUNT(*) AS ip_cnt, 0 AS user_cnt,
                         TIMESTAMPDIFF(SECOND, MIN(created_at), NOW()) AS age_seconds
                  FROM login_attempts
                  WHERE ip = ?
@@ -75,8 +79,7 @@ function getLoginRateLimitState($pdo, string $username) {
         }
 
         $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-        $count = (int)($row['cnt'] ?? 0);
-        if ($count < $maxAttempts) {
+        if ((int)($row['ip_cnt'] ?? 0) < $maxAttempts && (int)($row['user_cnt'] ?? 0) < CRM_LOGIN_MAX_ACCOUNT_ATTEMPTS) {
             return $allowed;
         }
 
@@ -156,6 +159,7 @@ if (isset($_POST['login'])) {
 
             if ($user && password_verify($password, $user['password'])) {
                 session_regenerate_id(true); // Session Fixation protection
+                $_SESSION['csrf_token'] = bin2hex(random_bytes(32)); // pre-login token must not survive authentication
                 $_SESSION['session_created_at'] = time();
                 $_SESSION['last_activity_at'] = time();
                 $_SESSION['user_id']   = $user['id'];
@@ -181,6 +185,7 @@ if (isset($_POST['login'])) {
 
             if ($tech && password_verify($password, $tech['password'])) {
                 session_regenerate_id(true);
+                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                 $_SESSION['session_created_at'] = time();
                 $_SESSION['last_activity_at'] = time();
                 $_SESSION['user_id']   = 't' . $tech['id'];
@@ -200,6 +205,10 @@ if (isset($_POST['login'])) {
                 exit;
             }
 
+            if (!$user && !$tech) {
+                // Same bcrypt cost as a real account, so response time does not reveal valid logins.
+                password_verify($password, '$2y$10$b4vqRN1pW9yOcDI.Sy0OM.VLus.iicXRZ9hQFmtLss7DcalC1yWDG');
+            }
             recordLoginAttempt($pdo, $username, false);
             $error = __('login_error_auth');
         }

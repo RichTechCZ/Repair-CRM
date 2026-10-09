@@ -1,5 +1,5 @@
 # ── Block debug / test / maintenance scripts from public web access ─────────
-<FilesMatch "^(debug_check|debug_reports|test|analyze_import|find_missing|parse_new_dump|verify_migration|set_tg|run_migrations)\.php$">
+<FilesMatch "^(debug_check|debug_reports|test|analyze_import|find_missing|parse_new_dump|verify_migration|set_tg|run_migrations|cron)\.php$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
@@ -10,7 +10,7 @@
 </FilesMatch>
 
 # ── Block sensitive data files ───────────────────────────────────────────────
-<FilesMatch "\.(env|log|sql|md|ndjson|xlsx|lock)$">
+<FilesMatch "\.(env|log|sql|md|ndjson|xlsx|lock|json|example|gitignore|bak|dist)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
@@ -23,7 +23,7 @@
 # ── Deny access to backup / temp / tools paths ───────────────────────────────
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^(backup_db|crm_backups|temp|tools|memory|graphify-out|outputs|facktura|tests|migrations|\.claude|\.agents|\.codebase-memory|\.playwright-cli|\.githooks|\.github)/ - [F,L]
+    RewriteRule ^(\.git|models|uploads|backup_db|crm_backups|temp|tools|memory|graphify-out|outputs|facktura|tests|migrations|\.claude|\.agents|\.codebase-memory|\.playwright-cli|\.githooks|\.github)/ - [F,L]
     RewriteRule ^crm_.*_redesign\.html$ - [F,L]
     RewriteRule ^clear_database\.sql$ - [F,L]
 </IfModule>

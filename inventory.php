@@ -1,6 +1,11 @@
 <?php
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+// Page-level guard independent of header.php's permission map (defense in depth).
+if (!hasPermission('admin_access')) {
+    header('Location: index.php');
+    exit;
+}
 require_once 'includes/header.php';
 
 // Pagination and Filters
@@ -80,13 +85,13 @@ $catalog_import_success = isset($_GET['catalog_imported']);
         <?php if($inventory_stats['low_stock'] > 0): ?>
             <span class="status-pill status-pill--stock-low me-2"><?php echo __('low_stock_alert'); ?>: <?php echo (int)$inventory_stats['low_stock']; ?></span>
         <?php endif; ?>
-        <button class="btn btn-outline-info" data-bs-toggle="collapse" data-bs-target="#filterPanel">
+        <button class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#filterPanel" aria-controls="filterPanel">
             <i class="fas fa-filter me-2"></i> <?php echo __('filters'); ?>
         </button>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newPartModal">
             <i class="fas fa-plus me-2"></i> <?php echo __('add_part'); ?>
         </button>
-        <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#catalogUpdateModal">
+        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#catalogUpdateModal">
             <i class="fas fa-sync me-2"></i> <?php echo __('update_catalog'); ?>
         </button>
     </div>
@@ -148,9 +153,11 @@ $catalog_import_success = isset($_GET['catalog_imported']);
                         <tbody>
                             <?php if (empty($inventory)): ?>
                                 <tr>
-                                    <td colspan="9" class="text-center py-5 text-muted">
-                                        <i class="fas fa-boxes fa-3x mb-3 d-block opacity-25"></i>
-                                        <?php echo __('stock_empty'); ?>
+                                    <td colspan="8">
+                                        <div class="empty-state">
+                                            <div class="empty-state__mark" aria-hidden="true"></div>
+                                            <p class="mb-0"><?php echo e(__('stock_empty')); ?></p>
+                                        </div>
                                     </td>
                                 </tr>
                             <?php else: ?>
@@ -158,8 +165,8 @@ $catalog_import_success = isset($_GET['catalog_imported']);
                                 <tr>
                                     <td class="ps-4" data-label="<?php echo e(__('photo_col')); ?>">
                                         <?php if(!empty($item['image_path'])): ?>
-                                            <a href="<?php echo $item['image_path']; ?>" data-fancybox="inventory">
-                                                <img src="<?php echo $item['image_path']; ?>" class="rounded shadow-sm" style="width: 40px; height: 40px; object-fit: cover;" alt="<?php echo htmlspecialchars($item['part_name']); ?>">
+                                            <a href="<?php echo e($item['image_path']); ?>" data-fancybox="inventory">
+                                                <img src="<?php echo e($item['image_path']); ?>" class="rounded shadow-sm" style="width: 40px; height: 40px; object-fit: cover;" alt="<?php echo htmlspecialchars($item['part_name']); ?>">
                                             </a>
                                         <?php else: ?>
                                             <div class="bg-dark bg-opacity-25 rounded d-flex align-items-center justify-content-center shadow-sm border border-secondary" style="width: 40px; height: 40px;">
@@ -176,7 +183,7 @@ $catalog_import_success = isset($_GET['catalog_imported']);
                                             <?php echo $item['quantity']; ?> <?php echo __('pcs_short'); ?>
                                         </span>
                                     </td>
-                                    <td data-label="<?php echo e(__('buy_price')); ?>"><?php echo formatMoney($item['cost_price']); ?></td>
+                                    <td data-label="<?php echo e(__('buy_price')); ?>"><?php echo $item['cost_price'] === null ? '—' : formatMoney($item['cost_price']); ?></td>
                                     <td class="fw-bold text-primary" data-label="<?php echo e(__('sell_price')); ?>"><?php echo formatMoney($item['sale_price']); ?></td>
                                     <td data-label="<?php echo e(__('status')); ?>">
                                         <?php if ($item['quantity'] <= 0): ?>
@@ -189,8 +196,8 @@ $catalog_import_success = isset($_GET['catalog_imported']);
                                     </td>
                                     <td class="text-end pe-4 mobile-row-actions" data-label="">
                                         <div class="btn-group btn-group-sm">
-                                            <a href="edit_inventory.php?id=<?php echo $item['id']; ?>" class="btn btn-white border" title="<?php echo __('edit'); ?>" aria-label="<?php echo __('edit'); ?>: <?php echo htmlspecialchars($item['part_name']); ?>"><i class="fas fa-edit text-warning" aria-hidden="true"></i></a>
-                                            <button type="button" class="btn btn-white border text-danger" data-crm-action="delete-part" data-crm-id="<?php echo (int)$item['id']; ?>" title="<?php echo __('delete'); ?>" aria-label="<?php echo __('delete'); ?>: <?php echo htmlspecialchars($item['part_name']); ?>"><i class="fas fa-trash" aria-hidden="true"></i></button>
+                                            <a href="edit_inventory.php?id=<?php echo $item['id']; ?>" class="btn btn-outline-secondary" title="<?php echo __('edit'); ?>" aria-label="<?php echo __('edit'); ?>: <?php echo htmlspecialchars($item['part_name']); ?>"><i class="fas fa-edit" aria-hidden="true"></i></a>
+                                            <button type="button" class="btn btn-outline-danger" data-crm-action="delete-part" data-crm-id="<?php echo (int)$item['id']; ?>" title="<?php echo __('delete'); ?>" aria-label="<?php echo __('delete'); ?>: <?php echo htmlspecialchars($item['part_name']); ?>"><i class="fas fa-trash" aria-hidden="true"></i></button>
                                         </div>
                                     </td>
                                 </tr>
@@ -229,13 +236,13 @@ $catalog_import_success = isset($_GET['catalog_imported']);
     </div>
 </div>
 
-<div class="modal fade" id="newPartModal" tabindex="-1" data-bs-focus="false">
+<div class="modal fade" id="newPartModal" tabindex="-1" aria-labelledby="newPartModalTitle">
     <div class="modal-dialog">
         <div class="modal-content">
             <form action="api/add_inventory.php" method="POST">
                 <?php echo csrfField(); ?>
                 <div class="modal-header">
-                    <h5 class="modal-title"><?php echo __('add_part'); ?></h5>
+                    <h5 class="modal-title" id="newPartModalTitle"><?php echo __('add_part'); ?></h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -281,13 +288,13 @@ $catalog_import_success = isset($_GET['catalog_imported']);
     </div>
 </div>
 
-<div class="modal fade" id="catalogUpdateModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="catalogUpdateModal" tabindex="-1" aria-hidden="true" aria-labelledby="catalogUpdateModalTitle">
     <div class="modal-dialog">
         <div class="modal-content">
             <form id="catalogUpdateForm" action="api/parse_catalog.php" method="POST" data-crm-submit-action="confirm-catalog-update">
                 <?php echo csrfField(); ?>
                 <div class="modal-header">
-                    <h5 class="modal-title"><?php echo __('update_catalog'); ?></h5>
+                    <h5 class="modal-title" id="catalogUpdateModalTitle"><?php echo __('update_catalog'); ?></h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo __('cancel'); ?>"></button>
                 </div>
                 <div class="modal-body">
@@ -307,8 +314,8 @@ $catalog_import_success = isset($_GET['catalog_imported']);
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?php echo __('cancel'); ?></button>
-                    <button type="submit" class="btn btn-success">
-                        <i class="fas fa-sync me-2"></i><?php echo __('update_catalog'); ?>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-sync me-2" aria-hidden="true"></i><?php echo __('update_catalog'); ?>
                     </button>
                 </div>
             </form>
@@ -325,15 +332,15 @@ $(document).ready(function() {
 });
 
 function deletePart(id) {
-    showConfirm('<?php echo __('confirm_delete_inventory'); ?>', function() {
-        $.post('api/delete_inventory.php', {id: id, csrf_token: '<?php echo $_SESSION['csrf_token'] ?? ''; ?>'}, function(res) {
+    showConfirm(<?php echo json_encode(__('confirm_delete_inventory'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>, function() {
+        $.post('api/delete_inventory.php', {id: id, csrf_token: <?php echo json_encode($_SESSION['csrf_token'] ?? '', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>}, function(res) {
             if (res.success) {
                 location.reload();
             } else {
-                showAlert('<?php echo __('error_prefix'); ?>' + res.message);
+                showAlert(<?php echo json_encode(__('error_prefix'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?> + res.message);
             }
         });
-    });
+    }, undefined, 'danger');
 }
 
 function confirmCatalogUpdate(form) {
@@ -342,7 +349,7 @@ function confirmCatalogUpdate(form) {
         return false;
     }
 
-    showConfirm('<?php echo __('parse_confirm'); ?>', function() {
+    showConfirm(<?php echo json_encode(__('parse_confirm'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>, function() {
         form.submit();
     });
 

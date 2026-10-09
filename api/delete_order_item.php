@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/api_bootstrap.php';
+require_once __DIR__ . '/../models/OrderStatusService.php';
 api_bootstrap([
     'post' => true,
     'csrf' => true,
@@ -28,6 +29,7 @@ try {
     if (!currentUserCanEditOrder($item['order_id'])) {
         throw new Exception(__('access_denied_msg'));
     }
+    OrderStatusService::assertClosedOrderEditable(canonicalOrderStatus((string)$item['status']), hasPermission('admin_access'));
 
     // If order is in a stock-consuming state (repaired/handed over), return the parts
     if (in_array(canonicalOrderStatus($item['status']), ['Ready', 'Issued'], true) && !empty($item['inventory_id'])) {

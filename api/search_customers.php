@@ -33,7 +33,7 @@ if ($term !== '') {
 
 // Technicians only search customers who have at least one order assigned to them.
 if (isTechnicianScoped()) {
-    $where_parts[] = 'id IN (SELECT DISTINCT customer_id FROM orders WHERE technician_id = ?)';
+    $where_parts[] = 'EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = customers.id AND o.technician_id = ?)';
     $params[] = currentTechnicianId();
 }
 

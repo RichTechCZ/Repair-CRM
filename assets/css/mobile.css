@@ -280,8 +280,7 @@ body.modal-open {
         color: var(--accent-strong);
     }
 
-    .page-actions .btn,
-    .workspace-overview__actions .btn {
+    .page-actions .btn {
         flex: 1 1 auto;
     }
 

@@ -286,15 +286,16 @@ function setTechPermissions($tech_id, $permissions) {
  *   orders (technician_id match). Cross-tech order access is never grantable.
  * - `edit_customers` → customers UI/API; technicians remain scoped to customers
  *   they share an order with
- * - `manage_passwords` → change admin account passwords in settings
+ * - admin (users table) passwords: only a `role=admin` session, with its own current
+ *   password, audited; no technician permission can grant it (manage_passwords removed)
  *
- * Removed (never enforced, contradicted isolation): view_all_orders, edit_orders
+ * Removed (never enforced, contradicted isolation): view_all_orders, edit_orders.
+ * Removed (was an admin escalation path): manage_passwords.
  */
 function getAvailablePermissions() {
     return [
         'admin_access' => ['name' => __('perm_admin_access'), 'desc' => __('perm_admin_access_desc'), 'icon' => 'fas fa-crown text-warning'],
         'edit_customers' => ['name' => __('perm_edit_customers'), 'desc' => __('perm_edit_customers_desc'), 'icon' => 'fas fa-user-edit text-success'],
-        'manage_passwords' => ['name' => __('perm_manage_passwords'), 'desc' => __('perm_manage_passwords_desc'), 'icon' => 'fas fa-key text-danger'],
     ];
 }
 
@@ -523,21 +524,38 @@ function getDashboardStatusGroups(): array {
     ];
 }
 
-function countOrdersByStatusGroup(array $statuses, ?int $technicianId = null): int {
+/**
+ * Counts for several status groups with one GROUP BY query (dashboard tiles).
+ *
+ * @param array<string,list<string>> $groups group => canonical statuses
+ * @return array<string,int>
+ */
+function countOrdersByStatusGroups(array $groups, ?int $technicianId = null): array {
     global $pdo;
 
-    $params = [];
-    $where = buildStatusInCondition('status', $statuses, $params);
-
-    if ($technicianId !== null) {
-        $where .= ' AND technician_id = ?';
-        $params[] = $technicianId;
+    $counts = array_fill_keys(array_keys($groups), 0);
+    $groupOf = [];
+    foreach ($groups as $group => $statuses) {
+        foreach ($statuses as $status) {
+            $groupOf[canonicalOrderStatus($status)] = $group;
+        }
     }
 
-    $stmt = $pdo->prepare('SELECT COUNT(*) FROM orders WHERE ' . $where);
+    $sql = 'SELECT status, COUNT(*) AS cnt FROM orders';
+    $params = [];
+    if ($technicianId !== null) {
+        $sql .= ' WHERE technician_id = ?';
+        $params[] = $technicianId;
+    }
+    $stmt = $pdo->prepare($sql . ' GROUP BY status');
     $stmt->execute($params);
-
-    return (int)$stmt->fetchColumn();
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $group = $groupOf[canonicalOrderStatus((string)$row['status'])] ?? null;
+        if ($group !== null) {
+            $counts[$group] += (int)$row['cnt'];
+        }
+    }
+    return $counts;
 }
 
 function tableColumnExists(string $table, string $column): bool {
@@ -610,11 +628,12 @@ function getDeviceModels($brand = null, string $term = '', int $limit = 50): arr
     }
 }
 
-function saveDeviceModelUsage(string $brand, string $model): void {
+function saveDeviceModelUsage(?string $brand, ?string $model): void {
     global $pdo;
 
-    $brand = trim($brand);
-    $model = trim($model);
+    // Legacy/imported orders may have no brand: autocomplete history is skipped, the save is not.
+    $brand = trim((string)$brand);
+    $model = trim((string)$model);
     if ($brand === '' || $model === '') {
         return;
     }
@@ -628,13 +647,14 @@ function saveDeviceModelUsage(string $brand, string $model): void {
         $stmt->execute([$brand, $model]);
     } catch (Exception $e) {
         // Autocomplete history must not block order creation.
+        error_log('saveDeviceModelUsage failed: ' . $e->getMessage());
     }
 }
 
 function formatMoney($amount) {
     global $pdo;
     $currency = get_setting('currency', 'Kč');
-    return number_format($amount, 2, '.', ' ') . ' ' . $currency;
+    return number_format((float)$amount, 2, '.', ' ') . ' ' . $currency;
 }
 
 function normalizeSearchQuery(string $search): string {
@@ -1028,41 +1048,52 @@ function searchOrdersList(
     ];
 }
 
-function get_setting($key, $default = '') {
-    global $pdo;
-    static $cache = [];
-    if (array_key_exists($key, $cache)) {
-        return $cache[$key];
-    }
-    try {
-        $stmt = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = ?");
-        $stmt->execute([$key]);
-        $val = $stmt->fetchColumn();
-        if ($val !== false) {
-            $cache[$key] = $val;
-            return $val;
+/**
+ * Request-level settings cache: all system_settings rows are loaded with one query on first use
+ * (pages read 10–30 keys). set_setting() keeps it in sync so a save is visible in the same request.
+ *
+ * @return array<string,string>|null null when the store is unavailable
+ */
+function &crmSettingsCache(): ?array {
+    static $cache = null;
+    static $loaded = false;
+    if (!$loaded) {
+        $loaded = true;
+        global $pdo;
+        try {
+            $cache = [];
+            foreach ($pdo->query('SELECT setting_key, setting_value FROM system_settings')->fetchAll(PDO::FETCH_NUM) as [$key, $value]) {
+                $cache[(string)$key] = (string)$value;
+            }
+        } catch (Throwable $e) {
+            // Defaults are served; the next call retries (e.g. a connection that recovers).
+            error_log('Settings load failed: ' . $e->getMessage());
+            $cache = null;
+            $loaded = false;
         }
-    } catch (Exception $e) {
-        $cache[$key] = $default;
+    }
+    return $cache;
+}
+
+function get_setting($key, $default = '') {
+    $cache = &crmSettingsCache();
+    if ($cache === null || !array_key_exists((string)$key, $cache)) {
         return $default;
     }
-    $cache[$key] = $default;
-    return $default;
+    return $cache[(string)$key];
 }
 
 function set_setting($key, $value) {
     global $pdo;
     $stmt = $pdo->prepare("REPLACE INTO system_settings (setting_key, setting_value) VALUES (?, ?)");
-    return $stmt->execute([$key, $value]);
+    $result = $stmt->execute([$key, $value]);
+    $cache = &crmSettingsCache();
+    if ($cache !== null) {
+        $cache[(string)$key] = (string)$value;
+    }
+    return $result;
 }
 
-/**
- * Absolute path to the SQL backup directory (trailing separator).
- * Default: <app>/backup_db/  (never outside the application root).
- * Override with CRM_BACKUP_DIR only when the host requires a non-web path.
- *
- * @param bool $create Create the directory (and deny-web guards) when missing.
- */
 function crmBackupDirectory(bool $create = false): string
 {
     $configured = trim((string)(getenv('CRM_BACKUP_DIR') ?: ''));
@@ -1180,12 +1211,8 @@ function sendOrderStatusAdminNotification($order_id, string $canonical_status, $
         $msg .= sprintf(__('tg_cost'), formatMoney($final_cost)) . "\n";
     }
 
-    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
-    $host = preg_replace('/[^A-Za-z0-9.:-]/', '', (string)($_SERVER['HTTP_HOST'] ?? 'app.servis.expert'));
-    if ($host === '') {
-        $host = 'app.servis.expert';
-    }
-    $link = $protocol . $host . '/view_order.php?id=' . (int)$order_id;
+    // Configured origin, never the client-controlled Host header (and absent in CLI/webhook runs).
+    $link = crmPublicBaseUrl() . '/view_order.php?id=' . (int)$order_id;
     $msg .= sprintf(__('tg_open_crm'), telegramHtml($link));
 
     return sendTelegramNotification($chatId, $msg);
@@ -1206,16 +1233,28 @@ function logOrderStatusChange($order_id, $old_status, $new_status) {
         if (!$pdo->inTransaction()) {
             ensureOrderStatusLogTable();
         }
-        $changed_by = $_SESSION['user_id'] ?? ($_SESSION['tech_id'] ?? null);
         $changed_role = $_SESSION['role'] ?? null;
+        // changed_by is INT: technicians are stored by technicians.id (session user_id is the string "t<id>"),
+        // admins by users.id. view_order.php resolves the name by changed_role.
+        if ($changed_role === 'technician' && !empty($_SESSION['tech_id'])) {
+            $changed_by = (int)$_SESSION['tech_id'];
+        } elseif ($changed_role === 'admin' && !empty($_SESSION['user_id'])) {
+            $changed_by = (int)$_SESSION['user_id'];
+        } else {
+            $changed_by = null;
+        }
         $stmt = $pdo->prepare(
             "INSERT INTO order_status_log (order_id, old_status, new_status, changed_by, changed_role)
              VALUES (?, ?, ?, ?, ?)"
         );
         $stmt->execute([$order_id, $old_status, $new_status, $changed_by, $changed_role]);
     } catch (Exception $e) {
-        // Reports are built from this history; never lose a failure silently.
+        // Reports are built from this history: a lost row silently corrupts periods,
+        // so roll the surrounding status change back instead of committing it unlogged.
         error_log('logOrderStatusChange failed for order #' . (int)$order_id . ': ' . $e->getMessage());
+        if ($pdo->inTransaction()) {
+            throw $e;
+        }
     }
 }
 
@@ -1307,11 +1346,20 @@ function crmNormalizePublicStatusToken(?string $token): string
 }
 
 /**
- * Public customer-facing status URL on the CRM host (app.servis.expert).
+ * Public HTTPS origin of the CRM (CRM_PUBLIC_BASE_URL) for links in QR codes, prints and
+ * notifications. Never derived from the request Host header.
+ */
+function crmPublicBaseUrl(): string
+{
+    return rtrim((string)(getenv('CRM_PUBLIC_BASE_URL') ?: 'https://app.servis.expert'), '/');
+}
+
+/**
+ * Public customer-facing status URL on the CRM host.
  */
 function crmOrderPublicStatusUrl(string $token): string
 {
-    $base = 'https://app.servis.expert/status.php';
+    $base = crmPublicBaseUrl() . '/status.php';
     $token = crmNormalizePublicStatusToken($token);
     if ($token === '') {
         return $base;

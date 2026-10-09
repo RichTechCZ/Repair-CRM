@@ -1,6 +1,11 @@
 <?php
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+// Page-level guard independent of header.php's permission map (defense in depth).
+if (!hasPermission('edit_customers')) {
+    header('Location: index.php');
+    exit;
+}
 require_once 'includes/header.php';
 
 $customers = [];
@@ -36,7 +41,7 @@ if (isset($pdo)) {
         }
 
         if ($tech_scoped) {
-            $where_parts[] = 'id IN (SELECT DISTINCT customer_id FROM orders WHERE technician_id = ?)';
+            $where_parts[] = 'EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = customers.id AND o.technician_id = ?)';
             $params[] = $tech_id;
         }
 
@@ -126,7 +131,12 @@ if (isset($pdo)) {
                 <tbody>
                     <?php if (empty($customers)): ?>
                         <tr>
-                            <td colspan="7" class="text-center py-4 text-muted"><?php echo __('no_customers_found'); ?></td>
+                            <td colspan="7">
+                                <div class="empty-state">
+                                    <div class="empty-state__mark" aria-hidden="true"></div>
+                                    <p class="mb-0"><?php echo e(__('no_customers_found')); ?></p>
+                                </div>
+                            </td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($customers as $customer): ?>
@@ -137,7 +147,7 @@ if (isset($pdo)) {
                                     <?php 
                                     if ($customer['customer_type'] == 'company') {
                                         echo htmlspecialchars($customer['company'] ?: $customer['last_name']);
-                                        echo ' <small class="text-muted">(Firma)</small>';
+                                        echo ' <small class="text-muted">(' . e(__('company_marker')) . ')</small>';
                                     } else {
                                         echo htmlspecialchars($customer['last_name'] . ' ' . $customer['first_name']);
                                     }
@@ -164,7 +174,7 @@ if (isset($pdo)) {
                             </td>
                             <td class="mobile-row-actions" data-label="">
                                 <div class="btn-group btn-group-sm">
-                                    <a href="edit_customer.php?id=<?php echo $customer['id']; ?>" class="btn btn-outline-primary" aria-label="<?php echo e(__('edit')); ?>"><i class="fas fa-edit"></i></a>
+                                    <a href="edit_customer.php?id=<?php echo $customer['id']; ?>" class="btn btn-outline-primary" aria-label="<?php echo e(__('edit')); ?>"><i class="fas fa-edit" aria-hidden="true"></i></a>
                                 </div>
                             </td>
                         </tr>
@@ -215,11 +225,11 @@ if (isset($pdo)) {
 <?php endif; ?>
 
 <!-- Customer Orders Modal -->
-<div class="modal fade" id="customerOrdersModal" tabindex="-1">
+<div class="modal fade" id="customerOrdersModal" tabindex="-1" aria-labelledby="customerOrdersModalTitle">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><?php echo __('customer_orders_title'); ?>: <span id="modalCustomerName"></span></h5>
+                <h5 class="modal-title" id="customerOrdersModalTitle"><?php echo __('customer_orders_title'); ?>: <span id="modalCustomerName"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-0" style="max-height: 400px; overflow-y: auto;">
@@ -244,12 +254,58 @@ if (isset($pdo)) {
     </div>
 </div>
 
+<?php $crmJsFlags = JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE; ?>
 <script nonce="<?php echo e(crmCspNonce()); ?>">
+const CUSTOMER_ORDERS_I18N = {
+    loading: <?php echo json_encode(__('loading_text'), $crmJsFlags); ?>,
+    empty: <?php echo json_encode(__('orders_not_found'), $crmJsFlags); ?>,
+    open: <?php echo json_encode(__('open_btn'), $crmJsFlags); ?>,
+    loadError: <?php echo json_encode(__('error_loading_data'), $crmJsFlags); ?>,
+    networkError: <?php echo json_encode(__('network_error'), $crmJsFlags); ?>
+};
+
+function customerOrdersMessageRow(text, isError) {
+    const $cell = $('<td colspan="5">');
+    if (isError) {
+        $cell.addClass('text-center py-4 text-danger').text(text);
+    } else {
+        $cell.append(
+            $('<div class="empty-state">')
+                .append('<div class="empty-state__mark" aria-hidden="true"></div>')
+                .append($('<p class="mb-0">').text(text))
+        );
+    }
+    return $('<tr>').append($cell);
+}
+
+function customerOrderRow(order) {
+    const id = Number.parseInt(order.id, 10);
+    const variant = /^[a-z-]+$/.test(String(order.status_variant || '')) ? order.status_variant : 'closed';
+    const created = order.created_at ? new Date(String(order.created_at).replace(' ', 'T')) : null;
+    const $row = $('<tr>');
+    $row.append($('<td class="ps-3">').append($('<span class="fw-bold">').text('#' + id)));
+    $row.append($('<td>').text([order.device_brand, order.device_model].filter(Boolean).join(' ')));
+    $row.append($('<td>').append(
+        $('<span>').addClass('status-pill status-pill--' + variant).text(order.status_label || order.status || '')
+    ));
+    $row.append($('<td>').text(created && !Number.isNaN(created.getTime()) ? created.toLocaleDateString() : ''));
+    $row.append($('<td class="text-end pe-3">').append(
+        $('<a class="btn btn-sm btn-outline-primary">').attr('href', 'view_order.php?id=' + id).text(CUSTOMER_ORDERS_I18N.open)
+    ));
+    return $row;
+}
+
 function showCustomerOrders(id, name) {
+    const $list = $('#customerOrdersList');
     $('#modalCustomerName').text(name);
-    $('#customerOrdersList').html('<tr><td colspan="5" class="text-center py-4"><div class="spinner-border spinner-border-sm text-primary"></div> <?php echo __('loading_text'); ?></td></tr>');
-    var myModal = new bootstrap.Modal(document.getElementById('customerOrdersModal'));
-    myModal.show();
+    $list.empty().append(
+        $('<tr>').append(
+            $('<td colspan="5" class="text-center py-4">')
+                .append('<div class="spinner-border spinner-border-sm text-primary" aria-hidden="true"></div> ')
+                .append(document.createTextNode(CUSTOMER_ORDERS_I18N.loading))
+        )
+    );
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('customerOrdersModal')).show();
 
     $.ajax({
         url: 'api/get_customer_orders.php',
@@ -257,46 +313,36 @@ function showCustomerOrders(id, name) {
         dataType: 'json',
         data: { customer_id: id }
     }).done(function(res) {
-        if (res && res.success) {
-            var html = '';
-            if (!Array.isArray(res.orders) || res.orders.length === 0) {
-                html = '<tr><td colspan="5" class="text-center py-4"><?php echo __('orders_not_found'); ?></td></tr>';
-            } else {
-                function escapeHtml(text) {
-                    if (text == null) return '';
-                    return $('<div>').text(text).html();
-                }
-                res.orders.forEach(function(o) {
-                    html += '<tr>';
-                    html += '<td class="ps-3"><span class="fw-bold">#' + escapeHtml(o.id) + '</span></td>';
-                    html += '<td>' + escapeHtml(o.device_brand) + ' ' + escapeHtml(o.device_model) + '</td>';
-                    html += '<td>' + escapeHtml(o.status) + '</td>';
-                    html += '<td>' + escapeHtml(new Date(o.created_at).toLocaleDateString()) + '</td>';
-                    html += '<td class="text-end pe-3"><a href="view_order.php?id=' + escapeHtml(o.id) + '" class="btn btn-sm btn-outline-primary"><?php echo __('open_btn'); ?></a></td>';
-                    html += '</tr>';
-                });
-            }
-            $('#customerOrdersList').html(html);
-        } else {
-            const msg = (res && res.message) ? res.message : '<?php echo __('error_loading_data'); ?>';
-            $('#customerOrdersList').html('<tr><td colspan="5" class="text-center py-4 text-danger">' + $('<div>').text(msg).html() + '</td></tr>');
+        $list.empty();
+        if (!res || !res.success) {
+            $list.append(customerOrdersMessageRow((res && res.message) ? res.message : CUSTOMER_ORDERS_I18N.loadError, true));
+            return;
         }
+        if (!Array.isArray(res.orders) || res.orders.length === 0) {
+            $list.append(customerOrdersMessageRow(CUSTOMER_ORDERS_I18N.empty, false));
+            return;
+        }
+        res.orders.forEach(function(order) {
+            $list.append(customerOrderRow(order));
+        });
     }).fail(function(xhr) {
-        const msg = (xhr && xhr.responseText) ? xhr.responseText : '<?php echo __('network_error'); ?>';
-        $('#customerOrdersList').html('<tr><td colspan="5" class="text-center py-4 text-danger"><?php echo __('error_loading_data'); ?></td></tr>');
-        showAlert($('<div>').text(msg).html());
+        const msg = (xhr && xhr.responseJSON && xhr.responseJSON.message)
+            ? xhr.responseJSON.message
+            : CUSTOMER_ORDERS_I18N.networkError;
+        $list.empty().append(customerOrdersMessageRow(CUSTOMER_ORDERS_I18N.loadError, true));
+        showAlert(msg);
     });
 }
 </script>
 
 <!-- New Customer Modal -->
-<div class="modal fade" id="newCustomerModal" tabindex="-1" data-bs-focus="false">
+<div class="modal fade" id="newCustomerModal" tabindex="-1" aria-labelledby="newCustomerModalTitle">
     <div class="modal-dialog">
         <div class="modal-content">
             <form action="api/add_customer.php" method="POST" id="newCustomerForm">
                 <?php echo csrfField(); ?>
                 <div class="modal-header">
-                    <h5 class="modal-title"><?php echo __('add_customer'); ?></h5>
+                    <h5 class="modal-title" id="newCustomerModalTitle"><?php echo __('add_customer'); ?></h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -315,7 +361,7 @@ function showCustomerOrders(id, name) {
                             <label class="form-label"><?php echo __('ico'); ?></label>
                             <div class="input-group">
                                 <input type="text" name="ico" id="ico_input" class="form-control" placeholder="12345678">
-                                <button class="btn btn-info text-white" type="button" id="btn_fetch_ares">
+                                <button class="btn btn-outline-secondary" type="button" id="btn_fetch_ares">
                                     <i class="fas fa-search me-1"></i> <?php echo __('fetch_ares'); ?>
                                 </button>
                             </div>
@@ -378,7 +424,7 @@ $(document).ready(function() {
 
     $('#btn_fetch_ares').on('click', function() {
         const ico = $('#ico_input').val().trim();
-        if (!ico) return showAlert('<?php echo __('enter_ico_prompt'); ?>');
+        if (!ico) return showAlert(<?php echo json_encode(__('enter_ico_prompt'), $crmJsFlags); ?>);
         
         const btn = $(this);
         btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
@@ -388,7 +434,7 @@ $(document).ready(function() {
             method: 'GET',
             dataType: 'json',
             success: function(data) {
-                btn.prop('disabled', false).html('<i class="fas fa-search me-1"></i> <?php echo __('fetch_ares'); ?>');
+                btn.prop('disabled', false).html('<i class="fas fa-search me-1" aria-hidden="true"></i> ').append(document.createTextNode(<?php echo json_encode(__('fetch_ares'), $crmJsFlags); ?>));
                 if (data && data.obchodniJmeno) {
                     $('#ares_name').val(data.obchodniJmeno);
                     $('#ares_last_name').val(data.obchodniJmeno);
@@ -404,12 +450,12 @@ $(document).ready(function() {
                         $('#ares_address').val(addr.trim());
                     }
                 } else {
-                    showAlert('<?php echo __('ares_data_not_found'); ?>');
+                    showAlert(<?php echo json_encode(__('ares_data_not_found'), $crmJsFlags); ?>);
                 }
             },
             error: function() {
-                btn.prop('disabled', false).html('<i class="fas fa-search me-1"></i> <?php echo __('fetch_ares'); ?>');
-                showAlert('<?php echo __('ares_fetch_error'); ?>');
+                btn.prop('disabled', false).html('<i class="fas fa-search me-1" aria-hidden="true"></i> ').append(document.createTextNode(<?php echo json_encode(__('fetch_ares'), $crmJsFlags); ?>));
+                showAlert(<?php echo json_encode(__('ares_fetch_error'), $crmJsFlags); ?>);
             }
         });
     });

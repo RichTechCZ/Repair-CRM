@@ -131,23 +131,29 @@ $company = trim((string)get_setting('company_name', 'Servis Expert'));
     <meta name="robots" content="noindex,nofollow">
     <title><?php echo $h($pageTitle); ?> · <?php echo $h($company); ?></title>
     <style>
+        /* Standalone public page: mirrors the flat tokens of assets/css/style.css. */
         :root {
-            --bg: #0f1216;
-            --card: #171b21;
-            --text: #f4efe6;
-            --muted: #9aa3ad;
-            --line: rgba(255,255,255,0.08);
+            --bg-canvas: #0f1115;
+            --bg-panel: #1a1e24;
+            --bg-panel-soft: #171b21;
+            --text-primary: #f4efe6;
+            --text-secondary: #b0b7c2;
+            --border-subtle: rgba(255, 255, 255, 0.08);
             --accent: #c99a63;
+            --accent-soft: rgba(201, 154, 99, 0.16);
+            --danger: #d88b85;
+            --radius-sm: 0.5rem;
+            --radius-md: 0.75rem;
+            --radius-xl: 0.9rem;
+            --shadow-panel: 0 2px 4px rgba(0, 0, 0, 0.36), 0 16px 36px rgba(0, 0, 0, 0.28);
         }
         * { box-sizing: border-box; }
         body {
             margin: 0;
             min-height: 100vh;
-            font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
-            background:
-                radial-gradient(circle at top left, rgba(201,154,99,0.12), transparent 30%),
-                linear-gradient(180deg, #0d0f13 0%, #101318 100%);
-            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+            background: var(--bg-canvas);
+            color: var(--text-primary);
             line-height: 1.5;
         }
         .wrap { max-width: 40rem; margin: 0 auto; padding: 2rem 1rem 3rem; }
@@ -155,31 +161,31 @@ $company = trim((string)get_setting('company_name', 'Servis Expert'));
             font-size: 0.85rem;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: var(--muted);
+            color: var(--text-secondary);
             font-weight: 700;
             margin-bottom: 0.75rem;
         }
         .card {
-            background: linear-gradient(180deg, rgba(27,31,38,0.98), rgba(22,26,31,0.98));
-            border: 1px solid var(--line);
-            border-radius: 1rem;
+            background: var(--bg-panel);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-xl);
             padding: 1.4rem 1.35rem 1.5rem;
-            box-shadow: 0 18px 40px rgba(0,0,0,0.28);
+            box-shadow: var(--shadow-panel);
         }
         h1 {
             margin: 0 0 1rem;
             font-size: 1.45rem;
-            letter-spacing: -0.02em;
+            letter-spacing: 0;
         }
         .pill {
             display: inline-flex;
             align-items: center;
             padding: 0.4rem 0.85rem;
             border-radius: 999px;
-            background: rgba(201,154,99,0.16);
-            border: 1px solid rgba(201,154,99,0.35);
-            color: #f0d2ad;
-            font-weight: 750;
+            background: var(--accent-soft);
+            border: 1px solid rgba(201, 154, 99, 0.35);
+            color: var(--text-primary);
+            font-weight: 700;
             font-size: 0.95rem;
         }
         .grid {
@@ -192,35 +198,37 @@ $company = trim((string)get_setting('company_name', 'Servis Expert'));
             .grid { grid-template-columns: 1fr 1fr; }
         }
         .item {
-            border: 1px solid var(--line);
-            border-radius: 0.75rem;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
             padding: 0.8rem 0.9rem;
-            background: rgba(255,255,255,0.02);
+            background: var(--bg-panel-soft);
         }
         .item .k {
             display: block;
             font-size: 0.72rem;
             text-transform: uppercase;
             letter-spacing: 0.06em;
-            color: var(--muted);
+            color: var(--text-secondary);
             font-weight: 700;
             margin-bottom: 0.2rem;
         }
         .item .v {
             font-weight: 700;
             word-break: break-word;
+            font-variant-numeric: tabular-nums;
         }
         .error {
-            border-left: 3px solid #d35d5d;
-            background: rgba(211,93,93,0.1);
-            color: #f3c1c1;
+            border: 1px solid rgba(216, 139, 133, 0.35);
+            border-left-width: 3px;
+            background: var(--bg-panel-soft);
+            color: var(--danger);
             padding: 0.9rem 1rem;
-            border-radius: 0.65rem;
+            border-radius: var(--radius-sm);
             font-weight: 600;
         }
         .hint {
             margin-top: 1.15rem;
-            color: var(--muted);
+            color: var(--text-secondary);
             font-size: 0.92rem;
         }
         .actions {
@@ -235,16 +243,20 @@ $company = trim((string)get_setting('company_name', 'Servis Expert'));
             justify-content: center;
             min-height: 44px;
             padding: 0.6rem 1rem;
-            border-radius: 0.65rem;
+            border-radius: var(--radius-sm);
             text-decoration: none;
             font-weight: 700;
-            color: #101318;
+            color: var(--bg-canvas);
             background: var(--accent);
         }
         .actions a.secondary {
             background: transparent;
-            color: var(--text);
-            border: 1px solid var(--line);
+            color: var(--text-primary);
+            border: 1px solid var(--border-subtle);
+        }
+        .actions a:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
         }
     </style>
 </head>

@@ -14,38 +14,6 @@ function jsonExit(array $payload, int $statusCode = 200): void {
     exit;
 }
 
-function shellFunctionsAvailable(): bool {
-    $disabled = array_filter(array_map('trim', explode(',', (string)ini_get('disable_functions'))));
-
-    return (
-        (function_exists('exec') && !in_array('exec', $disabled, true)) ||
-        (function_exists('shell_exec') && !in_array('shell_exec', $disabled, true))
-    );
-}
-
-function runCommand(string $command, ?int &$exitCode = null): string {
-    $exitCode = null;
-
-    if (function_exists('exec')) {
-        $disabled = array_filter(array_map('trim', explode(',', (string)ini_get('disable_functions'))));
-        if (!in_array('exec', $disabled, true)) {
-            $lines = [];
-            exec($command . ' 2>&1', $lines, $exitCode);
-            return implode("\n", $lines);
-        }
-    }
-
-    if (function_exists('shell_exec')) {
-        $disabled = array_filter(array_map('trim', explode(',', (string)ini_get('disable_functions'))));
-        if (!in_array('shell_exec', $disabled, true)) {
-            $output = shell_exec($command . ' 2>&1');
-            return is_string($output) ? trim($output) : '';
-        }
-    }
-
-    return '';
-}
-
 function fetchRemoteUrl(string $url, array $headers = [], int $timeout = 15): array {
     $options = [
         CURLOPT_URL            => $url,
@@ -76,17 +44,21 @@ function fetchRemoteUrl(string $url, array $headers = [], int $timeout = 15): ar
 }
 
 function getLocalGitHead(string $projectDir): string {
-    if (!$projectDir || !is_dir($projectDir . '/.git') || !shellFunctionsAvailable()) {
-        return '';
+    // Read the checked-out commit from .git files; the web process never runs shell commands.
+    $gitDir = $projectDir . '/.git';
+    $head = is_file($gitDir . '/HEAD') ? trim((string)file_get_contents($gitDir . '/HEAD')) : '';
+    if (preg_match('#^ref: (refs/[A-Za-z0-9._/-]+)$#', $head, $match)) {
+        $refFile = $gitDir . '/' . $match[1];
+        $head = is_file($refFile) ? trim((string)file_get_contents($refFile)) : '';
+        if ($head === '' && is_file($gitDir . '/packed-refs')) {
+            foreach (file($gitDir . '/packed-refs', FILE_IGNORE_NEW_LINES) ?: [] as $line) {
+                if (str_ends_with($line, ' ' . $match[1])) {
+                    $head = substr($line, 0, 40);
+                    break;
+                }
+            }
+        }
     }
-
-    $exitCode = null;
-    $head = trim(runCommand('git -C ' . escapeshellarg($projectDir) . ' rev-parse HEAD', $exitCode));
-
-    if ($exitCode !== null && $exitCode !== 0) {
-        return '';
-    }
-
     return preg_match('/^[a-f0-9]{40}$/i', $head) ? strtolower($head) : '';
 }
 
@@ -241,7 +213,6 @@ try {
         'source'         => $versionSource,
         'commits_status' => $commitsCode === 200 ? 'ok' : 'error',
         'commits_error'  => $commitsCode === 200 ? '' : $commitsError,
-        'shell_available'=> shellFunctionsAvailable(),
     ];
 
     // Cache the result

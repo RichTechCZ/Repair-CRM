@@ -9,6 +9,7 @@
  */
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+require_once 'includes/qr_code.php';
 
 if (!isset($_SESSION['user_id'])) {
     die(__('unauthorized'));
@@ -50,8 +51,8 @@ if (!empty($invoice['parent_id'])) {
     $parent_invoice = $p->fetch(PDO::FETCH_ASSOC) ?: null;
 }
 
-// Prefer invoice snapshot; settings as fallback for supplier VAT status display.
-$is_vat_payer = !empty($invoice['is_vat_payer']) || get_setting('acc_is_vat_payer', '0') === '1';
+// VAT status is the invoice snapshot only: today's setting must not re-price an old document.
+$is_vat_payer = !empty($invoice['is_vat_payer']);
 $is_credit = (($invoice['invoice_type'] ?? '') === 'credit_note');
 
 $company_name = trim((string)get_setting('acc_company_name', 'Rich Technologies s.r.o.'));
@@ -658,7 +659,7 @@ $page_title = $doc_title . ' ' . ($invoice['invoice_number'] ?? '');
             <?php endif; ?>
             <?php if ($qr_spd !== ''): ?>
                 <div class="qr-wrap">
-                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&amp;data=<?php echo rawurlencode($qr_spd); ?>"
+                    <img src="<?php echo $h(crmQrDataUri($qr_spd)); ?>"
                          alt="QR platba"
                          width="96"
                          height="96">

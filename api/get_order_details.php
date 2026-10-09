@@ -2,6 +2,7 @@
 ob_start();
 require_once '../includes/config.php';
 require_once '../includes/functions.php';
+require_once __DIR__ . '/../includes/upload_security.php';
 
 ob_clean(); // discard any output/warnings
 header('Content-Type: application/json');
@@ -42,7 +43,15 @@ try {
     // Fetch attachments
     $stmt = $pdo->prepare("SELECT * FROM order_attachments WHERE order_id = ? ORDER BY created_at DESC");
     $stmt->execute([$id]);
-    $attachments = $stmt->fetchAll();
+    // Raw storage paths stay server-side; the browser gets the authorized media URL.
+    $attachments = array_map(static function (array $file): array {
+        return [
+            'id' => (int)$file['id'],
+            'file_type' => (string)$file['file_type'],
+            'file_name' => (string)$file['file_name'],
+            'url' => crmOrderAttachmentUrl((int)$file['id']),
+        ];
+    }, $stmt->fetchAll(PDO::FETCH_ASSOC));
 
     // Fetch parts
     $stmt = $pdo->prepare(
@@ -59,7 +68,7 @@ try {
         'order' => $order,
         'attachments' => $attachments,
         'items' => $items,
-        'role' => $_SESSION['role']
+        'role' => hasPermission('admin_access') ? 'admin' : 'technician'
     ]);
 
 } catch (Exception $e) {

@@ -1,5 +1,10 @@
 <?php
 
+if (PHP_SAPI !== 'cli') {
+    http_response_code(403);
+    exit;
+}
+
 require_once __DIR__ . '/../includes/telegram_webhook_security.php';
 require_once __DIR__ . '/../includes/request_security.php';
 require_once __DIR__ . '/../includes/upload_security.php';
@@ -475,8 +480,8 @@ assertTrue(
         && strpos($reportsSource, '$extraExpenses / 2') === false
         && $reportsPageSource !== false
         && strpos($reportsPageSource, '$e_cost / 2') === false
-        && strpos($reportsPageSource, '$earn_base = $customer_total - $p_cost - $e_cost') !== false,
-    'engineer payout must use full extra expenses (not half) before applying rate%'
+        && strpos($reportsPageSource, 'crmGetTechnicianPayroll($pdo, (int)$selected_tech_id, $start_date, $end_date)') !== false,
+    'engineer payout must use full extra expenses (not half); the reports page renders lines from the shared payroll function'
 );
 assertTrue(
     $reportsSource !== false
@@ -720,7 +725,8 @@ assertTrue(
         && $ordersScriptsSource !== false
         && strpos($ordersScriptsSource, "response_format: 'json'") !== false
         && strpos($ordersScriptsSource, "csrfFromMeta") !== false
-        && strpos($indexSource, "csrfFromMeta") !== false
+        && strpos($indexSource, 'id="newOrderModal"') === false
+        && strpos($indexSource, 'orders.php?new_order=1') !== false
         && strpos($headerSource, '!payload.csrf_token') !== false,
     'add_customer must emit clean JSON, support phone_search fallback, grant onboarding, and clients must send reliable CSRF/JSON markers'
 );
@@ -873,6 +879,167 @@ assertTrue(strpos($styleCss, '-glow') === false, 'glow badge helpers must not re
 assertTrue(
     strpos($headerSource, 'Service operations') === false && strpos($headerSource, '>Go<') === false,
     'shell must not ship stock English filler labels'
+);
+
+// ── Regression: 2026-10-08 production audit ─────────────────────────────────
+$sessionBeforeAudit = $_SESSION ?? [];
+$pdoBeforeAudit = $GLOBALS['pdo'] ?? null;
+
+$auditDb = new PDO('sqlite::memory:');
+$auditDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$auditDb->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+$auditDb->exec('CREATE TABLE orders (id INTEGER PRIMARY KEY, status TEXT, shipping_date TEXT)');
+$auditDb->exec('CREATE TABLE order_items (id INTEGER PRIMARY KEY, order_id INTEGER, inventory_id INTEGER, quantity INTEGER)');
+$auditDb->exec('CREATE TABLE order_status_log (id INTEGER PRIMARY KEY, order_id INTEGER, old_status TEXT, new_status TEXT,
+    changed_by INTEGER, changed_role TEXT, changed_at TEXT DEFAULT CURRENT_TIMESTAMP)');
+$auditDb->exec("INSERT INTO orders (id, status, shipping_date) VALUES (1, 'In Repair', NULL), (2, 'In Repair', '2026-09-01 10:00:00')");
+$GLOBALS['pdo'] = $auditDb;
+$_SESSION = ['user_id' => 't7', 'role' => 'technician', 'tech_id' => 7, '_perms' => [], '_perms_at' => time()];
+
+$auditDb->beginTransaction();
+OrderStatusService::applyInTransaction($auditDb, 1, 'In Repair', 'Issued', 100);
+OrderStatusService::applyInTransaction($auditDb, 2, 'In Repair', 'Issued', 100);
+$auditDb->commit();
+assertTrue(
+    $auditDb->query('SELECT shipping_date FROM orders WHERE id = 1')->fetchColumn() !== null,
+    'every transition into Issued must stamp shipping_date so the order enters finance periods'
+);
+assertSameValue(
+    '2026-09-01 10:00:00',
+    $auditDb->query('SELECT shipping_date FROM orders WHERE id = 2')->fetchColumn(),
+    'an operator-set shipping_date must be preserved when entering Issued'
+);
+$techLog = $auditDb->query('SELECT changed_by, changed_role FROM order_status_log WHERE order_id = 1')->fetch();
+assertTrue(
+    $techLog !== false && (int)$techLog['changed_by'] === 7 && $techLog['changed_role'] === 'technician',
+    'technician status changes must log the numeric technicians.id, not the session string "t<id>"'
+);
+
+$closedEditBlocked = false;
+try {
+    OrderStatusService::assertClosedOrderEditable('Issued', false);
+} catch (Exception $e) {
+    $closedEditBlocked = true;
+}
+assertTrue($closedEditBlocked, 'technicians must not change money, parts or dates of a closed order');
+OrderStatusService::assertClosedOrderEditable('Issued', true);
+OrderStatusService::assertClosedOrderEditable('In Repair', false);
+
+$_SESSION = $sessionBeforeAudit;
+$GLOBALS['pdo'] = $pdoBeforeAudit;
+
+foreach (['update_order_item', 'delete_order_item', 'add_order_item', 'update_order_dates', 'update_shipping'] as $closedEndpoint) {
+    assertTrue(
+        strpos((string)file_get_contents(__DIR__ . '/../api/' . $closedEndpoint . '.php'), 'assertClosedOrderEditable') !== false,
+        "api/{$closedEndpoint}.php must enforce the closed-order edit lock"
+    );
+}
+
+// Exports: generated in memory, XML-escaped, CSV formula-safe.
+require_once __DIR__ . '/../export_utils.php';
+$exportDb = new PDO('sqlite::memory:');
+$exportDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$exportDb->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+$exportDb->exec('CREATE TABLE system_settings (setting_key TEXT, setting_value TEXT)');
+$exportDb->exec("INSERT INTO system_settings VALUES ('acc_ico', '123&456')");
+$GLOBALS['pdo'] = $exportDb;
+$exportDb->exec('CREATE TABLE invoices (id INTEGER, customer_id INTEGER, invoice_number TEXT, invoice_type TEXT, date_issue TEXT,
+    date_tax TEXT, date_due TEXT, payment_method TEXT, is_vat_payer INTEGER)');
+$exportDb->exec('CREATE TABLE customers (id INTEGER, company TEXT, first_name TEXT, last_name TEXT, address TEXT, ico TEXT, dic TEXT)');
+$exportDb->exec('CREATE TABLE invoice_items (id INTEGER, invoice_id INTEGER, item_name TEXT, quantity REAL, unit TEXT, vat_rate REAL, price REAL)');
+$exportDb->exec("INSERT INTO invoices VALUES (1, 1, '2026/001', 'invoice', '2026-10-01', '2026-10-01', '2026-10-15', 'cash', 1)");
+$exportDb->exec("INSERT INTO customers VALUES (1, 'Smith & Sons <Ltd>', '', '', 'Street 1, Praha', '', '')");
+$exportDb->exec("INSERT INTO invoice_items VALUES (1, 1, '=cmd|calc', 1, 'ks', 21, 100)");
+$exporter = new AccountingExporter($exportDb);
+$pohoda = $exporter->exportToPohoda(1);
+$pohodaDom = new DOMDocument();
+assertTrue(
+    @$pohodaDom->loadXML($pohoda['content']) && strpos($pohoda['content'], 'Smith &amp; Sons &lt;Ltd&gt;') !== false,
+    'Pohoda export must stay well-formed XML when customer data contains & or <'
+);
+$s3 = $exporter->exportToS3Money(1);
+$GLOBALS['pdo'] = $pdoBeforeAudit;
+assertTrue(
+    strpos($s3['content'], "'=cmd|calc") !== false && $s3['filename'] === basename($s3['filename']),
+    'S3 Money CSV must neutralise spreadsheet formulas and use a safe file name'
+);
+
+$headerSource = (string)file_get_contents(__DIR__ . '/../includes/header.php');
+assertTrue(
+    strpos($headerSource, "\$_SERVER['PHP_SELF']") === false && strpos($headerSource, "basename(\$_SERVER['SCRIPT_NAME'])") !== false,
+    'page permission map must use SCRIPT_NAME: PHP_SELF includes PATH_INFO and lets /page.php/x skip the check'
+);
+foreach (['edit_inventory.php' => 'admin_access', 'inventory.php' => 'admin_access', 'customers.php' => 'edit_customers', 'edit_customer.php' => 'edit_customers'] as $guardedPage => $guardPermission) {
+    $guardedSource = (string)file_get_contents(__DIR__ . '/../' . $guardedPage);
+    $guardPos = strpos($guardedSource, "hasPermission('{$guardPermission}')");
+    $headerPos = strpos($guardedSource, "require_once 'includes/header.php'");
+    assertTrue($guardPos !== false && $headerPos !== false && $guardPos < $headerPos, "{$guardedPage} must check {$guardPermission} itself");
+}
+foreach (['includes/partials/orders_scripts.php'] as $select2Page) {
+    assertTrue(
+        strpos((string)file_get_contents(__DIR__ . '/../' . $select2Page), "return \$('<span>').text(item.text || item.name || '');") !== false,
+        "{$select2Page} must render the selected customer as text (escapeMarkup is a no-op there)"
+    );
+}
+$telegramHelperSource = (string)file_get_contents(__DIR__ . '/../includes/telegram_bot.php');
+assertTrue(
+    stripos($telegramHelperSource, 'CREATE TABLE') === false && strpos($telegramHelperSource, '$usernameWithAt') === false,
+    'Telegram runtime must not run DDL and must bind users by numeric Telegram id only'
+);
+$botSource = (string)file_get_contents(__DIR__ . '/../models/TelegramBotRouter.php');
+assertTrue(
+    strpos($botSource, "searchOrdersList(\$pdo, \$query, \$techId, null, 6, 0, false)") !== false
+        && strpos($botSource, "\$batch['total_revenue']") === false
+        && strpos($botSource, "\$stats['engineer_payout']") === false,
+    'Telegram search must request 6 rows from offset 0 and reports must read real getDetailedStatsBatch keys'
+);
+$runnerSource = (string)file_get_contents(__DIR__ . '/../includes/migration_runner.php');
+assertTrue(
+    strpos($runnerSource, "'007_query_indexes.sql'") !== false && strpos($runnerSource, '\\d{3}_[A-Za-z0-9_]+\\.sql') !== false,
+    'migration runner must own 007 and execute only numbered migration files'
+);
+$logoutSource = (string)file_get_contents(__DIR__ . '/../logout.php');
+assertTrue(
+    strpos($logoutSource, 'validateCsrfToken') !== false && strpos($logoutSource, "includes/config.php") !== false,
+    'logout must be POST + CSRF and use the shared session configuration'
+);
+
+$fullUpdateSource = (string)file_get_contents(__DIR__ . '/../api/update_order_full.php');
+assertTrue(
+    strpos($fullUpdateSource, "(\$postedFinal === null && \$current['final_cost'] === null) ? null : \$incoming_final_cost") !== false
+        && strpos($fullUpdateSource, '$currentRevenueBase') !== false,
+    'full order edit must keep a NULL final cost NULL and compare closed-order money against the revenue base in use'
+);
+$shippingSource = (string)file_get_contents(__DIR__ . '/../api/update_shipping.php');
+assertTrue(
+    strpos($shippingSource, 'if ($methodChanged || $dateChanged)') !== false,
+    'technicians must still add a tracking number to an issued order; only method/date changes are admin-only'
+);
+$editOrderPageSource = (string)file_get_contents(__DIR__ . '/../edit_order.php');
+assertTrue(
+    strpos($editOrderPageSource, 'assertClosedOrderEditable($canonical_current, $is_admin)') !== false,
+    'the full-page order editor must apply the same closed-order money lock as api/update_order_full.php'
+);
+foreach (['api/add_order.php', 'models/OrderStatusService.php', 'includes/functions.php', 'print_workshop.php', 'print_reception_thermal.php'] as $linkSourceFile) {
+    assertTrue(
+        strpos((string)file_get_contents(__DIR__ . '/../' . $linkSourceFile), "\$_SERVER['HTTP_HOST']") === false,
+        "{$linkSourceFile} must build absolute links from crmPublicBaseUrl(), never the client Host header"
+    );
+}
+$expressInvoiceSource = (string)file_get_contents(__DIR__ . '/../api/create_express_invoice.php');
+assertTrue(
+    strpos($expressInvoiceSource, "invoice_type <> 'credit_note'") !== false,
+    'the express invoice form must never edit a credit note'
+);
+
+// Legacy orders without a brand must still be editable (this used to throw a TypeError and roll back the save).
+saveDeviceModelUsage(null, null);
+assertTrue(true, 'saveDeviceModelUsage accepts NULL brand/model');
+
+$rateLimitSource = (string)file_get_contents(__DIR__ . '/../includes/rate_limit.php');
+assertTrue(
+    strpos($rateLimitSource, 'Rate limiter purge failed') !== false,
+    'a failed rate-limit purge must not reject an already allowed request'
 );
 
 echo "OK: security and financial regression checks passed\n";

@@ -14,6 +14,8 @@ if (!isValidTelegramWebhookSecret($webhookSecret, $providedSecret)) {
     exit;
 }
 
+// Telegram sends no cookies: no session per update.
+define('CRM_STATELESS', true);
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/telegram_bot.php';

@@ -378,9 +378,58 @@ function crmApplyTelegramBotStateMigration(PDO $pdo): void
     }
 }
 
+/**
+ * Read-path indexes (007). Each index is created only when missing.
+ */
+function crmApplyQueryIndexesMigration(PDO $pdo): void
+{
+    $indexes = [
+        ['orders', 'idx_orders_serial', '`serial_number`'],
+        ['orders', 'idx_orders_serial2', '`serial_number_2`'],
+        ['orders', 'idx_orders_customer_tech', '`customer_id`, `technician_id`'],
+        ['orders', 'idx_orders_tech_created', '`technician_id`, `created_at`'],
+        ['customers', 'idx_customers_name', '`last_name`, `first_name`'],
+        ['inventory', 'idx_inventory_part_name', '`part_name`'],
+        ['invoices', 'idx_invoices_created', '`created_at`, `id`'],
+        ['order_status_log', 'idx_status_log_order_status', '`order_id`, `new_status`, `changed_at`'],
+        ['rate_limits', 'idx_rl_key_created', '`action_key`, `created_at`'],
+        ['login_attempts', 'idx_login_user_created', '`username_hash`, `created_at`'],
+    ];
+    foreach ($indexes as [$table, $index, $columns]) {
+        if (!crmMigrationTableExists($pdo, $table) || crmMigrationIndexExists($pdo, $table, $index)) {
+            continue;
+        }
+        if ($table === 'login_attempts' && !crmMigrationColumnExists($pdo, 'login_attempts', 'username_hash')) {
+            continue;
+        }
+        $pdo->exec("CREATE INDEX `{$index}` ON `{$table}` ({$columns})");
+    }
+}
+
+/**
+ * order_items.cost_price snapshot (008). Backfill freezes the current inventory cost.
+ */
+function crmApplyOrderItemCostSnapshotMigration(PDO $pdo): void
+{
+    if (!crmMigrationColumnExists($pdo, 'order_items', 'cost_price')) {
+        $pdo->exec('ALTER TABLE `order_items` ADD COLUMN `cost_price` DECIMAL(10,2) NULL DEFAULT NULL AFTER `price`');
+    }
+    $pdo->exec(
+        'UPDATE `order_items` oi
+           JOIN `inventory` i ON i.id = oi.inventory_id
+            SET oi.cost_price = i.cost_price
+          WHERE oi.cost_price IS NULL AND i.cost_price IS NOT NULL'
+    );
+}
+
 function crmRunMigrations(PDO $pdo, string $projectDir): array
 {
     $migrationFiles = glob(rtrim($projectDir, '/\\') . '/migrations/*.sql') ?: [];
+    // Only numbered migrations (NNN_name.sql). Data dumps placed in migrations/ for
+    // one-off import tools must never be executed as schema migrations.
+    $migrationFiles = array_values(array_filter($migrationFiles, static function (string $file): bool {
+        return (bool)preg_match('/^\d{3}_[A-Za-z0-9_]+\.sql$/', basename($file));
+    }));
     sort($migrationFiles);
     $results = [];
 
@@ -418,6 +467,12 @@ function crmRunMigrations(PDO $pdo, string $projectDir): array
                     $status = 'ok';
                 } elseif ($basename === '006_telegram_bot_state.sql') {
                     crmApplyTelegramBotStateMigration($pdo);
+                    $status = 'ok';
+                } elseif ($basename === '007_query_indexes.sql') {
+                    crmApplyQueryIndexesMigration($pdo);
+                    $status = 'ok';
+                } elseif ($basename === '008_order_item_cost_snapshot.sql') {
+                    crmApplyOrderItemCostSnapshotMigration($pdo);
                     $status = 'ok';
                 } else {
                     $sql = file_get_contents($migrationFile);

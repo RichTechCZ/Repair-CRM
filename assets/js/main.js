@@ -53,6 +53,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     prepareSharedAccessibility();
     initDeclarativeActions();
+    initFormGuards();
     enhanceMobileChrome();
 
     // Fix for aria-hidden on focusable elements inside modals (Accessibility)
@@ -75,16 +76,15 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Fancybox Global
+    // Fancybox: the single global binding for every [data-fancybox] gallery.
     if (typeof Fancybox !== 'undefined') {
-        Fancybox.bind("[data-fancybox]", {
-            // Your custom options
+        Fancybox.bind('[data-fancybox]', {
+            dragToClose: false,
+            Image: {
+                zoom: true,
+            },
         });
     }
-
-    document.querySelectorAll('.ui-ready').forEach(function(element) {
-        element.classList.add('ui-ready');
-    });
 });
 
 function callPageAction(name, ...args) {
@@ -97,6 +97,95 @@ function callPageAction(name, ...args) {
 function readActionId(element) {
     const id = Number.parseInt(element.dataset.crmId || '', 10);
     return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/**
+ * Form-level guards that replace inline onsubmit/onclick handlers (blocked by CSP):
+ * - data-confirm on the submit button or the form asks via showConfirm() first;
+ * - data-crm-once disables submit buttons after a valid submit (no duplicate records).
+ */
+/**
+ * fetch() wrapper for JSON endpoints: rejects on HTTP errors, non-JSON bodies
+ * (login redirects, PHP fatals) and {success:false}, with a user-safe message.
+ */
+function crmFetchJson(url, options) {
+    const fallback = window.LANG_NETWORK_ERROR || 'Network error';
+    return fetch(url, Object.assign({ credentials: 'same-origin' }, options || {}))
+        .then(function(response) {
+            return response.text().then(function(body) {
+                let data = null;
+                try { data = JSON.parse(body); } catch (error) { data = null; }
+                if (!data || typeof data !== 'object') throw new Error(fallback);
+                if (!response.ok || data.success === false) {
+                    throw new Error(data.message || data.error || fallback);
+                }
+                return data;
+            });
+        });
+}
+window.crmFetchJson = crmFetchJson;
+
+function initFormGuards() {
+    document.addEventListener('submit', function(event) {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        const submitter = event.submitter || null;
+        const message = (submitter && submitter.dataset.confirm) || form.dataset.confirm || '';
+
+        if (message && form.dataset.crmConfirmed !== '1') {
+            event.preventDefault();
+            showConfirm(message, function() {
+                form.dataset.crmConfirmed = '1';
+                if (typeof form.requestSubmit === 'function') {
+                    form.requestSubmit(submitter && submitter.form === form ? submitter : undefined);
+                    // If constraint validation blocked the submit, the next attempt must confirm again.
+                    delete form.dataset.crmConfirmed;
+                } else {
+                    if (submitter && submitter.name) {
+                        const carrier = document.createElement('input');
+                        carrier.type = 'hidden';
+                        carrier.name = submitter.name;
+                        carrier.value = submitter.value;
+                        form.appendChild(carrier);
+                    }
+                    form.submit();
+                }
+            });
+            return;
+        }
+        delete form.dataset.crmConfirmed;
+
+        if (form.hasAttribute('data-crm-once')) {
+            if (form.dataset.crmSubmitting === '1') {
+                event.preventDefault();
+                return;
+            }
+            form.dataset.crmSubmitting = '1';
+            // Defer so the submitter's name/value is still part of this submission.
+            setTimeout(function() {
+                if (event.defaultPrevented) {
+                    // A later handler cancelled the submit (e.g. AJAX or validation): stay usable.
+                    delete form.dataset.crmSubmitting;
+                    return;
+                }
+                form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function(button) {
+                    button.disabled = true;
+                    button.setAttribute('aria-busy', 'true');
+                });
+            }, 0);
+        }
+    }, true);
+
+    // bfcache restores (Back button) must not leave the form permanently locked.
+    window.addEventListener('pageshow', function() {
+        document.querySelectorAll('form[data-crm-once]').forEach(function(form) {
+            delete form.dataset.crmSubmitting;
+            form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function(button) {
+                button.disabled = false;
+                button.removeAttribute('aria-busy');
+            });
+        });
+    });
 }
 
 /**
@@ -399,7 +488,7 @@ function initGlobalModals() {
 
     const previewEl = document.getElementById('universalPreviewModal');
     if (previewEl && !globalPreviewModal) {
-        globalPreviewModal = new bootstrap.Modal(previewEl);
+        globalPreviewModal = bootstrap.Modal.getOrCreateInstance(previewEl);
         
         // Clean up when hidden
         previewEl.addEventListener('hidden.bs.modal', function() {
@@ -413,12 +502,12 @@ function initGlobalModals() {
 
     const alertEl = document.getElementById('globalAlertModal');
     if (alertEl && !globalAlertModal) {
-        globalAlertModal = new bootstrap.Modal(alertEl);
+        globalAlertModal = bootstrap.Modal.getOrCreateInstance(alertEl);
     }
 
     const confirmEl = document.getElementById('globalConfirmModal');
     if (confirmEl && !globalConfirmModal) {
-        globalConfirmModal = new bootstrap.Modal(confirmEl);
+        globalConfirmModal = bootstrap.Modal.getOrCreateInstance(confirmEl);
     }
 }
 
@@ -440,19 +529,21 @@ function showAlert(message, title = window.LANG_NOTICE || 'Notice') {
 }
 
 /**
- * Show a global confirmation
+ * Show a global confirmation.
+ * tone: omitted/'primary' for ordinary confirmations, 'danger' for destructive actions.
  */
-function showConfirm(message, onConfirm, title = window.LANG_CONFIRM || 'Confirm') {
+function showConfirm(message, onConfirm, title, tone) {
     if (!globalConfirmModal) initGlobalModals();
-    
-    document.getElementById('globalConfirmTitle').innerText = title;
+
+    document.getElementById('globalConfirmTitle').innerText = title || window.LANG_CONFIRM || 'Confirm';
     document.getElementById('globalConfirmBody').textContent = message;
-    
+
     const okBtn = document.getElementById('globalConfirmOk');
-    const cancelBtn = document.getElementById('globalConfirmCancel');
-    
-    // Remote old listeners
+
+    // Replace the button to drop listeners from a previous confirmation.
     const newOk = okBtn.cloneNode(true);
+    newOk.classList.toggle('btn-danger', tone === 'danger');
+    newOk.classList.toggle('btn-primary', tone !== 'danger');
     okBtn.parentNode.replaceChild(newOk, okBtn);
     
     newOk.addEventListener('click', function() {
@@ -524,7 +615,8 @@ function openUniversalPreview(url, title = window.LANG_PREVIEW || 'Preview') {
     const spinner = document.createElement('div');
     spinner.id = 'previewSpinner';
     spinner.className = 'text-center py-5';
-    spinner.innerHTML = '<div class="spinner-border text-primary" role="status"></div><p class="mt-2 text-white-75 small">Загрузка документа...</p>';
+    spinner.innerHTML = '<div class="spinner-border text-primary" aria-hidden="true"></div><p class="mt-2 text-white-75 small" role="status"></p>';
+    spinner.querySelector('p').textContent = window.LANG_PREVIEW_LOADING || 'Loading document...';
     
     contentEl.appendChild(spinner);
     contentEl.appendChild(iframe);
@@ -554,8 +646,8 @@ function openUniversalPreview(url, title = window.LANG_PREVIEW || 'Preview') {
     iframe.onerror = function() {
         const spinnerEl = document.getElementById('previewSpinner');
         if (spinnerEl) {
-            spinnerEl.innerHTML = '<div class="alert alert-warning m-3"><i class="fas fa-exclamation-triangle me-2"></i>Не удалось загрузить превью. <a target="_blank" rel="noopener noreferrer" class="alert-link">Открыть в новой вкладке</a></div>';
-            spinnerEl.querySelector('a').href = safeUrl.href;
+            renderPreviewNotice(spinnerEl, 'alert-warning', 'fa-exclamation-triangle',
+                window.LANG_PREVIEW_FAILED || 'Could not load the preview.', safeUrl.href);
         }
     };
     
@@ -563,8 +655,8 @@ function openUniversalPreview(url, title = window.LANG_PREVIEW || 'Preview') {
     const loadTimeout = setTimeout(function() {
         const spinnerEl = document.getElementById('previewSpinner');
         if (spinnerEl && iframe.style.display === 'none') {
-            spinnerEl.innerHTML = '<div class="alert alert-info m-3"><i class="fas fa-info-circle me-2"></i>Загрузка занимает больше времени... <a target="_blank" rel="noopener noreferrer" class="alert-link">Открыть в новой вкладке</a></div>';
-            spinnerEl.querySelector('a').href = safeUrl.href;
+            renderPreviewNotice(spinnerEl, 'alert-info', 'fa-info-circle',
+                window.LANG_PREVIEW_SLOW || 'Loading is taking longer than usual...', safeUrl.href);
         }
     }, 8000);
 
@@ -581,6 +673,30 @@ function openUniversalPreview(url, title = window.LANG_PREVIEW || 'Preview') {
     iframe.src = safeUrl.href;
 
     globalPreviewModal.show();
+}
+
+/**
+ * Replace the preview spinner with a notice and an "open in new tab" link.
+ * All text goes through textContent; the URL was validated as same-origin.
+ */
+function renderPreviewNotice(container, alertClass, iconClass, message, href) {
+    const notice = document.createElement('div');
+    notice.className = 'alert m-3 ' + alertClass;
+    notice.setAttribute('role', 'status');
+
+    const icon = document.createElement('i');
+    icon.className = 'fas me-2 ' + iconClass;
+    icon.setAttribute('aria-hidden', 'true');
+
+    const link = document.createElement('a');
+    link.className = 'alert-link';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.href = href;
+    link.textContent = window.LANG_OPEN_NEW_TAB || 'Open in a new tab';
+
+    notice.append(icon, document.createTextNode(message + ' '), link);
+    container.replaceChildren(notice);
 }
 
 /**

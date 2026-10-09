@@ -10,15 +10,16 @@ $canonical_filter_status = canonicalOrderStatus($filter_status ?? '');
 
 // Technicians always see only orders assigned to them.
 $dashboard_technician_id = null;
-if ($_SESSION['role'] == 'technician') {
+if (isTechnicianScoped()) {
     $dashboard_technician_id = (int)$_SESSION['tech_id'];
 }
 
 // Count for Stats
-$new_count = countOrdersByStatusGroup($dashboard_status_groups['new'], $dashboard_technician_id);
-$pending_count = countOrdersByStatusGroup($dashboard_status_groups['pending'], $dashboard_technician_id);
-$progress_count = countOrdersByStatusGroup($dashboard_status_groups['progress'], $dashboard_technician_id);
-$ready_count = countOrdersByStatusGroup($dashboard_status_groups['ready'], $dashboard_technician_id);
+$dashboard_counts = countOrdersByStatusGroups($dashboard_status_groups, $dashboard_technician_id);
+$new_count = $dashboard_counts['new'];
+$pending_count = $dashboard_counts['pending'];
+$progress_count = $dashboard_counts['progress'];
+$ready_count = $dashboard_counts['ready'];
 $dashboard_total = $new_count + $pending_count + $progress_count + $ready_count;
 
 // Online Techs (Last 5 minutes) - Admin or those with admin_access
@@ -26,20 +27,6 @@ $online_count = 0;
 if (hasPermission('admin_access')) {
     $online_count = $pdo->query("SELECT COUNT(*) FROM technicians WHERE last_seen > (NOW() - INTERVAL 5 MINUTE) AND is_active = 1")->fetchColumn();
 }
-
-// Load technicians list once for new order modal
-$techs_list = [];
-try {
-    $techs_list = $pdo->query("SELECT id, name FROM technicians WHERE is_active = 1 ORDER BY name ASC")->fetchAll();
-} catch (PDOException $e) {
-    $techs_list = [];
-}
-
-$order_templates_raw = trim((string)get_setting('order_templates', ''));
-$order_templates = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $order_templates_raw))));
-
-$order_note_templates_raw = trim((string)get_setting('order_note_templates', ''));
-$order_note_templates = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $order_note_templates_raw))));
 
 ?>
 
@@ -53,10 +40,10 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
     </div>
     <div class="page-actions">
         <a href="orders.php" class="btn btn-outline-secondary"><?php echo __('all_orders'); ?></a>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newOrderModal">
+        <a class="btn btn-primary" href="orders.php?new_order=1">
             <i class="fas fa-plus" aria-hidden="true"></i>
             <span><?php echo __('new_order'); ?></span>
-        </button>
+        </a>
     </div>
     </div>
 
@@ -89,7 +76,7 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                 <?php echo getStatusBadge('Ready'); ?>
             </span>
         </a>
-        <?php if ($_SESSION['role'] == 'admin'): ?>
+        <?php if (hasPermission('admin_access')): ?>
             <div class="workspace-overview__metric" data-bs-toggle="tooltip" title="<?php echo e(__('online_techs_tooltip')); ?>">
                 <span class="workspace-overview__metric-label"><?php echo __('online_techs'); ?></span>
                 <span class="workspace-overview__metric-data">
@@ -236,8 +223,8 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
             </div>
             <div class="card-body">
                 <div class="d-grid gap-2">
-                    <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#newOrderModal"><i class="fas fa-plus me-2"></i> <?php echo __('new_order'); ?></button>
-                    <?php if ($_SESSION['role'] == 'admin'): ?>
+                    <a class="btn btn-outline-primary" href="orders.php?new_order=1"><i class="fas fa-plus me-2" aria-hidden="true"></i> <?php echo __('new_order'); ?></a>
+                    <?php if (hasPermission('admin_access')): ?>
                     <a href="customers.php" class="btn btn-outline-secondary"><i class="fas fa-user-plus me-2"></i> <?php echo __('customers'); ?></a>
                     <a href="inventory.php" class="btn btn-outline-info"><i class="fas fa-search me-2"></i> <?php echo __('check_stock'); ?></a>
                     <?php endif; ?>
@@ -246,7 +233,7 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
         </div>
 
         <!-- Dashboard Right Column (Techs list if Admin) -->
-        <?php if ($_SESSION['role'] == 'admin'): ?>
+        <?php if (hasPermission('admin_access')): ?>
         <div class="card glass-card border-0 mb-4">
             <div class="card-header bg-transparent border-bottom-0">
                 <h5 class="mb-0"><?php echo __('online_techs'); ?></h5>
@@ -272,7 +259,7 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
                             </div>
                         </div>
                         <?php if ($is_online): ?>
-                            <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2"><?php echo __('tech_online'); ?></span>
+                            <span class="status-pill status-pill--ready"><?php echo __('tech_online'); ?></span>
                         <?php endif; ?>
                     </li>
                     <?php endforeach; ?>
@@ -283,631 +270,7 @@ $order_note_templates = array_values(array_filter(array_map('trim', preg_split('
     </div>
 </div>
 
-<!-- New Order Modal -->
-<div class="modal fade" id="newOrderModal" tabindex="-1" data-bs-focus="false">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content glass-card border-secondary text-white shadow-lg">
-            <form action="api/add_order.php" method="POST" enctype="multipart/form-data">
-                <?php echo csrfField(); ?>
-                <div class="modal-header bg-transparent border-secondary py-3">
-                    <h5 class="modal-title"><?php echo __('new_order'); ?></h5>
-                    <div class="ms-auto me-3">
-                        <div class="input-group input-group-sm" style="width: 260px;">
-                            <input type="number" id="copyOrderIdInput" class="form-control" placeholder="<?php echo __('copy_order_id_placeholder'); ?>" min="1">
-                            <button type="button" class="btn btn-outline-info" id="copyOrderBtn" title="<?php echo __('copy_order_btn'); ?>">
-                                <i class="fas fa-copy me-1"></i><?php echo __('copy_order_btn'); ?>
-                            </button>
-                        </div>
-                    </div>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <!-- ═══ 1. КЛИЕНТ ═══ -->
-                    <div class="mb-2">
-                        <div class="d-flex align-items-center mb-2">
-                            <i class="fas fa-user text-primary me-2"></i>
-                            <span class="fw-semibold small text-uppercase"><?php echo __('client'); ?></span>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <select name="customer_id" class="form-select select2-customer" style="width: 100%;" required>
-                                    <option value=""><?php echo __('enter_name_or_phone'); ?></option>
-                                </select>
-                            </div>
-                            <div class="col-md-6 d-flex align-items-end">
-                                <button type="button" class="btn btn-outline-secondary w-100" id="toggleNewCustomerPanelBtn" data-bs-toggle="collapse" data-bs-target="#inlineNewCustomerPanel" aria-expanded="false">
-                                    <i class="fas fa-user-plus me-1"></i> <?php echo __('new_customer_btn'); ?>
-                                </button>
-                            </div>
-                            <!-- Inline New Customer Panel (collapsible, inside the same modal) -->
-                            <div class="col-12">
-                                <div class="collapse" id="inlineNewCustomerPanel">
-                                    <div class="card border-secondary bg-dark bg-opacity-25 mt-2">
-                                        <div class="card-body">
-                                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                                <h6 class="mb-0 text-white"><i class="fas fa-user-plus me-2 text-primary"></i><?php echo __('add_customer'); ?></h6>
-                                                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#inlineNewCustomerPanel">
-                                                    <i class="fas fa-times"></i>
-                                                </button>
-                                            </div>
-                                            <div id="newCustomerInlineForm">
-                                                <div class="mb-3">
-                                                    <div class="btn-group w-100" role="group">
-                                                        <input type="radio" class="btn-check" name="customer_type" id="inline_type_private" value="private" checked>
-                                                        <label class="btn btn-outline-primary" for="inline_type_private"><?php echo __('private_person'); ?></label>
-                                                        <input type="radio" class="btn-check" name="customer_type" id="inline_type_company" value="company">
-                                                        <label class="btn btn-outline-primary" for="inline_type_company"><?php echo __('company_entity'); ?></label>
-                                                    </div>
-                                                </div>
-                                                <div id="inline_company_fields" class="d-none border border-secondary p-3 rounded bg-transparent mb-3">
-                                                    <div class="mb-3">
-                                                        <label class="form-label"><?php echo __('ico'); ?></label>
-                                                        <div class="input-group">
-                                                            <input type="text" name="ico" id="inline_ico_input" class="form-control" placeholder="12345678">
-                                                            <button class="btn btn-info text-white" type="button" id="inline_btn_fetch_ares">
-                                                                <i class="fas fa-search me-1"></i> <?php echo __('fetch_ares'); ?>
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                    <div class="mb-3">
-                                                        <label class="form-label"><?php echo __('company_name'); ?></label>
-                                                        <input type="text" name="company_name" id="inline_ares_name" class="form-control">
-                                                    </div>
-                                                    <div class="mb-3">
-                                                        <label class="form-label"><?php echo __('dic'); ?></label>
-                                                        <input type="text" name="dic" id="inline_ares_dic" class="form-control" placeholder="CZ12345678">
-                                                    </div>
-                                                </div>
-                                                <div class="row g-3">
-                                                    <div class="col-md-6">
-                                                        <label class="form-label"><?php echo __('client'); ?> (<?php echo __('name_col'); ?>) <span class="text-danger">*</span></label>
-                                                        <input type="text" name="first_name" id="inline_first_name" class="form-control">
-                                                    </div>
-                                                    <div class="col-md-6">
-                                                        <label class="form-label"><?php echo __('client'); ?> (<?php echo __('last_name_label'); ?>) <span class="text-danger">*</span></label>
-                                                        <input type="text" name="last_name" id="inline_last_name" class="form-control">
-                                                    </div>
-                                                    <div class="col-12">
-                                                        <label class="form-label"><?php echo __('phone'); ?> <span class="text-danger">*</span></label>
-                                                        <input type="tel" name="phone" id="inline_phone" class="form-control">
-                                                    </div>
-                                                    <div class="col-12">
-                                                        <label class="form-label">Email</label>
-                                                        <input type="email" name="inline_email" class="form-control">
-                                                    </div>
-                                                    <div class="col-12">
-                                                        <label class="form-label"><?php echo __('address'); ?></label>
-                                                        <textarea name="address" id="inline_address" class="form-control" rows="2"></textarea>
-                                                    </div>
-                                                    <div class="col-12">
-                                                        <button type="button" class="btn btn-success w-100" id="saveNewCustomerBtn">
-                                                            <i class="fas fa-check me-2"></i><?php echo __('save'); ?>
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
 
-                    <hr class="border-secondary my-3 opacity-50">
-
-                    <!-- ═══ 2. УСТРОЙСТВО ═══ -->
-                    <div class="mb-2">
-                        <div class="d-flex align-items-center mb-2">
-                            <i class="fas fa-laptop text-info me-2"></i>
-                            <span class="fw-semibold small text-uppercase"><?php echo __('section_device'); ?></span>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-12">
-                                <span class="form-label device-type-picker__label" id="new-order-device-type-label"><?php echo __('device_type'); ?></span>
-                                <div class="device-type-picker" role="radiogroup" aria-labelledby="new-order-device-type-label">
-                                    <label class="device-type-option">
-                                        <input type="radio" name="device_type" value="Phone" checked required>
-                                        <span class="device-type-option__surface">
-                                            <span class="device-type-icon device-type-icon--phone" aria-hidden="true"></span>
-                                            <span class="device-type-option__title"><?php echo __('Phone'); ?></span>
-                                        </span>
-                                    </label>
-                                    <label class="device-type-option">
-                                        <input type="radio" name="device_type" value="Notebook">
-                                        <span class="device-type-option__surface">
-                                            <span class="device-type-icon device-type-icon--notebook" aria-hidden="true"></span>
-                                            <span class="device-type-option__title"><?php echo __('Notebook'); ?></span>
-                                        </span>
-                                    </label>
-                                    <label class="device-type-option">
-                                        <input type="radio" name="device_type" value="PC">
-                                        <span class="device-type-option__surface">
-                                            <span class="device-type-icon device-type-icon--pc" aria-hidden="true"></span>
-                                            <span class="device-type-option__title"><?php echo __('PC'); ?></span>
-                                        </span>
-                                    </label>
-                                    <label class="device-type-option">
-                                        <input type="radio" name="device_type" value="Tablet">
-                                        <span class="device-type-option__surface">
-                                            <span class="device-type-icon device-type-icon--tablet" aria-hidden="true"></span>
-                                            <span class="device-type-option__title"><?php echo __('Tablet'); ?></span>
-                                        </span>
-                                    </label>
-                                    <label class="device-type-option">
-                                        <input type="radio" name="device_type" value="HDD">
-                                        <span class="device-type-option__surface">
-                                            <span class="device-type-icon device-type-icon--hdd" aria-hidden="true"></span>
-                                            <span class="device-type-option__title"><?php echo __('HDD'); ?></span>
-                                        </span>
-                                    </label>
-                                    <label class="device-type-option">
-                                        <input type="radio" name="device_type" value="Other">
-                                        <span class="device-type-option__surface">
-                                            <span class="device-type-icon device-type-icon--other" aria-hidden="true"></span>
-                                            <span class="device-type-option__title"><?php echo __('Other'); ?></span>
-                                        </span>
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label"><?php echo __('warranty_type'); ?></label>
-                                <select name="order_type" class="form-select" required>
-                                    <option value="Non-Warranty">🛠 <?php echo __('warranty_no'); ?></option>
-                                    <option value="Warranty">📜 <?php echo __('warranty_yes'); ?></option>
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label"><?php echo __('device_brand'); ?></label>
-                                <select name="device_brand" class="form-select select2-brand" style="width: 100%;" required>
-                                    <option value=""><?php echo __('brand_placeholder'); ?></option>
-                                    <?php foreach(getDeviceBrands() as $brand): ?>
-                                        <option value="<?php echo $brand; ?>" <?php echo ($brand === 'APPLE') ? 'selected' : ''; ?>><?php echo $brand; ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label"><?php echo __('device_model'); ?></label>
-                                <select name="device_model" id="deviceModelSelect" class="form-select" style="width: 100%;" required>
-                                    <option value=""><?php echo __('model_placeholder'); ?></option>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label"><?php echo __('serial'); ?></label>
-                                <input type="text" name="serial_number" class="form-control sn-uppercase">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label"><?php echo __('serial_2'); ?></label>
-                                <input type="text" name="serial_number_2" class="form-control sn-uppercase">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label"><?php echo __('pin'); ?></label>
-                                <input type="text" name="pin_code" class="form-control">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label"><?php echo __('appearance'); ?></label>
-                                <input type="text" name="appearance" class="form-control">
-                            </div>
-                        </div>
-                    </div>
-
-                    <hr class="border-secondary my-3 opacity-50">
-
-                    <!-- ═══ 3. ПРОБЛЕМА ═══ -->
-                    <div class="mb-2">
-                        <div class="d-flex align-items-center mb-2">
-                            <i class="fas fa-exclamation-triangle text-warning me-2"></i>
-                            <span class="fw-semibold small text-uppercase"><?php echo __('section_problem'); ?></span>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-3">
-                                <label class="form-label"><?php echo __('priority'); ?></label>
-                                <div class="form-check mt-2">
-                                    <input class="form-check-input" type="checkbox" name="priority" value="High" id="priorityHighDashboard">
-                                    <label class="form-check-label" for="priorityHighDashboard"><?php echo __('high'); ?></label>
-                                </div>
-                            </div>
-                            <?php if (!empty($order_templates)): ?>
-                            <div class="col-md-<?php echo !empty($order_note_templates) ? '4' : '9'; ?>">
-                                <label class="form-label"><?php echo __('templates'); ?></label>
-                                <select class="form-select order-template-select" data-target="problem_description">
-                                    <option value=""><?php echo __('template_select'); ?></option>
-                                    <?php foreach ($order_templates as $tpl): ?>
-                                        <option value="<?php echo e($tpl); ?>"><?php echo e($tpl); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <?php endif; ?>
-                            <?php if (!empty($order_note_templates)): ?>
-                            <div class="col-md-<?php echo !empty($order_templates) ? '5' : '9'; ?>">
-                                <label class="form-label"><?php echo __('templates_notes'); ?></label>
-                                <select class="form-select order-template-select" data-target="technician_notes">
-                                    <option value=""><?php echo __('template_select'); ?></option>
-                                    <?php foreach ($order_note_templates as $tpl): ?>
-                                        <option value="<?php echo e($tpl); ?>"><?php echo e($tpl); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <?php endif; ?>
-                            <div class="col-12">
-                                <label class="form-label"><?php echo __('problem'); ?></label>
-                                <textarea name="problem_description" class="form-control" rows="2" required></textarea>
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label"><?php echo __('notes'); ?> <?php echo __('comment_suffix'); ?></label>
-                                <textarea name="technician_notes" class="form-control" rows="2" placeholder="<?php echo __('notes_placeholder'); ?>"></textarea>
-                            </div>
-                        </div>
-                    </div>
-
-                    <hr class="border-secondary my-3 opacity-50">
-
-                    <!-- ═══ 4. ФИНАНСЫ ═══ -->
-                    <div class="mb-2">
-                        <div class="d-flex align-items-center mb-2">
-                            <i class="fas fa-coins text-success me-2"></i>
-                            <span class="fw-semibold small text-uppercase"><?php echo __('section_financial'); ?></span>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label"><?php echo __('cost_est'); ?></label>
-                                <div class="input-group">
-                                    <input type="number" name="estimated_cost" class="form-control" step="0.01">
-                                    <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <hr class="border-secondary my-3 opacity-50">
-
-                    <!-- ═══ 5. ИСПОЛНИТЕЛЬ ═══ -->
-                    <div class="mb-0">
-                        <div class="d-flex align-items-center mb-2">
-                            <i class="fas fa-user-cog text-secondary me-2"></i>
-                            <span class="fw-semibold small text-uppercase"><?php echo __('section_execution'); ?></span>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label"><?php echo __('technician'); ?></label>
-                                <select name="technician_id" class="form-select">
-                                    <option value="">-- <?php echo __('technician'); ?> --</option>
-                                    <?php foreach ($techs_list as $t): ?>
-                                        <option value="<?php echo (int)$t['id']; ?>" <?php echo (($_SESSION['role'] ?? '') !== 'admin' && $t['id'] == ($_SESSION['tech_id'] ?? 0)) ? 'selected' : ''; ?>><?php echo e($t['name']); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label"><?php echo __('media_files'); ?></label>
-                                <input type="file" name="files[]" class="form-control" multiple accept="image/*,video/*">
-                                <div class="form-text"><?php echo __('upload_multiple_hint'); ?></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer bg-transparent border-secondary">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?php echo __('cancel'); ?></button>
-                    <button type="submit" class="btn btn-primary"><?php echo __('save'); ?></button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-
-
-<script nonce="<?php echo e(crmCspNonce()); ?>">
-$(document).ready(function() {
-    let currentCustomerSearch = '';
-    function escapeHtml(text) {
-        return $('<div>').text(text).html();
-    }
-    function highlightMatch(text, term) {
-        if (!term) return escapeHtml(text);
-        const safe = escapeHtml(text);
-        const re = new RegExp('(' + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig');
-        return safe.replace(re, '<span class="match">$1</span>');
-    }
-
-    $('.select2-customer').select2({
-        dropdownParent: $('#newOrderModal'),
-        placeholder: "<?php echo __('search_client_placeholder'); ?>",
-        allowClear: true,
-        minimumInputLength: 0,
-        ajax: {
-            url: 'api/search_customers.php',
-            dataType: 'json',
-            delay: 250,
-            data: function(params) {
-                currentCustomerSearch = params.term || '';
-                return { q: params.term, page: params.page || 1 };
-            },
-            processResults: function(data, params) {
-                params.page = params.page || 1;
-                return { results: data.results, pagination: { more: data.pagination.more } };
-            }
-        },
-        templateResult: function(item) {
-            if (item.loading) return item.text;
-            const name = item.name || item.text || '';
-            const phone = item.phone || '';
-            const title = highlightMatch(name, currentCustomerSearch);
-            const meta = phone ? '<span class="meta">' + highlightMatch(phone, currentCustomerSearch) + '</span>' : '';
-            return $('<div class="customer-option"><div>' + title + '</div>' + meta + '</div>');
-        },
-        templateSelection: function(item) {
-            return item.text || item.name || '';
-        },
-        escapeMarkup: function(markup) { return markup; }
-    });
-
-    $('.select2-brand').select2({
-        dropdownParent: $('#newOrderModal'),
-        placeholder: "<?php echo __('brand'); ?>",
-        tags: true
-    });
-
-    // ── Model autocomplete (Select2 AJAX) ──
-    $('#deviceModelSelect').select2({
-        dropdownParent: $('#newOrderModal'),
-        placeholder: "<?php echo __('model_placeholder'); ?>",
-        allowClear: true,
-        tags: true,
-        minimumInputLength: 1,
-        ajax: {
-            url: 'api/get_device_models.php',
-            dataType: 'json',
-            delay: 250,
-            data: function(params) {
-                return {
-                    term: params.term,
-                    brand: $('select[name="device_brand"]').val() || ''
-                };
-            },
-            processResults: function(data) {
-                return { results: data.results };
-            }
-        }
-    });
-
-    // Reset model when brand changes
-    $('select[name="device_brand"]').on('change', function() {
-        $('#deviceModelSelect').val(null).trigger('change');
-    });
-
-    // ── S/N / IMEI uppercase ──
-    $(document).on('input', '.sn-uppercase', function() {
-        const pos = this.selectionStart;
-        this.value = this.value.toUpperCase();
-        this.setSelectionRange(pos, pos);
-    });
-
-    // ── Auto-focus customer search when modal opens ──
-    $('#newOrderModal').on('shown.bs.modal', function() {
-        setTimeout(function() {
-            $('#newOrderModal .select2-customer').select2('open');
-        }, 100);
-    });
-
-    // ── Copy Order # ──
-    $('#copyOrderBtn').on('click', function() {
-        const orderId = parseInt($('#copyOrderIdInput').val(), 10);
-        if (!orderId || orderId < 1) {
-            showAlert('<?php echo __('copy_order_enter_id'); ?>');
-            return;
-        }
-        const btn = $(this);
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-
-        $.get('api/get_order.php', { id: orderId }, function(res) {
-            btn.prop('disabled', false).html('<i class="fas fa-copy me-1"></i><?php echo __('copy_order_btn'); ?>');
-            if (!res.success) {
-                showAlert(res.message || '<?php echo __('copy_order_not_found'); ?>');
-                return;
-            }
-            const o = res.order;
-            let info = '<?php echo __('copy_order_confirm'); ?>\n\n';
-            info += '<?php echo __('client'); ?>: ' + (o.first_name || '') + ' ' + (o.last_name || '') + '\n';
-            info += '<?php echo __('device_brand'); ?>: ' + (o.device_brand || '') + '\n';
-            info += '<?php echo __('device_model'); ?>: ' + (o.device_model || '') + '\n';
-            info += 'S/N: ' + (o.serial_number || '') + '\n';
-            info += 'IMEI 2: ' + (o.serial_number_2 || '') + '\n';
-            info += '<?php echo __('problem'); ?>: ' + (o.problem_description || '') + '\n';
-
-            showConfirm(info, function() {
-                if (o.customer_id) {
-                    const custLabel = ((o.first_name || '') + ' ' + (o.last_name || '')).trim();
-                    const $sel = $('.select2-customer');
-                    $sel.append(new Option(custLabel, o.customer_id, true, true)).trigger('change');
-                }
-                if (o.device_type) {
-                    $('input[name="device_type"]').filter(function() {
-                        return this.value === o.device_type;
-                    }).prop('checked', true);
-                }
-                if (o.order_type) $('select[name="order_type"]').val(o.order_type);
-                if (o.device_brand) {
-                    const $brand = $('select[name="device_brand"]');
-                    if ($brand.find('option[value="' + o.device_brand + '"]').length === 0) {
-                        $brand.append(new Option(o.device_brand, o.device_brand, true, true));
-                    } else {
-                        $brand.val(o.device_brand);
-                    }
-                    $brand.trigger('change');
-                }
-                if (o.device_model) {
-                    $('#deviceModelSelect').append(new Option(o.device_model, o.device_model, true, true)).trigger('change');
-                }
-                if (o.serial_number) $('input[name="serial_number"]').val(o.serial_number.toUpperCase());
-                if (o.serial_number_2) $('input[name="serial_number_2"]').val(o.serial_number_2.toUpperCase());
-                if (o.appearance) $('input[name="appearance"]').val(o.appearance);
-                // PIN intentionally not copied from API payloads.
-                if (o.problem_description) $('textarea[name="problem_description"]').val(o.problem_description);
-                if (o.technician_notes) $('textarea[name="technician_notes"]').val(o.technician_notes);
-                if (o.priority === 'High') $('#priorityHighDashboard').prop('checked', true);
-                if (o.estimated_cost) $('input[name="estimated_cost"]').val(o.estimated_cost);
-                if (o.technician_id) $('select[name="technician_id"]').val(o.technician_id);
-            });
-        }, 'json').fail(function() {
-            btn.prop('disabled', false).html('<i class="fas fa-copy me-1"></i><?php echo __('copy_order_btn'); ?>');
-            showAlert('<?php echo __('error'); ?>');
-        });
-    });
-
-    $('#copyOrderIdInput').on('keydown', function(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            $('#copyOrderBtn').trigger('click');
-        }
-    });
-
-    $('.order-template-select').on('change', function() {
-        const value = $(this).val();
-        if (!value) return;
-        const targetName = $(this).data('target');
-        const $area = $(this).closest('form').find('textarea[name="' + targetName + '"]');
-        if (!$area.length) return;
-        const current = $area.val().trim();
-        $area.val(current ? (current + "\n" + value) : value).trigger('input');
-        $(this).val('');
-    });
-
-    // Inline New Customer: company/private toggle
-    $('input[name="customer_type"]').on('change', function() {
-        if ($(this).val() === 'company') {
-            $('#inline_company_fields').removeClass('d-none');
-            $('#inline_first_name').val('Firma');
-            $('#inline_last_name').val('');
-        } else {
-            $('#inline_company_fields').addClass('d-none');
-            $('#inline_first_name').val('');
-            $('#inline_last_name').val('');
-        }
-    });
-
-    // Inline New Customer: ARES fetch
-    $('#inline_btn_fetch_ares').on('click', function() {
-        const ico = $('#inline_ico_input').val().trim();
-        if (!ico) return showAlert('<?php echo __('enter_ico'); ?>');
-        
-        const btn = $(this);
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-
-        $.ajax({
-            url: `https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty/${ico}`,
-            method: 'GET',
-            dataType: 'json',
-            success: function(data) {
-                btn.prop('disabled', false).html('<i class="fas fa-search me-1"></i> <?php echo __('fetch_ares'); ?>');
-                if (data && data.obchodniJmeno) {
-                    $('#inline_ares_name').val(data.obchodniJmeno);
-                    $('#inline_last_name').val(data.obchodniJmeno);
-                    $('#inline_first_name').val('Firma');
-                    
-                    if (data.dic) {
-                        $('#inline_ares_dic').val(data.dic);
-                    }
-
-                    if (data.sidlo) {
-                        const s = data.sidlo;
-                        const addr = `${s.nazevUlice || ''} ${s.cisloDomovni || ''}${s.cisloOrientacni ? '/' + s.cisloOrientacni : ''}, ${s.psc || ''} ${s.nazevObce || ''}`;
-                        $('#inline_address').val(addr.trim());
-                    }
-                } else {
-                    showAlert('<?php echo __('ares_data_not_found'); ?>');
-                }
-            },
-            error: function() {
-                btn.prop('disabled', false).html('<i class="fas fa-search me-1"></i> <?php echo __('fetch_ares'); ?>');
-                showAlert('<?php echo __('ares_fetch_error'); ?>');
-            }
-        });
-    });
-
-    // Inline New Customer: AJAX submit and bind to New Order select
-    $('#saveNewCustomerBtn').on('click', function() {
-        const $panel = $('#newCustomerInlineForm');
-        const firstName = String($('#inline_first_name').val() || '').trim();
-        const lastName = String($('#inline_last_name').val() || '').trim();
-        const phone = String($('#inline_phone').val() || '').trim();
-
-        if (!firstName || !lastName || !phone) {
-            showAlert('<?php echo __('fill_required_fields'); ?>');
-            return;
-        }
-
-        const btn = $(this);
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> <?php echo __('saving'); ?>...');
-
-        const csrfFromForm = String($panel.closest('form').find('input[name="csrf_token"]').val() || '');
-        const csrfFromMeta = String($('meta[name="csrf-token"]').attr('content') || '');
-        const formData = {
-            first_name: firstName,
-            last_name: lastName,
-            phone: phone,
-            email: $panel.find('input[name="inline_email"]').val() || '',
-            address: $('#inline_address').val() || '',
-            customer_type: $panel.find('input[name="customer_type"]:checked').val() || 'private',
-            ico: $('#inline_ico_input').val() || '',
-            company_name: $('#inline_ares_name').val() || '',
-            dic: $('#inline_ares_dic').val() || '',
-            response_format: 'json',
-            csrf_token: csrfFromForm || csrfFromMeta
-        };
-
-        $.ajax({
-            url: 'api/add_customer.php',
-            method: 'POST',
-            dataType: 'json',
-            headers: {
-                Accept: 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            data: formData
-        }).done(function(res) {
-            const id = Number(res && res.id);
-            if (res && res.success && Number.isInteger(id) && id > 0) {
-                const label = (lastName + ' ' + firstName).trim() + (phone ? ' (' + phone + ')' : '');
-                const $select = $('.select2-customer');
-                if ($select.length) {
-                    const newOption = new Option(label, id, true, true);
-                    $select.append(newOption).trigger('change');
-                }
-                // Reset inline form fields
-                $('#inline_first_name, #inline_last_name, #inline_phone, #inline_ares_name, #inline_ares_dic, #inline_ico_input').val('');
-                $panel.find('input[name="inline_email"]').val('');
-                $('#inline_address').val('');
-                $('#inline_company_fields').addClass('d-none');
-                $panel.find('#inline_type_private').prop('checked', true);
-                // Collapse the panel
-                const collapseEl = document.getElementById('inlineNewCustomerPanel');
-                if (collapseEl && window.bootstrap) {
-                    bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false }).hide();
-                }
-            } else {
-                showAlert((res && res.message) || '<?php echo __('add_client_error'); ?>');
-            }
-        }).fail(function(xhr) {
-            let message = xhr.responseJSON && xhr.responseJSON.message;
-            if (!message && xhr.responseText) {
-                try {
-                    const parsed = JSON.parse(xhr.responseText);
-                    if (parsed && parsed.message) {
-                        message = parsed.message;
-                    }
-                } catch (e) { /* non-JSON body (empty 500, HTML login, etc.) */ }
-            }
-            if (!message && xhr.status === 403) {
-                message = '<?php echo __('csrf_token_invalid'); ?>';
-            } else if (!message && xhr.status === 401) {
-                message = '<?php echo __('unauthorized'); ?>';
-            }
-            showAlert(message || '<?php echo __('network_error_client'); ?>');
-        }).always(function() {
-            btn.prop('disabled', false).html('<i class="fas fa-check me-2"></i><?php echo __('save'); ?>');
-        });
-    });
-});
-</script>
 
 <?php require_once 'includes/footer.php'; ?>
 

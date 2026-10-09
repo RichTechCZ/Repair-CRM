@@ -71,14 +71,6 @@ try {
     $incoming_order_type = isset($_POST['order_type'])
         ? trim((string)$_POST['order_type'])
         : (string)($current['order_type'] ?? '');
-    OrderStatusService::assertIssuedRequirements(
-        $canonical_new_status,
-        $incoming_final_cost,
-        $incoming_shipping !== '' ? $incoming_shipping : null,
-        true,
-        $incoming_order_type
-    );
-
     $incoming_estimated_cost = $crmReadOptionalMoney('estimated_cost', $current['estimated_cost'] ?? 0);
     $incoming_extra_expenses = $is_admin
         ? $crmReadOptionalMoney('extra_expenses', $current['extra_expenses'] ?? 0)
@@ -98,6 +90,39 @@ try {
         $canonical_new_status,
         $is_admin
     );
+
+    // Closed orders: technicians may still edit notes/description, but not the inputs
+    // of revenue and payout (final cost, order type) or the customer.
+    // NULL-safe: forms prefill an empty final cost with the estimate, and revenue falls back
+    // final_cost -> estimated_cost, so compare against what revenue currently uses.
+    $postedMoney = static function (string $key): ?float {
+        $raw = $_POST[$key] ?? null;
+        return ($raw === null || $raw === '') ? null : (float)$raw;
+    };
+    $postedFinal = $postedMoney('final_cost');
+    $postedEstimate = $postedMoney('estimated_cost');
+    $currentRevenueBase = $current['final_cost'] !== null ? (float)$current['final_cost'] : (float)($current['estimated_cost'] ?? 0);
+    $moneyChanged = ($postedFinal !== null && abs($postedFinal - $currentRevenueBase) > 0.004)
+        || ($postedEstimate !== null && abs($postedEstimate - (float)($current['estimated_cost'] ?? 0)) > 0.004)
+        || (isset($_POST['order_type']) && $incoming_order_type !== (string)($current['order_type'] ?? 'Non-Warranty'));
+    if ($moneyChanged) {
+        OrderStatusService::assertClosedOrderEditable($canonical_current_status, $is_admin);
+    }
+
+    // Handover requirements guard the transition into Issued and changes to what it was
+    // validated on; editing only notes of an already issued (possibly legacy) order must work.
+    if (
+        $canonical_new_status === 'Issued'
+        && ($canonical_current_status !== 'Issued' || $moneyChanged || $incoming_shipping !== (string)($current['shipping_method'] ?? ''))
+    ) {
+        OrderStatusService::assertIssuedRequirements(
+            $canonical_new_status,
+            $incoming_final_cost,
+            $incoming_shipping !== '' ? $incoming_shipping : null,
+            true,
+            $incoming_order_type
+        );
+    }
 
     $incoming_cancellation_reason = trim($_POST['cancellation_reason'] ?? '');
     OrderStatusService::assertCancellationReason(
@@ -158,7 +183,8 @@ try {
         $new_status,
         $new_tech_id,
         $incoming_estimated_cost,
-        $incoming_final_cost,
+        // Keep an unset final cost NULL: storing 0 would override the estimated_cost revenue fallback.
+        ($postedFinal === null && $current['final_cost'] === null) ? null : $incoming_final_cost,
         $incoming_extra_expenses,
         isset($_POST['problem_description']) ? $_POST['problem_description'] : $current['problem_description'],
         isset($_POST['technician_notes']) ? $_POST['technician_notes'] : $current['technician_notes'],
@@ -177,6 +203,13 @@ try {
             $sql .= ', cancellation_reason = ?';
             $params[] = null;
         }
+    }
+
+    // The Issued gate above was validated against the posted handover method; persist it
+    // so the stored order matches what was checked.
+    if ($incoming_shipping !== '' && $incoming_shipping !== (string)($current['shipping_method'] ?? '')) {
+        $sql .= ', shipping_method = ?';
+        $params[] = mb_substr($incoming_shipping, 0, 50);
     }
 
     $sql .= ' WHERE id = ?';

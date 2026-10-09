@@ -1,6 +1,7 @@
 <?php
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+require_once 'includes/qr_code.php';
 
 if (!isset($_SESSION['user_id'])) die(__("unauthorized"));
 if (!isset($_GET['id']) && !isset($_GET['order_id'])) die("ID zakázky není zadáno");
@@ -25,7 +26,7 @@ if (function_exists('crmDecryptDevicePinInRow')) {
 }
 
 // Fetch parts linked to this order
-$stmt = $pdo->prepare("SELECT oi.*, i.part_name FROM order_items oi JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ?");
+$stmt = $pdo->prepare("SELECT oi.*, COALESCE(NULLIF(oi.part_name, ''), i.part_name) AS part_name FROM order_items oi LEFT JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ? ORDER BY oi.id");
 $stmt->execute([$id]);
 $order_items = $stmt->fetchAll();
 
@@ -70,7 +71,8 @@ function _l($key) { global $target_lang; return __($key, $target_lang); }
             <div><?php echo _l('created'); ?>: <?php echo date('d.m.Y H:i', strtotime($order['created_at'])); ?></div>
         </div>
         <div class="qr-section">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=<?php echo urlencode($_SERVER['HTTP_HOST'].'/view_order.php?id='.$order['id']); ?>">
+            <?php // Host comes from configuration, never from the Host request header. ?>
+            <img src="<?php echo e(crmQrDataUri(crmPublicBaseUrl() . '/view_order.php?id=' . (int)$order['id'])); ?>" width="80" height="80" alt="QR">
         </div>
     </div>
 

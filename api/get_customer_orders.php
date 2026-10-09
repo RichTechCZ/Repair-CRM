@@ -24,6 +24,17 @@ if (!currentUserCanViewCustomer($customer_id)) {
     exit;
 }
 
+/**
+ * `.status-pill--*` variant for a lifecycle status. Derived from getStatusBadge()
+ * so the customer-orders modal can never drift from the canonical mapping.
+ */
+function customerOrderStatusVariant(string $status): string {
+    if (preg_match('/status-pill--([a-z-]+)/', getStatusBadge($status), $match)) {
+        return $match[1];
+    }
+    return 'closed';
+}
+
 try {
     // Technicians only see their own orders for this customer (no cross-tech leak).
     if (isTechnicianScoped()) {
@@ -43,7 +54,12 @@ try {
         );
         $stmt->execute([$customer_id]);
     }
-    $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $orders = array_map(static function (array $order): array {
+        return $order + [
+            'status_label' => getStatusLabel((string)$order['status']),
+            'status_variant' => customerOrderStatusVariant((string)$order['status']),
+        ];
+    }, $stmt->fetchAll(PDO::FETCH_ASSOC));
     echo json_encode(['success' => true, 'orders' => $orders]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'message' => publicExceptionMessage($e)]);

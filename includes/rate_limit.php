@@ -4,6 +4,7 @@
  * ----------------
  * Call checkApiRateLimit() at the top of any API endpoint.
  * Requires the `rate_limits` table (created by migrations/001_bootstrap.sql).
+ * Store failures fail closed (503); only a missing table/column is allowed and logged.
  */
 
 /**
@@ -45,10 +46,26 @@ function checkApiRateLimit(string $action = 'api', int $max_requests = 60, int $
 
         // Periodically purge old records (approx. once every 100 requests)
         if (random_int(1, 100) === 1) {
-            $pdo->exec("DELETE FROM rate_limits WHERE created_at < DATE_SUB(NOW(), INTERVAL 1 HOUR)");
+            // Housekeeping only: a failed purge must not reject a request that was already allowed.
+            try {
+                $pdo->exec("DELETE FROM rate_limits WHERE created_at < DATE_SUB(NOW(), INTERVAL 1 HOUR)");
+            } catch (Throwable $purgeError) {
+                error_log('Rate limiter purge failed: ' . $purgeError->getMessage());
+            }
         }
     } catch (Throwable $e) {
-        // If the table doesn't exist yet, fail open (don't block the request)
-        error_log('Rate limiter error: ' . $e->getMessage());
+        // Only the known pre-migration schema gap degrades to "allow" (and is logged);
+        // any other store failure fails closed so the limiter cannot silently disappear.
+        $code = (string)$e->getCode();
+        if (in_array($code, ['42S02', '42S22'], true)) {
+            error_log('Rate limiter schema unavailable; allowing until CLI migration: ' . $e->getMessage());
+            return;
+        }
+        error_log('Rate limiter error (blocking request): ' . $e->getMessage());
+        http_response_code(503);
+        header('Content-Type: application/json');
+        header('Retry-After: 30');
+        echo json_encode(['success' => false, 'message' => 'Service temporarily unavailable.']);
+        exit;
     }
 }

@@ -8,7 +8,8 @@ Root `AGENTS.md` owns repository-wide quality expectations; this folder owns the
 
 # Local Contracts
 
-- `workflows/quality.yml` must lint all tracked PHP sources and run `php tests/run.php` on every push and pull request.
+- `workflows/quality.yml` must lint all tracked PHP sources and JavaScript assets and run `php tests/run.php` on every push and pull request.
+- The `mysql-integration` job runs migrations twice (fresh + idempotent), `health.php`, and `tests/integration_mysql.php` on a MySQL 8 service with a migration account and a SELECT/INSERT/UPDATE/DELETE-only web account. Credentials there are CI-only throwaway values.
 - Keep the workflow dependency-free apart from the PHP runtime installed by the action.
 
 # Work Guidance

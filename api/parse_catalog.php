@@ -141,26 +141,56 @@ function resolveCatalogUrl(string $origin, string $currentUrl, string $candidate
 function fetchHtml(string $url): string {
     sleep(1);
 
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36');
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+    // Redirects are followed manually: every hop must pass isPublicCatalogUrl(), otherwise a
+    // public page could redirect the server to an internal address (SSRF).
+    for ($hop = 0; $hop <= 5; $hop++) {
+        if (!isPublicCatalogUrl($url)) {
+            return '';
+        }
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        // Pin the connection to an address that was just validated, so a second DNS answer
+        // (DNS rebinding) cannot point curl at an internal host.
+        $host = (string)parse_url($url, PHP_URL_HOST);
+        if (!filter_var($host, FILTER_VALIDATE_IP)) {
+            $vettedIp = null;
+            foreach (@gethostbynamel($host) ?: [] as $candidateIp) {
+                if (filter_var($candidateIp, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false) {
+                    $vettedIp = $candidateIp;
+                    break;
+                }
+            }
+            if ($vettedIp === null) {
+                return '';
+            }
+            $port = (int)(parse_url($url, PHP_URL_PORT) ?: (strtolower((string)parse_url($url, PHP_URL_SCHEME)) === 'https' ? 443 : 80));
+            curl_setopt($ch, CURLOPT_RESOLVE, [$host . ':' . $port . ':' . $vettedIp]);
+        }
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36');
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
+        curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
 
-    $html = curl_exec($ch);
-    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    unset($ch);
+        $html = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $redirectUrl = (string)curl_getinfo($ch, CURLINFO_REDIRECT_URL);
+        unset($ch);
 
-    if (!is_string($html) || $html === '' || $httpCode < 200 || $httpCode >= 400) {
-        return '';
+        if ($httpCode >= 300 && $httpCode < 400 && $redirectUrl !== '') {
+            $url = $redirectUrl;
+            continue;
+        }
+        if (!is_string($html) || $html === '' || $httpCode < 200 || $httpCode >= 300) {
+            return '';
+        }
+        return $html;
     }
 
-    return $html;
+    return '';
 }
 
 function createXPathFromHtml(string $html): ?DOMXPath {

@@ -1,6 +1,7 @@
 <?php
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+require_once 'models/InvoicePolicy.php';
 require_once 'includes/header.php';
 
 // Check admin access
@@ -17,50 +18,55 @@ if (isset($_POST['save_acc_settings'])) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
         $settings_error = 'Security token invalid.';
     } else {
-        $myinvoiceBaseUrl = trim((string)($_POST['myinvoice_api_base_url'] ?? 'https://fakturace.43.157.31.121.sslip.io'));
-        $myinvoiceScheme = strtolower((string)parse_url($myinvoiceBaseUrl, PHP_URL_SCHEME));
-        $myinvoiceHost = strtolower((string)parse_url($myinvoiceBaseUrl, PHP_URL_HOST));
-        if (
-            $myinvoiceScheme !== 'https' &&
-            !in_array($myinvoiceHost, ['localhost', '127.0.0.1', '::1'], true)
-        ) {
-            $settings_error = 'MyInvoice API requires HTTPS.';
-        } else {
-            set_setting('acc_company_name', $_POST['acc_company_name']);
-            set_setting('acc_address', $_POST['acc_address']);
-            set_setting('acc_ico', $_POST['acc_ico']);
-            set_setting('acc_dic', $_POST['acc_dic']);
-            set_setting('acc_bank_name', $_POST['acc_bank_name']);
-            set_setting('acc_bank_account', $_POST['acc_bank_account']);
-            set_setting('acc_iban', $_POST['acc_iban']);
-            set_setting('acc_swift', $_POST['acc_swift']);
-            set_setting('acc_trade_register', $_POST['acc_trade_register'] ?? '');
-            set_setting('acc_invoice_prefix', $_POST['acc_invoice_prefix']);
-            set_setting('acc_auto_create_invoice', isset($_POST['acc_auto_create_invoice']) ? 1 : 0);
-            set_setting('acc_is_vat_payer', isset($_POST['acc_is_vat_payer']) ? 1 : 0);
-            set_setting('acc_vat_rate', $_POST['acc_vat_rate']);
-            set_setting('myinvoice_enabled', isset($_POST['myinvoice_enabled']) ? 1 : 0);
-            set_setting('myinvoice_auto_issue', isset($_POST['myinvoice_auto_issue']) ? 1 : 0);
-            set_setting('myinvoice_api_base_url', $myinvoiceBaseUrl);
-            set_setting('myinvoice_default_country_id', $_POST['myinvoice_default_country_id'] ?? '1');
-            set_setting('myinvoice_default_street', $_POST['myinvoice_default_street'] ?? '-');
-            set_setting('myinvoice_default_city', $_POST['myinvoice_default_city'] ?? 'Praha');
-            set_setting('myinvoice_default_zip', $_POST['myinvoice_default_zip'] ?? '11000');
-            set_setting('myinvoice_fallback_email', $_POST['myinvoice_fallback_email'] ?? '');
-            $settings_saved = true;
-        }
+        set_setting('acc_company_name', $_POST['acc_company_name']);
+        set_setting('acc_address', $_POST['acc_address']);
+        set_setting('acc_ico', $_POST['acc_ico']);
+        set_setting('acc_dic', $_POST['acc_dic']);
+        set_setting('acc_bank_name', $_POST['acc_bank_name']);
+        set_setting('acc_bank_account', $_POST['acc_bank_account']);
+        set_setting('acc_iban', $_POST['acc_iban']);
+        set_setting('acc_swift', $_POST['acc_swift']);
+        set_setting('acc_trade_register', $_POST['acc_trade_register'] ?? '');
+        set_setting('acc_invoice_prefix', $_POST['acc_invoice_prefix']);
+        set_setting('acc_auto_create_invoice', isset($_POST['acc_auto_create_invoice']) ? 1 : 0);
+        set_setting('acc_is_vat_payer', isset($_POST['acc_is_vat_payer']) ? 1 : 0);
+        set_setting('acc_vat_rate', $_POST['acc_vat_rate']);
+        set_setting('myinvoice_enabled', isset($_POST['myinvoice_enabled']) ? 1 : 0);
+        set_setting('myinvoice_auto_issue', isset($_POST['myinvoice_auto_issue']) ? 1 : 0);
+        set_setting('myinvoice_default_country_id', $_POST['myinvoice_default_country_id'] ?? '1');
+        set_setting('myinvoice_default_street', $_POST['myinvoice_default_street'] ?? '-');
+        set_setting('myinvoice_default_city', $_POST['myinvoice_default_city'] ?? 'Praha');
+        set_setting('myinvoice_default_zip', $_POST['myinvoice_default_zip'] ?? '11000');
+        set_setting('myinvoice_fallback_email', $_POST['myinvoice_fallback_email'] ?? '');
+        $settings_saved = true;
     }
 }
 
-// Fetch Invoices with items
-$stmt = $pdo->query("SELECT i.*, c.first_name, c.last_name, c.company,
-    (SELECT GROUP_CONCAT(item_name SEPARATOR ', ') FROM invoice_items WHERE invoice_id = i.id) as item_names
-    FROM invoices i JOIN customers c ON i.customer_id = c.id ORDER BY i.created_at DESC");
+// Invoice list: one page at a time (the full history grows without bound).
+const CRM_INVOICES_PER_PAGE = 50;
+$invoice_page = max(1, (int)($_GET['p'] ?? 1));
+$stmt = $pdo->prepare("SELECT i.*, c.first_name, c.last_name, c.company
+    FROM invoices i JOIN customers c ON i.customer_id = c.id
+    ORDER BY i.created_at DESC, i.id DESC
+    LIMIT " . CRM_INVOICES_PER_PAGE . " OFFSET " . (($invoice_page - 1) * CRM_INVOICES_PER_PAGE));
+$stmt->execute();
 $invoices = $stmt->fetchAll();
 
-// Fetch Customers for select
-$stmt = $pdo->query("SELECT id, first_name, last_name, company FROM customers ORDER BY company, last_name");
-$customers = $stmt->fetchAll();
+// Item names for the visible page only (instead of a correlated subquery per row).
+if ($invoices) {
+    $invoiceIds = array_map(static fn($row) => (int)$row['id'], $invoices);
+    $placeholders = implode(',', array_fill(0, count($invoiceIds), '?'));
+    $itemStmt = $pdo->prepare("SELECT invoice_id, item_name FROM invoice_items WHERE invoice_id IN ($placeholders) ORDER BY id");
+    $itemStmt->execute($invoiceIds);
+    $itemNames = [];
+    foreach ($itemStmt->fetchAll(PDO::FETCH_ASSOC) as $itemRow) {
+        $itemNames[(int)$itemRow['invoice_id']][] = $itemRow['item_name'];
+    }
+    foreach ($invoices as &$invoiceRow) {
+        $invoiceRow['item_names'] = implode(', ', $itemNames[(int)$invoiceRow['id']] ?? []);
+    }
+    unset($invoiceRow);
+}
 
 // Summary metrics for overview strip
 $invoice_stats = $pdo->query(
@@ -285,6 +291,20 @@ $active_tab = ($_GET['tab'] ?? 'list') === 'stats' ? 'stats' : 'list';
                                 <?php endif; ?>
                             </tbody>
                         </table>
+                        <?php $invoice_pages = (int)ceil($invoice_total_count / CRM_INVOICES_PER_PAGE); ?>
+                        <?php if ($invoice_pages > 1): ?>
+                        <nav class="p-3" aria-label="<?php echo e(__('invoices_list')); ?>">
+                            <ul class="pagination justify-content-center mb-0">
+                                <li class="page-item <?php echo $invoice_page <= 1 ? 'disabled' : ''; ?>">
+                                    <a class="page-link" href="?p=<?php echo max(1, $invoice_page - 1); ?>" aria-label="&laquo;">&laquo;</a>
+                                </li>
+                                <li class="page-item active" aria-current="page"><span class="page-link"><?php echo $invoice_page; ?> / <?php echo $invoice_pages; ?></span></li>
+                                <li class="page-item <?php echo $invoice_page >= $invoice_pages ? 'disabled' : ''; ?>">
+                                    <a class="page-link" href="?p=<?php echo min($invoice_pages, $invoice_page + 1); ?>" aria-label="&raquo;">&raquo;</a>
+                                </li>
+                            </ul>
+                        </nav>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -368,11 +388,9 @@ $active_tab = ($_GET['tab'] ?? 'list') === 'stats' ? 'stats' : 'list';
                         <div class="col-md-5">
                             <label class="form-label" for="inv_customer"><?php echo __('customer'); ?></label>
                             <div class="input-group">
-                                <select name="customer_id" id="inv_customer" class="form-select select2" required>
+                                <?php /* Customers are searched via api/search_customers.php instead of rendering every customer. */ ?>
+                                <select name="customer_id" id="inv_customer" class="form-select" required>
                                     <option value=""><?php echo __('search_placeholder'); ?></option>
-                                    <?php foreach ($customers as $c): ?>
-                                    <option value="<?php echo (int)$c['id']; ?>"><?php echo htmlspecialchars($c['company'] ?: $c['first_name'] . ' ' . $c['last_name']); ?></option>
-                                    <?php endforeach; ?>
                                 </select>
                                 <button type="button" class="btn btn-outline-secondary" data-crm-action="toggle-customer-override" title="<?php echo e(__('edit')); ?>">
                                     <i class="fas fa-user-edit" aria-hidden="true"></i>
@@ -581,11 +599,15 @@ $active_tab = ($_GET['tab'] ?? 'list') === 'stats' ? 'stats' : 'list';
                         <div class="col-12"><hr class="border-secondary opacity-25 my-1"></div>
                         <div class="col-12">
                             <div class="section-kicker mb-1">MyInvoice.cz API</div>
-                            <div class="form-text">API token is read from <code>MYINVOICE_API_TOKEN</code> in <code>.env</code>.</div>
+                            <div class="form-text">API token and base URL are read from <code>MYINVOICE_API_TOKEN</code> / <code>MYINVOICE_API_BASE_URL</code> in <code>.env</code>.</div>
+                            <?php if (get_setting('myinvoice_enabled', '0') === '1' && (trim((string)getenv('MYINVOICE_API_BASE_URL')) === '' || trim((string)getenv('MYINVOICE_API_TOKEN')) === '')): ?>
+                                <div class="alert alert-warning small mt-2 mb-0" role="status">MyInvoice: <code>MYINVOICE_API_BASE_URL</code> / <code>MYINVOICE_API_TOKEN</code> — <?php echo e(__('missing_data')); ?></div>
+                            <?php endif; ?>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">API base URL</label>
-                            <input type="url" name="myinvoice_api_base_url" class="form-control" value="<?php echo e(get_setting('myinvoice_api_base_url', getenv('MYINVOICE_API_BASE_URL') ?: 'https://fakturace.43.157.31.121.sslip.io')); ?>">
+                            <input type="url" class="form-control" value="<?php echo e((string)(getenv('MYINVOICE_API_BASE_URL') ?: '')); ?>" readonly aria-describedby="myinvoiceBaseUrlHelp">
+                            <div class="form-text" id="myinvoiceBaseUrlHelp">MYINVOICE_API_BASE_URL (.env)</div>
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Country ID</label>
@@ -634,11 +656,44 @@ $active_tab = ($_GET['tab'] ?? 'list') === 'stats' ? 'stats' : 'list';
 <script nonce="<?php echo e(crmCspNonce()); ?>">
 let invModal;
 
+function initInvoiceCustomerSelect() {
+    if (typeof jQuery === 'undefined' || !jQuery.fn.select2) return;
+    const asText = item => jQuery('<span>').text(item.text || item.name || '');
+    jQuery('#inv_customer').select2({
+        width: '100%',
+        dropdownParent: jQuery('#invoiceModal'),
+        placeholder: <?php echo json_encode(__('search_placeholder'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>,
+        minimumInputLength: 0,
+        ajax: {
+            url: 'api/search_customers.php',
+            dataType: 'json',
+            delay: 250,
+            data: params => ({ q: params.term, page: params.page || 1 }),
+            processResults: data => ({ results: data.results || [], pagination: { more: !!(data.pagination && data.pagination.more) } })
+        },
+        templateResult: item => item.loading ? item.text : asText(item),
+        templateSelection: asText
+    });
+}
+
+// Select a customer in the AJAX picker, adding the option when it is not loaded yet.
+function setInvoiceCustomer(id, data) {
+    const select = document.getElementById('inv_customer');
+    if (!select || !id) return;
+    const label = (data && (data.company || [data.first_name, data.last_name].filter(Boolean).join(' '))) || ('#' + id);
+    if (!select.querySelector('option[value="' + Number(id) + '"]')) {
+        select.appendChild(new Option(label, String(Number(id)), true, true));
+    }
+    select.value = String(Number(id));
+    if (typeof jQuery !== 'undefined') jQuery(select).trigger('change');
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const invModalEl = document.getElementById('invoiceModal');
     if (invModalEl) {
         invModal = new bootstrap.Modal(invModalEl);
     }
+    initInvoiceCustomerSelect();
     
     // UI reaction to VAT payer toggle in settings (if modal is open)
     const vatToggle = document.getElementById('vatPayerCheck');
@@ -673,22 +728,25 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         formData.append('items', JSON.stringify(items));
-        
-        fetch('accounting_actions.php', {
-            method: 'POST',
-            body: formData
-        }).then(r => r.json()).then(data => {
-            if (data.success) {
-                location.reload();
-            } else {
-                showAlert(data.error);
-            }
-        });
+
+        // One request at a time: a double click must not create two invoices.
+        const submitBtn = this.querySelector('[type="submit"]');
+        if (submitBtn) {
+            if (submitBtn.disabled) return;
+            submitBtn.disabled = true;
+        }
+        crmFetchJson('accounting_actions.php', { method: 'POST', body: formData })
+            .then(() => location.reload())
+            .catch(error => {
+                if (submitBtn) submitBtn.disabled = false;
+                showAlert(error.message);
+            });
     });
 });
 
 function showNewInvoiceModal() {
     document.getElementById('invoiceForm').reset();
+    if (typeof jQuery !== 'undefined') jQuery('#inv_customer').val('').trigger('change');
     document.getElementById('invoiceForm').dataset.invoiceType = 'invoice';
     document.querySelector('#invoiceForm [name="action"]').value = 'save_invoice';
     document.getElementById('inv_id').value = '';
@@ -698,9 +756,8 @@ function showNewInvoiceModal() {
     document.querySelector('#itemsTable tbody').innerHTML = '';
     
     // Auto-generate number
-    const prefix = <?php echo json_encode((string)get_setting('acc_invoice_prefix', date('Y')), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
-    const nextNum = <?php echo json_encode(str_pad((count($invoices) + 1), 4, '0', STR_PAD_LEFT)); ?>;
-    document.getElementById('inv_number').value = prefix + nextNum;
+    // Suggestion from the shared invoice counter; the server reserves/advances it under lock on save.
+    document.getElementById('inv_number').value = <?php echo json_encode(crmSuggestInvoiceNumber($pdo), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
     
     addInvItem();
     invModal.show();
@@ -791,12 +848,7 @@ function editInvoice(id) {
             document.getElementById('inv_order_id').value = data.order_id || '';
             document.getElementById('inv_is_vat_payer').value = data.is_vat_payer || '0';
             document.getElementById('inv_number').value = data.invoice_number;
-            document.getElementById('inv_customer').value = data.customer_id;
-            
-            // Trigger select2 update if used
-            if (typeof jQuery !== 'undefined' && jQuery('#inv_customer').data('select2')) {
-                jQuery('#inv_customer').val(data.customer_id).trigger('change');
-            }
+            setInvoiceCustomer(data.customer_id, data);
 
             document.getElementById('inv_date_issue').value = data.date_issue;
             document.getElementById('inv_date_tax').value = data.date_tax;
@@ -828,8 +880,11 @@ function editInvoice(id) {
             
             document.getElementById('invModalTitle').innerText = "<?php echo __('edit_invoice'); ?>";
             invModal.show();
+        } else {
+            showAlert(res.error || res.message || '<?php echo e(__('error')); ?>');
         }
-    });
+    })
+    .catch(() => showAlert('<?php echo e(__('network_error')); ?>'));
 }
 
 function loadFromOrder() {
@@ -840,14 +895,9 @@ function loadFromOrder() {
     .then(r => r.json())
     .then(res => {
         if (res.success) {
-            document.getElementById('inv_customer').value = res.data.customer_id;
+            setInvoiceCustomer(res.data.customer_id, res.data);
             document.getElementById('inv_order_id').value = orderId;
             document.getElementById('inv_is_vat_payer').value = res.data.is_vat_payer ? '1' : '0';
-            
-            // Trigger select2 if present
-            if (typeof jQuery !== 'undefined' && jQuery('#inv_customer').data('select2')) {
-                jQuery('#inv_customer').val(res.data.customer_id).trigger('change');
-            }
 
             const tbody = document.querySelector('#itemsTable tbody');
             tbody.innerHTML = '';
@@ -865,30 +915,26 @@ function loadFromOrder() {
 }
 
 function deleteInvoice(id) {
-    showConfirm('Delete this invoice?', function() {
+    showConfirm('<?php echo e(__('delete_confirm')); ?>', function() {
         const formData = new FormData();
         formData.append('action', 'delete_invoice');
         formData.append('id', id);
-        formData.append('csrf_token', '<?php echo $_SESSION['csrf_token'] ?? ''; ?>');
-        fetch('accounting_actions.php', { method: 'POST', body: formData }).then(() => location.reload());
-    });
+        formData.append('csrf_token', '<?php echo e(generateCsrfToken()); ?>');
+        crmFetchJson('accounting_actions.php', { method: 'POST', body: formData })
+            .then(() => location.reload())
+            .catch(error => showAlert(error.message));
+    }, undefined, 'danger');
 }
 
 function createCreditNote(id) {
-    showConfirm('Create a Credit Note (Opravný daňový doklad) from this invoice?', function() {
+    showConfirm(<?php echo json_encode(__('credit_note_confirm'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>, function() {
         const formData = new FormData();
         formData.append('action', 'create_credit_note');
         formData.append('id', id);
-        formData.append('csrf_token', '<?php echo $_SESSION['csrf_token'] ?? ''; ?>');
-        fetch('accounting_actions.php', { method: 'POST', body: formData })
-        .then(r => r.json())
-        .then(res => {
-            if (res.success) {
-                location.reload();
-            } else {
-                showAlert(res.error);
-            }
-        });
+        formData.append('csrf_token', '<?php echo e(generateCsrfToken()); ?>');
+        crmFetchJson('accounting_actions.php', { method: 'POST', body: formData })
+            .then(() => location.reload())
+            .catch(error => showAlert(error.message));
     });
 }
 
@@ -898,32 +944,47 @@ function toggleCustomerOverride() {
     div.hidden = !div.hidden;
 }
 
+// Exports arrive in the authenticated POST response; temp/ is web-denied by design.
+function downloadExport(res) {
+    const bytes = Uint8Array.from(atob(res.content), c => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: res.mime || 'application/octet-stream' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = res.filename || 'export';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function exportPohoda(id) {
     const formData = new FormData();
     formData.append('action', 'export_pohoda');
     formData.append('id', id);
-    formData.append('csrf_token', '<?php echo $_SESSION['csrf_token'] ?? ''; ?>');
+    formData.append('csrf_token', '<?php echo e(generateCsrfToken()); ?>');
 
     fetch('accounting_actions.php', { method: 'POST', body: formData })
     .then(r => r.json())
     .then(res => {
-        if (res.success) triggerDownload('temp/exports/' + res.file);
-        else showAlert(res.error || 'Export failed');
-    });
+        if (res.success) downloadExport(res);
+        else showAlert(res.error || '<?php echo e(__('error')); ?>');
+    })
+    .catch(() => showAlert('<?php echo e(__('error')); ?>'));
 }
 
 function exportS3(id) {
     const formData = new FormData();
     formData.append('action', 'export_s3money');
     formData.append('id', id);
-    formData.append('csrf_token', '<?php echo $_SESSION['csrf_token'] ?? ''; ?>');
+    formData.append('csrf_token', '<?php echo e(generateCsrfToken()); ?>');
 
     fetch('accounting_actions.php', { method: 'POST', body: formData })
     .then(r => r.json())
     .then(res => {
-        if (res.success) triggerDownload('temp/exports/' + res.file);
-        else showAlert(res.error || 'Export failed');
-    });
+        if (res.success) downloadExport(res);
+        else showAlert(res.error || '<?php echo e(__('error')); ?>');
+    })
+    .catch(() => showAlert('<?php echo e(__('error')); ?>'));
 }
 
 // Expose page actions for shared data-crm-action delegation in main.js

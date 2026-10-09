@@ -22,8 +22,11 @@ if (
     $start_date = $defaultStartDate;
     $end_date = $defaultEndDate;
 }
-$active_tab = $_GET['tab'] ?? 'staff_stats';
-$selected_tech_id = $_GET['tech_id'] ?? null;
+$active_tab = (string)($_GET['tab'] ?? 'staff_stats');
+if (!in_array($active_tab, ['staff_stats', 'general_stats', 'individual_stats'], true)) {
+    $active_tab = 'staff_stats';
+}
+$selected_tech_id = filter_var($_GET['tech_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) ?: null;
 
 $is_admin = hasPermission('admin_access');
 $is_tech = ($_SESSION['role'] ?? '') == 'technician';
@@ -45,10 +48,10 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
             <p class="page-subtitle"><?php echo e($start_date); ?> - <?php echo e($end_date); ?></p>
         </div>
         <form class="page-actions">
-            <input type="hidden" name="tab" value="<?php echo $active_tab; ?>">
-            <?php if($selected_tech_id): ?><input type="hidden" name="tech_id" value="<?php echo $selected_tech_id; ?>"><?php endif; ?>
-            <input type="date" name="start_date" class="form-control form-control-sm" value="<?php echo $start_date; ?>">
-            <input type="date" name="end_date" class="form-control form-control-sm" value="<?php echo $end_date; ?>">
+            <input type="hidden" name="tab" value="<?php echo e($active_tab); ?>">
+            <?php if($selected_tech_id): ?><input type="hidden" name="tech_id" value="<?php echo (int)$selected_tech_id; ?>"><?php endif; ?>
+            <input type="date" name="start_date" class="form-control form-control-sm" value="<?php echo e($start_date); ?>" aria-label="<?php echo e(__('statistics_start_date')); ?>">
+            <input type="date" name="end_date" class="form-control form-control-sm" value="<?php echo e($end_date); ?>" aria-label="<?php echo e(__('statistics_end_date')); ?>">
             <button type="submit" class="btn btn-sm btn-primary px-3"><?php echo __('update_btn'); ?></button>
         </form>
     </div>
@@ -95,7 +98,7 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
                     </thead>
                     <tbody>
                         <?php
-                        $techs = $pdo->query("SELECT id, name FROM technicians WHERE is_active = 1 ORDER BY name ASC")->fetchAll();
+                        $techs = getActiveTechnicians();
                         $totals = [
                             'received' => 0, 'in_progress' => 0, 'completed' => 0, 'cancelled' => 0,
                             'revenue' => 0, 'parts_cost' => 0, 'expenses' => 0,
@@ -129,7 +132,7 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
                                    data-crm-id="<?php echo (int)$t['id']; ?>"
                                    data-report-type="completed"
                                    data-report-title="<?php echo e(__('repaired_count')); ?>"
-                                   class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 text-decoration-none">
+                                   class="status-pill status-pill--ready text-decoration-none">
                                     <?php echo $s['completed']; ?>
                                 </a>
                             </td>
@@ -138,7 +141,7 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
                             <td class="text-end text-muted small"><?php echo $s['expenses'] > 0 ? '-'.formatMoney($s['expenses']) : '—'; ?></td>
                             <td class="text-end fw-bold text-primary"><?php echo formatMoney($s['earnings']); ?></td>
                             <td class="text-end text-success fw-bold"><?php echo formatMoney($s['sc_income']); ?></td>
-                            <td class="text-center"><span class="badge bg-secondary"><?php echo $s['engineer_rate']; ?>%</span></td>
+                            <td class="text-center"><span class="status-pill status-pill--closed"><?php echo e((string)$s['engineer_rate']); ?>%</span></td>
                             <td class="text-end pe-3">
                                 <button type="button"
                                         class="btn btn-sm btn-outline-secondary"
@@ -174,32 +177,22 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
         <?php if ($active_tab == 'general_stats'): 
             $gs = $reportStatsBatch['all'];
         ?>
-            <div class="row g-4 mb-5">
-                <div class="col-md-3">
-                    <div class="card border-0 bg-primary bg-opacity-10 p-3 text-center">
-                        <h6 class="text-uppercase small text-muted mb-2"><?php echo __('received_devices'); ?></h6>
-                        <h2 class="mb-0 text-primary"><?php echo $gs['received']; ?></h2>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="card border-0 bg-success bg-opacity-10 p-3 text-center">
-                        <h6 class="text-uppercase small text-muted mb-2"><?php echo __('repaired'); ?></h6>
-                        <h2 class="mb-0 text-success"><?php echo $gs['completed']; ?></h2>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="card border-0 bg-danger bg-opacity-10 p-3 text-center">
-                        <h6 class="text-uppercase small text-muted mb-2"><?php echo __('cancelled_rejected'); ?></h6>
-                        <h2 class="mb-0 text-danger"><?php echo $gs['cancelled']; ?></h2>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="card border-0 bg-info bg-opacity-10 p-3 text-center">
-                        <h6 class="text-uppercase small text-muted mb-2"><?php echo __('efficiency'); ?></h6>
-                        <h2 class="mb-0 text-info"><?php echo $gs['received'] > 0 ? round(($gs['completed'] / $gs['received']) * 100) : 0; ?>%</h2>
-                    </div>
-                </div>
-            </div>
+            <?php
+            $general_cards = [
+                ['tone' => 'warm', 'label' => __('received_devices'), 'value' => (int)$gs['received']],
+                ['tone' => 'success', 'label' => __('repaired'), 'value' => (int)$gs['completed']],
+                ['tone' => 'danger', 'label' => __('cancelled_rejected'), 'value' => (int)$gs['cancelled']],
+                ['tone' => 'info', 'label' => __('efficiency'), 'value' => ($gs['received'] > 0 ? round(($gs['completed'] / $gs['received']) * 100) : 0) . '%'],
+            ];
+            ?>
+            <section class="statistics-kpi-grid mb-5" aria-label="<?php echo e(__('general_stats')); ?>">
+                <?php foreach ($general_cards as $card): ?>
+                    <article class="statistics-kpi statistics-kpi--<?php echo e($card['tone']); ?>">
+                        <div class="statistics-kpi__label"><?php echo e($card['label']); ?></div>
+                        <div class="statistics-kpi__value financial-number"><?php echo e((string)$card['value']); ?></div>
+                    </article>
+                <?php endforeach; ?>
+            </section>
 
             <div class="row g-4">
                 <div class="col-md-6">
@@ -263,7 +256,7 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
                         <select name="tech_id" class="form-select" data-crm-change-action="submit-form">
                             <option value=""><?php echo __('select_employee_option'); ?></option>
                             <?php 
-                            $techs_list = $pdo->query("SELECT id, name FROM technicians WHERE is_active = 1 ORDER BY name ASC")->fetchAll();
+                            $techs_list = getActiveTechnicians();
                             foreach($techs_list as $tl): ?>
                                 <option value="<?php echo $tl['id']; ?>" <?php echo $selected_tech_id == $tl['id'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($tl['name']); ?></option>
                             <?php endforeach; ?>
@@ -314,7 +307,7 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
                     </div>
                     <div class="col-md-3">
                         <div class="card p-3 border shadow-none text-center">
-                            <div class="small text-muted mb-1"><?php echo __('engineer_earnings'); ?> <span class="badge bg-secondary"><?php echo $is['engineer_rate']; ?>%</span></div>
+                            <div class="small text-muted mb-1"><?php echo __('engineer_earnings'); ?> <span class="status-pill status-pill--closed"><?php echo e((string)$is['engineer_rate']); ?>%</span></div>
                             <h3 class="mb-0 text-primary"><?php echo formatMoney($is['earnings']); ?></h3>
                         </div>
                     </div>
@@ -346,63 +339,21 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
                         <tbody>
                             <?php
                             $current_url = urlencode($_SERVER['REQUEST_URI']);
-                            $stmt = $pdo->prepare("
-                                SELECT o.*, c.first_name, c.last_name,
-                                    COALESCE(
-                                        (SELECT inv.payment_date FROM invoices inv
-                                         WHERE inv.order_id = o.id AND inv.status = 'paid'
-                                           AND (inv.invoice_type IS NULL OR inv.invoice_type != 'credit_note')
-                                         ORDER BY inv.payment_date DESC LIMIT 1),
-                                        DATE(o.shipping_date)
-                                    ) AS finance_date,
-                                    COALESCE(
-                                        (SELECT inv.total_amount FROM invoices inv
-                                         WHERE inv.order_id = o.id
-                                           AND (inv.invoice_type IS NULL OR inv.invoice_type != 'credit_note')
-                                         ORDER BY COALESCE(inv.payment_date, inv.date_issue, inv.created_at) DESC, inv.id DESC LIMIT 1),
-                                        o.final_cost,
-                                        o.estimated_cost,
-                                        0
-                                    ) AS customer_total,
-                                    (SELECT COALESCE(SUM(oi.quantity * COALESCE(invt.cost_price, oi.price)), 0)
-                                     FROM order_items oi LEFT JOIN inventory invt ON oi.inventory_id = invt.id
-                                     WHERE oi.order_id = o.id) as inventory_cost
-                                FROM orders o
-                                JOIN customers c ON o.customer_id = c.id
-                                WHERE o.technician_id = ? AND o.status IN ('Issued','Collected')
-                                  AND COALESCE(
-                                        (SELECT inv.payment_date FROM invoices inv
-                                         WHERE inv.order_id = o.id AND inv.status = 'paid'
-                                           AND (inv.invoice_type IS NULL OR inv.invoice_type != 'credit_note')
-                                         ORDER BY inv.payment_date DESC LIMIT 1),
-                                        DATE(o.shipping_date)
-                                      ) BETWEEN ? AND ?
-                                ORDER BY finance_date DESC
-                            ");
-                            $stmt->execute([$selected_tech_id, $start_date, $end_date]);
-
-                            while($r = $stmt->fetch()):
-                                $customer_total = floatval($r['customer_total'] ?? 0);
-                                $p_cost = floatval($r['inventory_cost'] ?: 0);
-                                $e_cost = floatval($r['extra_expenses'] ?: 0);
-                                // Net profit per order (can be negative — must NOT floor)
-                                $net = $customer_total - $p_cost - $e_cost;
-                                // Engineer payout = (revenue − parts − full extra) × rate% (floored at 0)
-                                $earn_base = $customer_total - $p_cost - $e_cost;
-                                if ($earn_base < 0) $earn_base = 0;
-                                $earn = $earn_base * ($is['engineer_rate'] / 100);
+                            // Same query and formulas as the summary cards and the 80 mm payroll print.
+                            $payroll = crmGetTechnicianPayroll($pdo, (int)$selected_tech_id, $start_date, $end_date);
+                            foreach (array_reverse($payroll['orders']) as $r):
                             ?>
                             <tr>
-                                <td><a href="view_order.php?id=<?php echo $r['id']; ?>&return=<?php echo $current_url; ?>" class="fw-bold">#<?php echo $r['id']; ?></a></td>
-                                <td><?php echo date('d.m.Y', strtotime($r['finance_date'])); ?></td>
-                                <td><?php echo htmlspecialchars($r['device_brand'] . ' ' . $r['device_model']); ?></td>
-                                <td><?php echo htmlspecialchars($r['first_name'] . ' ' . $r['last_name']); ?></td>
-                                <td class="text-end fw-bold"><?php echo formatMoney($customer_total); ?></td>
-                                <td class="text-end text-muted small"><?php echo $p_cost > 0 ? '-'.formatMoney($p_cost) : '—'; ?></td>
-                                <td class="text-end <?php echo $net < 0 ? 'text-danger' : ''; ?>"><?php echo formatMoney($net); ?></td>
-                                <td class="text-end fw-bold text-primary"><?php echo formatMoney($earn); ?></td>
+                                <td><a href="view_order.php?id=<?php echo (int)$r['id']; ?>&return=<?php echo $current_url; ?>" class="fw-bold">#<?php echo (int)$r['id']; ?></a></td>
+                                <td><?php echo $r['finance_date'] ? date('d.m.Y', strtotime($r['finance_date'])) : '—'; ?></td>
+                                <td><?php echo e($r['device']); ?></td>
+                                <td><?php echo e($r['customer']); ?></td>
+                                <td class="text-end fw-bold"><?php echo formatMoney($r['customer_total']); ?></td>
+                                <td class="text-end text-muted small"><?php echo $r['parts_cost'] > 0 ? '-' . formatMoney($r['parts_cost']) : '—'; ?></td>
+                                <td class="text-end <?php echo $r['net_profit'] < 0 ? 'text-danger' : ''; ?>"><?php echo formatMoney($r['net_profit']); ?></td>
+                                <td class="text-end fw-bold text-primary"><?php echo formatMoney($r['earnings']); ?></td>
                             </tr>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>

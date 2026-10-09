@@ -43,7 +43,7 @@ function crmStartContentSecurityPolicy(): void
         "script-src-attr 'none'",
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
         "font-src 'self' data: https://cdnjs.cloudflare.com",
-        "img-src 'self' data: blob: https://api.qrserver.com https://flagcdn.com",
+        "img-src 'self' data: blob: https://flagcdn.com",
         "media-src 'self' blob:",
         "connect-src 'self' https://ares.gov.cz",
         "frame-src 'self'",
