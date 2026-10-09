@@ -84,8 +84,13 @@ try {
         }
 
         // cost_price is snapshotted: later inventory price edits must not rewrite paid payroll.
-        $stmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, quantity, price, cost_price) VALUES (?, ?, ?, ?, ?)");
-        $stmt->execute([$order_id, $inventory_id, $qty, $inventory_item['sale_price'], $inventory_item['cost_price']]);
+        if (tableColumnExists('order_items', 'cost_price')) {
+            $stmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, quantity, price, cost_price) VALUES (?, ?, ?, ?, ?)");
+            $stmt->execute([$order_id, $inventory_id, $qty, $inventory_item['sale_price'], $inventory_item['cost_price']]);
+        } else {
+            $stmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, quantity, price) VALUES (?, ?, ?, ?)");
+            $stmt->execute([$order_id, $inventory_id, $qty, $inventory_item['sale_price']]);
+        }
 
         if ($order_is_consuming) {
             changeInventoryQuantity($inventory_id, -$qty);

@@ -11,6 +11,19 @@
  * - SC income = net profit − engineer payouts
  */
 
+/**
+ * SQL for the purchase cost of order lines. Uses the order_items.cost_price snapshot (migration 008)
+ * once the column exists, and falls back to the live inventory cost on a not-yet-migrated schema,
+ * so reports keep working during a rollout.
+ */
+function crmOrderItemCostSql(): string
+{
+    $snapshot = function_exists('tableColumnExists') && tableColumnExists('order_items', 'cost_price')
+        ? 'oi.cost_price, '
+        : '';
+    return 'SUM(oi.quantity * COALESCE(' . $snapshot . 'i.cost_price, oi.price, 0))';
+}
+
 function crmEmptyDetailedStats(float $engineerRate = 50.0): array
 {
     return [
@@ -173,7 +186,7 @@ function getDetailedStatsBatch(PDO $pdo, string $start, string $end, ?int $scope
         LEFT JOIN (
             SELECT
                 oi.order_id,
-                SUM(oi.quantity * COALESCE(oi.cost_price, i.cost_price, oi.price, 0)) AS inventory_cost
+                " . crmOrderItemCostSql() . " AS inventory_cost
             FROM order_items oi
             LEFT JOIN inventory i ON i.id = oi.inventory_id
             GROUP BY oi.order_id
@@ -322,7 +335,7 @@ function crmGetTechnicianPayroll(PDO $pdo, int $technicianId, string $start, str
         LEFT JOIN (
             SELECT
                 oi.order_id,
-                SUM(oi.quantity * COALESCE(oi.cost_price, i.cost_price, oi.price, 0)) AS inventory_cost
+                " . crmOrderItemCostSql() . " AS inventory_cost
             FROM order_items oi
             LEFT JOIN inventory i ON i.id = oi.inventory_id
             GROUP BY oi.order_id

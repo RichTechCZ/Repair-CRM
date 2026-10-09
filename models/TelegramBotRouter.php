@@ -1003,8 +1003,13 @@ final class TelegramBotRouter
                 throw new Exception("Недостаточно остатка на складе.");
             }
 
-            $insertStmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, part_name, quantity, price, cost_price) VALUES (?, ?, ?, 1, ?, ?)");
-            $insertStmt->execute([$orderId, $inventoryId, $inv['part_name'], $inv['sale_price'], $inv['cost_price']]);
+            if (tableColumnExists('order_items', 'cost_price')) {
+                $insertStmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, part_name, quantity, price, cost_price) VALUES (?, ?, ?, 1, ?, ?)");
+                $insertStmt->execute([$orderId, $inventoryId, $inv['part_name'], $inv['sale_price'], $inv['cost_price']]);
+            } else {
+                $insertStmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, part_name, quantity, price) VALUES (?, ?, ?, 1, ?)");
+                $insertStmt->execute([$orderId, $inventoryId, $inv['part_name'], $inv['sale_price']]);
+            }
 
             if ($orderIsConsuming) {
                 changeInventoryQuantity($inventoryId, -1);

@@ -1042,5 +1042,17 @@ assertTrue(
     'a failed rate-limit purge must not reject an already allowed request'
 );
 
+$reportsTolerant = (string)file_get_contents(__DIR__ . '/../includes/reports_stats.php');
+assertTrue(
+    strpos($reportsTolerant, 'function crmOrderItemCostSql') !== false
+        && strpos($reportsTolerant, "tableColumnExists('order_items', 'cost_price')") !== false
+        && strpos($reportsTolerant, 'COALESCE(oi.cost_price, i.cost_price') === false,
+    'reports must keep working on a schema without the order_items.cost_price snapshot (migration 008)'
+);
+assertTrue(
+    substr_count((string)file_get_contents(__DIR__ . '/../api/add_order_item.php'), "tableColumnExists('order_items', 'cost_price')") === 1,
+    'adding a part must not require migration 008'
+);
+
 echo "OK: security and financial regression checks passed\n";
 
