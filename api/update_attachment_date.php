@@ -1,24 +1,26 @@
 <?php
 require_once __DIR__ . '/../includes/api_bootstrap.php';
+require_once __DIR__ . '/../models/OrderStatusService.php';
 api_bootstrap([
     'post' => true,
     'csrf' => true,
     'rate' => 'update_attachment_date',
 ]);
-$attachment_id = $_POST['attachment_id'] ?? null;
-$created_at = $_POST['created_at'] ?? null;
+$attachment_id = (int)($_POST['attachment_id'] ?? 0);
+$created_at = OrderStatusService::parseManualStatusDate($_POST['created_at'] ?? '');
 
-if (!$attachment_id || !$created_at) {
-    echo json_encode(['success' => false, 'message' => __('missing_data')]);
-    exit;
+if ($attachment_id <= 0 || $created_at === null) {
+    api_json_exit(['success' => false, 'message' => __('missing_data')]);
 }
 
 try {
-    // Check permissions: only admin or responsible technician can edit
-    $stmt = $pdo->prepare("SELECT a.order_id, o.technician_id
-                           FROM order_attachments a 
-                           JOIN orders o ON a.order_id = o.id 
-                           WHERE a.id = ?");
+    $pdo->beginTransaction();
+
+    $stmt = $pdo->prepare("SELECT a.order_id, o.status
+                           FROM order_attachments a
+                           JOIN orders o ON a.order_id = o.id
+                           WHERE a.id = ?
+                           FOR UPDATE");
     $stmt->execute([$attachment_id]);
     $data = $stmt->fetch();
 
@@ -30,11 +32,19 @@ try {
         throw new Exception(__('access_denied_msg'));
     }
 
+    OrderStatusService::assertClosedOrderEditable(
+        canonicalOrderStatus((string)($data['status'] ?? '')),
+        hasPermission('admin_access')
+    );
+
     $upd = $pdo->prepare("UPDATE order_attachments SET created_at = ? WHERE id = ?");
     $upd->execute([$created_at, $attachment_id]);
+    $pdo->commit();
 
-    echo json_encode(['success' => true, 'message' => 'Attachment date updated']);
+    api_json_exit(['success' => true, 'message' => 'Attachment date updated']);
 } catch (Exception $e) {
-    echo json_encode(['success' => false, 'message' => publicExceptionMessage($e)]);
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    api_json_exit(['success' => false, 'message' => publicExceptionMessage($e)]);
 }
-?>

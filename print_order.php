@@ -29,6 +29,8 @@ $stmt = $pdo->prepare("SELECT oi.*, COALESCE(NULLIF(oi.part_name, ''), i.part_na
 $stmt->execute([$id]);
 $items = $stmt->fetchAll();
 
+$order_total = (float)($order['final_cost'] ?? $order['estimated_cost'] ?? 0);
+
 $target_lang = $_GET['lang'] ?? 'cs';
 function _l($key) {
     global $target_lang; return __($key, $target_lang);
@@ -50,7 +52,7 @@ function _l($key) {
         .table th, .table td { border: 1px solid #ddd; padding: 10px; text-align: left; }
         .table th { background-color: #f2f2f2; }
         .total { text-align: right; font-size: 18px; font-weight: bold; margin-top: 20px; }
-        .footer { margin-top: 50px; border-top: 1px solid #eee; pt: 20px; font-size: 12px; }
+        .footer { margin-top: 50px; border-top: 1px solid #eee; padding-top: 20px; font-size: 12px; }
         .signatures { display: flex; justify-content: space-between; margin-top: 40px; }
         .sig-line { border-top: 1px solid #333; width: 200px; text-align: center; margin-top: 20px; }
         @media print {
@@ -105,35 +107,27 @@ function _l($key) {
     </div>
     <?php endif; ?>
 
-    <?php if($order['pin_code']): ?>
-    <div style="margin-top: 10px;">
-        <strong><?php echo _l('pin'); ?>:</strong><br>
-        <code><?php echo htmlspecialchars($order['pin_code']); ?></code>
-    </div>
-    <?php endif; ?>
-
     <table class="table">
         <thead>
             <tr>
                 <th><?php echo _l('part_name'); ?></th>
                 <th><?php echo _l('quantity'); ?></th>
-                <th><?php echo _l('buy_price'); ?></th>
+                <th><?php echo _l('price'); ?></th>
                 <th><?php echo _l('sum'); ?></th>
             </tr>
         </thead>
         <tbody>
             <tr>
-                <td><?php echo _l('work_cost'); ?></td>
+                <td><?php echo _l('repair_total_incl_parts'); ?></td>
                 <td>1</td>
-                <td><?php echo formatMoney((float)($order['final_cost'] ?: $order['estimated_cost'])); ?></td>
-                <td><?php echo formatMoney((float)($order['final_cost'] ?: $order['estimated_cost'])); ?></td>
+                <td><?php echo formatMoney($order_total); ?></td>
+                <td><?php echo formatMoney($order_total); ?></td>
             </tr>
             <?php foreach ($items as $item): ?>
             <tr>
-                <td><?php echo htmlspecialchars($item['part_name']); ?></td>
-                <td><?php echo $item['quantity']; ?></td>
-                <td><?php echo formatMoney($item['price']); ?></td>
-                <td><?php echo formatMoney($item['price'] * $item['quantity']); ?></td>
+                <td><?php echo htmlspecialchars((string)$item['part_name']); ?></td>
+                <td><?php echo (int)$item['quantity']; ?></td>
+                <td colspan="2"><em><?php echo _l('included_in_price'); ?></em></td>
             </tr>
             <?php endforeach; ?>
         </tbody>
@@ -141,8 +135,7 @@ function _l($key) {
 
     <div class="total">
         <?php echo mb_strtoupper(_l('total_pay')); ?>: <?php 
-            $total = (float)($order['final_cost'] ?? $order['estimated_cost'] ?? 0);
-            echo formatMoney($total);
+            echo formatMoney($order_total);
         ?>
     </div>
 
@@ -160,6 +153,6 @@ function _l($key) {
     </div>
 </div>
 
-<script nonce="<?php echo e(crmCspNonce()); ?>" src="assets/js/print.js"></script>
+<script nonce="<?php echo e(crmCspNonce()); ?>" src="assets/js/print.js?v=<?php echo (int)@filemtime(__DIR__ . '/assets/js/print.js'); ?>"></script>
 </body>
 </html>

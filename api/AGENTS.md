@@ -22,8 +22,10 @@ Root AGENTS.md -> api/AGENTS.md
 - Client-facing API errors must use `publicExceptionMessage($e)` / `api_json_exit` — never raw PDO/stack/path messages.
 - Status transitions share `models/OrderStatusService.php` (`update_order_status.php`, `update_order_full.php`, page `edit_order.php`, and external `sync_from_site.php`). Issued + `Self Pickup` or order type `Warranty` / «Рекламация» must not demand a positive final cost.
 - `update_order_dates.php` updates `orders.created_at` / `updated_at` under `SELECT ... FOR UPDATE`; it rewrites the current `order_status_log.changed_at` (plus Issued `shipping_date`) only when the posted status date differs (minute precision) from the current status-log date. The UI pre-fills that date from `order_status_log`, never from the auto-bumped `orders.updated_at`.
+- `update_attachment_date.php` runs under `FOR UPDATE`, validates the date with `OrderStatusService::parseManualStatusDate()` and is closed-order locked (`assertClosedOrderEditable`). `update_order_full.php` and `edit_order.php` validate `device_type` with `crmValidatedDeviceType()` (Phone, Notebook, PC, Tablet, HDD, Other; a legacy stored value stays editable) and check that an admin-reassigned customer exists.
 - `update_shipping.php` is POST + CSRF, transactional under `FOR UPDATE`, validates the date and field lengths, and refuses to clear the handover method or `shipping_date` of an Issued order. On closed orders technicians may still add/change the tracking number; changing the method or date is admin-only.
 - Mutable order/item/inventory reads happen inside a transaction with `SELECT ... FOR UPDATE`; quantities are positive integers and financial values are finite and non-negative.
+- `add_order.php` validates `device_type` and, on every failure path, keeps the typed form via `crmStashOrderFormInput()` (whitelisted, length-capped, never the PIN or files); `orders.php` reads it once and `orders_scripts.php` refills and reopens the New Order modal. `add_customer.php` validates type, email and the `customers` column lengths like `edit_customer.php`.
 - `add_order.php` / `upload_media.php` store attachments only through `crmStoreOrderUploads()`.
 - `media.php` is the only way attachments reach a browser: GET, authenticated, `currentUserCanViewOrder()`, 404 for both missing and forbidden, single Range support, `nosniff`.
 - `qr.php` returns a same-origin SVG QR for authenticated UI (max 200 bytes of data).
@@ -31,7 +33,7 @@ Root AGENTS.md -> api/AGENTS.md
 - The express invoice form edits only the order's regular invoice (never a credit note; active preferred over cancelled) and keeps it single-line.
 - Absolute links in notifications, QR codes and prints use `crmPublicBaseUrl()` (`CRM_PUBLIC_BASE_URL`), never `$_SERVER['HTTP_HOST']`.
 - `get_customer_orders.php` returns `status_label` and `status_variant` for the `.status-pill` rendering.
-- `check_updates.php` is informational only: no shell commands (the commit hash is read from `.git` files).
+- `check_updates.php` is informational only: admin-only, no shell commands (the commit hash is read from `.git` files), forced refreshes at most once a minute, and transport errors are logged — never returned to the browser.
 - `add_order.php` encrypts non-empty device PINs and restricts scoped technicians to shared customers or a valid newly-created-customer grant.
 - `run_update.php` is a deliberate `410 Gone` tombstone. Web code installation must not be reintroduced.
 - Backup creation streams a repeatable-read snapshot to a mode-0600 file under `app/backup_db/` via `crmBackupDirectory()` (override with `CRM_BACKUP_DIR`); creation and download require `admin_access`. The directory is web-denied by root `.htaccess` and a local guard file.

@@ -72,6 +72,26 @@
     </div>
 </div>
 
+<!-- Global Prompt Modal (required text input, replaces window.prompt) -->
+<div class="modal fade" id="globalPromptModal" tabindex="-1" data-bs-backdrop="static" aria-labelledby="globalPromptTitle">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" id="globalPromptForm" novalidate>
+            <div class="modal-header">
+                <h5 class="modal-title" id="globalPromptTitle"><?php echo __('confirm_title'); ?></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label" for="globalPromptInput" id="globalPromptLabel"></label>
+                <textarea class="form-control" id="globalPromptInput" rows="3" maxlength="500" required></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?php echo __('cancel'); ?></button>
+                <button type="submit" class="btn btn-danger" id="globalPromptOk"><?php echo __('confirm'); ?></button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <?php
 if (!empty($nav_items) && isset($_SESSION['user_id'])):
     $tab_visible = [];

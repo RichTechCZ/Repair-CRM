@@ -156,6 +156,8 @@ $techs_list = getActiveTechnicians();
 
 $order_form_error = trim((string)($_SESSION['order_form_error'] ?? ''));
 unset($_SESSION['order_form_error']);
+$order_form_old = (isset($_SESSION['order_form_old']) && is_array($_SESSION['order_form_old'])) ? $_SESSION['order_form_old'] : null;
+unset($_SESSION['order_form_old']);
 ?>
 
 <section class="workspace-overview workspace-overview--orders ui-ready" aria-labelledby="orders-overview-title">
@@ -990,10 +992,10 @@ unset($_SESSION['order_form_error']);
                 <input type="hidden" id="langOrderId">
                 <div class="d-grid gap-3">
                     <button type="button" class="btn btn-outline-primary py-3 btn-lang-select" data-lang="ru">
-                        <img src="https://flagcdn.com/w40/ru.png" class="me-2 rounded-1" width="24"> <?php echo __('lang_ru'); ?>
+                        <span class="lang-code me-2" aria-hidden="true">RU</span> <?php echo __('lang_ru'); ?>
                     </button>
                     <button type="button" class="btn btn-outline-primary py-3 btn-lang-select" data-lang="cs">
-                        <img src="https://flagcdn.com/w40/cz.png" class="me-2 rounded-1" width="24"> <?php echo __('lang_cs'); ?>
+                        <span class="lang-code me-2" aria-hidden="true">CZ</span> <?php echo __('lang_cs'); ?>
                     </button>
                 </div>
             </div>

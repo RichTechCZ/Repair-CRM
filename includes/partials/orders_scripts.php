@@ -375,7 +375,7 @@ window.hideBsModal = hideBsModal;
 $(document).ready(function() {
     $('.order-modal-trigger').on('click', function() {
         const id = $(this).data('id');
-        $('#quickOrderTitle').text('<?php echo __('order_header'); ?> #' + id);
+        $('#quickOrderTitle').text('<?php echo crmJsText(__('order_header')); ?> #' + id);
         showBsModal('quickOrderModal');
         $('#quickOrderBody').html('<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></div>');
         $('#fullViewBtn').attr('href', 'view_order.php?id=' + id);
@@ -408,7 +408,7 @@ $(document).ready(function() {
                     });
                     mediaHtml += '</div>';
                 } else {
-                    mediaHtml = '<div class="text-white-75 small mt-2"><?php echo __('no_media_files'); ?></div>';
+                    mediaHtml = '<div class="text-white-75 small mt-2"><?php echo crmJsText(__('no_media_files')); ?></div>';
                 }
 
                 let html = `
@@ -417,42 +417,42 @@ $(document).ready(function() {
                         <input type="hidden" name="csrf_token" value="<?php echo e(generateCsrfToken()); ?>">
                         <div class="row g-3">
                             <div class="col-md-4">
-                                <label class="form-label text-white-75 small mb-1"><?php echo __('client_and_date'); ?></label>
+                                <label class="form-label text-white-75 small mb-1"><?php echo crmJsText(__('client_and_date')); ?></label>
                                 <div class="fw-bold">${escHTML(o.first_name)} ${escHTML(o.last_name)}</div>
                                 <div class="small text-primary"><i class="far fa-clock me-1"></i>${new Date(o.created_at).toLocaleString()}</div>
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label text-white-75 small mb-1"><?php echo __('device'); ?></label>
+                                <label class="form-label text-white-75 small mb-1"><?php echo crmJsText(__('device')); ?></label>
                                 <div class="fw-bold">${escHTML(o.device_brand)} ${escHTML(o.device_model)}</div>
-                                <div class="badge ${o.order_type == 'Warranty' ? 'bg-success' : 'bg-secondary'}">${o.order_type == 'Warranty' ? '<?php echo __('warranty'); ?>' : '<?php echo __('non_warranty'); ?>'}</div>
+                                <div class="badge ${o.order_type == 'Warranty' ? 'bg-success' : 'bg-secondary'}">${o.order_type == 'Warranty' ? '<?php echo crmJsText(__('warranty')); ?>' : '<?php echo crmJsText(__('non_warranty')); ?>'}</div>
                                 ${o.shipping_method ? `<div class="mt-1 small text-info"><i class="fas fa-truck me-1"></i>${escHTML(o.shipping_method)}</div>` : ''}
-                                ${res.role == 'admin' && o.extra_expenses > 0 ? `<div class="mt-1 small text-danger"><i class="fas fa-minus-circle me-1"></i><?php echo __('extra_expenses'); ?>: ${escHTML(o.extra_expenses)}</div>` : ''}
+                                ${res.role == 'admin' && o.extra_expenses > 0 ? `<div class="mt-1 small text-danger"><i class="fas fa-minus-circle me-1"></i><?php echo crmJsText(__('extra_expenses')); ?>: ${escHTML(o.extra_expenses)}</div>` : ''}
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label text-white-75 small mb-1"><?php echo __('serial_numbers'); ?></label>
-                                <div class="small"><?php echo __('sn1'); ?>: <strong>${escHTML(o.serial_number) || '---'}</strong></div>
-                                <div class="small"><?php echo __('sn2'); ?>: <strong>${escHTML(o.serial_number_2) || '---'}</strong></div>
+                                <label class="form-label text-white-75 small mb-1"><?php echo crmJsText(__('serial_numbers')); ?></label>
+                                <div class="small"><?php echo crmJsText(__('sn1')); ?>: <strong>${escHTML(o.serial_number) || '---'}</strong></div>
+                                <div class="small"><?php echo crmJsText(__('sn2')); ?>: <strong>${escHTML(o.serial_number_2) || '---'}</strong></div>
                             </div>
                             
                             <hr class="my-3">
 
                             <div class="col-12 col-sm-6 col-md-3">
-                                <label class="form-label"><?php echo __('status'); ?></label>
+                                <label class="form-label"><?php echo crmJsText(__('status')); ?></label>
                                 <select name="status" class="form-select">
-                                    <option value="Accepted" ${o.status=='Accepted' ? 'selected':''}><?php echo getStatusLabel('Accepted'); ?></option>
-                                    <option value="Diagnostics" ${o.status=='Diagnostics' ? 'selected':''}><?php echo getStatusLabel('Diagnostics'); ?></option>
-                                    <option value="Approval" ${o.status=='Approval' ? 'selected':''}><?php echo getStatusLabel('Approval'); ?></option>
-                                    <option value="In Repair" ${o.status=='In Repair' ? 'selected':''}><?php echo getStatusLabel('In Repair'); ?></option>
-                                    <option value="Ready" ${o.status=='Ready' ? 'selected':''}><?php echo getStatusLabel('Ready'); ?></option>
-                                    <option value="Issued" ${o.status=='Issued' ? 'selected':''}><?php echo getStatusLabel('Issued'); ?></option>
-                                    <option value="Issued Without Repair" ${o.status=='Issued Without Repair' ? 'selected':''}><?php echo getStatusLabel('Issued Without Repair'); ?></option>
-                                    <option value="Repair Cancelled" ${o.status=='Repair Cancelled' ? 'selected':''}><?php echo getStatusLabel('Repair Cancelled'); ?></option>
+                                    <option value="Accepted" ${o.status=='Accepted' ? 'selected':''}><?php echo crmJsText(getStatusLabel('Accepted')); ?></option>
+                                    <option value="Diagnostics" ${o.status=='Diagnostics' ? 'selected':''}><?php echo crmJsText(getStatusLabel('Diagnostics')); ?></option>
+                                    <option value="Approval" ${o.status=='Approval' ? 'selected':''}><?php echo crmJsText(getStatusLabel('Approval')); ?></option>
+                                    <option value="In Repair" ${o.status=='In Repair' ? 'selected':''}><?php echo crmJsText(getStatusLabel('In Repair')); ?></option>
+                                    <option value="Ready" ${o.status=='Ready' ? 'selected':''}><?php echo crmJsText(getStatusLabel('Ready')); ?></option>
+                                    <option value="Issued" ${o.status=='Issued' ? 'selected':''}><?php echo crmJsText(getStatusLabel('Issued')); ?></option>
+                                    <option value="Issued Without Repair" ${o.status=='Issued Without Repair' ? 'selected':''}><?php echo crmJsText(getStatusLabel('Issued Without Repair')); ?></option>
+                                    <option value="Repair Cancelled" ${o.status=='Repair Cancelled' ? 'selected':''}><?php echo crmJsText(getStatusLabel('Repair Cancelled')); ?></option>
                                 </select>
                             </div>
                             <div class="col-12 col-sm-6 col-md-3">
-                                <label class="form-label"><?php echo __('technician'); ?></label>
+                                <label class="form-label"><?php echo crmJsText(__('technician')); ?></label>
                                 <select name="technician_id" class="form-select" ${res.role != 'admin' ? 'disabled' : ''}>
-                                    <option value="">-- <?php echo __('edit'); ?> --</option>
+                                    <option value="">-- <?php echo crmJsText(__('edit')); ?> --</option>
                                     <?php
                                     // FIX #5: use pre-loaded $techs_list
                                     foreach ($techs_list as $t): ?>
@@ -461,37 +461,37 @@ $(document).ready(function() {
                                 </select>
                             </div>
                             <div class="col-12 col-sm-6 col-md-3">
-                                <label class="form-label"><?php echo __('price_estimated'); ?></label>
+                                <label class="form-label"><?php echo crmJsText(__('price_estimated')); ?></label>
                                 <div class="input-group">
                                     <input type="number" name="estimated_cost" class="form-control" value="${o.estimated_cost || 0}">
                                     <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
                                 </div>
                             </div>
                             <div class="col-12 col-sm-6 col-md-3">
-                                <label class="form-label"><?php echo __('price_final'); ?></label>
+                                <label class="form-label"><?php echo crmJsText(__('price_final')); ?></label>
                                 <div class="input-group">
                                     <input type="number" name="final_cost" class="form-control" value="${o.final_cost || o.estimated_cost || 0}">
                                     <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
                                 </div>
                             </div>
                             <div class="col-md-12 ${res.role == 'admin' ? '' : 'd-none'}">
-                                <label class="form-label"><?php echo __('extra_expenses_desc'); ?></label>
+                                <label class="form-label"><?php echo crmJsText(__('extra_expenses_desc')); ?></label>
                                 <div class="input-group">
                                     <input type="number" name="extra_expenses" class="form-control" step="0.01" value="${o.extra_expenses || 0}">
                                     <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label"><?php echo __('problem'); ?></label>
+                                <label class="form-label"><?php echo crmJsText(__('problem')); ?></label>
                                 <textarea name="problem_description" class="form-control" rows="3"></textarea>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label"><?php echo __('notes'); ?></label>
+                                <label class="form-label"><?php echo crmJsText(__('notes')); ?></label>
                                 <textarea name="technician_notes" class="form-control" rows="3"></textarea>
                             </div>
                             
                             <div class="col-12 mt-3">
-                                <label class="form-label"><?php echo __('media_files'); ?></label>
+                                <label class="form-label"><?php echo crmJsText(__('media_files')); ?></label>
                                 ${mediaHtml}
                             </div>
                         </div>
@@ -523,7 +523,7 @@ $(document).ready(function() {
                     deleteOrder(o.id);
                 });
             } else {
-                const message = (res && res.message) ? res.message : '<?php echo __('error'); ?>';
+                const message = (res && res.message) ? res.message : '<?php echo crmJsText(__('error')); ?>';
                 $('#quickOrderBody').html($('<div class="alert alert-danger"></div>').text(message));
             }
         }).fail(function() {
@@ -537,7 +537,7 @@ $(document).ready(function() {
         const form = $('#quickOrderForm');
         const formData = form.serialize();
         const btn = $(this);
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> <?php echo __('saving'); ?>...');
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> <?php echo crmJsText(__('saving')); ?>...');
         
         $.ajax({
             url: 'api/update_order_full.php',
@@ -553,13 +553,13 @@ $(document).ready(function() {
                         window.location.reload();
                     }, 150);
                 } else {
-                    btn.prop('disabled', false).text('<?php echo __('save_changes'); ?>');
-                    showAlert('<?php echo __('error'); ?>: ' + res.message);
+                    btn.prop('disabled', false).text('<?php echo crmJsText(__('save_changes')); ?>');
+                    showAlert('<?php echo crmJsText(__('error')); ?>: ' + res.message);
                 }
             },
             error: function(xhr, status, error) {
-                btn.prop('disabled', false).text('<?php echo __('save_changes'); ?>');
-                showAlert('<?php echo __('error'); ?>');
+                btn.prop('disabled', false).text('<?php echo crmJsText(__('save_changes')); ?>');
+                showAlert('<?php echo crmJsText(__('error')); ?>');
             }
         });
     });
@@ -577,7 +577,7 @@ $(document).ready(function() {
 
     $('.select2-customer').select2({
         dropdownParent: $('#newOrderModal'),
-        placeholder: "<?php echo __('search_client_placeholder'); ?>",
+        placeholder: "<?php echo crmJsText(__('search_client_placeholder')); ?>",
         allowClear: true,
         minimumInputLength: 0,
         ajax: {
@@ -611,14 +611,14 @@ $(document).ready(function() {
 
     $('.select2-brand').select2({
         dropdownParent: $('#newOrderModal'),
-        placeholder: "<?php echo __('brand'); ?>",
+        placeholder: "<?php echo crmJsText(__('brand')); ?>",
         tags: true
     });
 
     // ── Model autocomplete (Select2 AJAX) ──
     $('#deviceModelSelect').select2({
         dropdownParent: $('#newOrderModal'),
-        placeholder: "<?php echo __('model_placeholder'); ?>",
+        placeholder: "<?php echo crmJsText(__('model_placeholder')); ?>",
         allowClear: true,
         tags: true,
         minimumInputLength: 1,
@@ -650,90 +650,104 @@ $(document).ready(function() {
         this.setSelectionRange(pos, pos);
     });
 
-    // ── Auto-focus customer search when modal opens ──
+    // ── Auto-focus customer search when modal opens (unless a customer is already chosen) ──
     $('#newOrderModal').on('shown.bs.modal', function() {
         setTimeout(function() {
-            $('#newOrderModal .select2-customer').select2('open');
+            if (!$('#newOrderModal .select2-customer').val()) {
+                $('#newOrderModal .select2-customer').select2('open');
+            }
         }, 100);
     });
+
+    // Fills the New Order form from a copied order or from input kept after a failed save.
+    function fillNewOrderForm(o) {
+        // Fill customer
+        if (o.customer_id) {
+            const custLabel = o.customer_label || ((o.first_name || '') + ' ' + (o.last_name || '')).trim();
+            const $sel = $('.select2-customer');
+            const opt = new Option(custLabel, o.customer_id, true, true);
+            $sel.append(opt).trigger('change');
+        }
+        // Fill device type
+        if (o.device_type) {
+            $('input[name="device_type"]').filter(function() {
+                return this.value === o.device_type;
+            }).prop('checked', true);
+        }
+        // Fill order type
+        if (o.order_type) $('select[name="order_type"]').val(o.order_type);
+        // Fill brand
+        if (o.device_brand) {
+            const $brand = $('select[name="device_brand"]');
+            if ($brand.find('option').filter(function() { return this.value === o.device_brand; }).length === 0) {
+                $brand.append(new Option(o.device_brand, o.device_brand, true, true));
+            } else {
+                $brand.val(o.device_brand);
+            }
+            $brand.trigger('change');
+        }
+        // Fill model
+        if (o.device_model) {
+            const $model = $('#deviceModelSelect');
+            $model.append(new Option(o.device_model, o.device_model, true, true)).trigger('change');
+        }
+        // Fill S/N
+        if (o.serial_number) $('input[name="serial_number"]').val(o.serial_number.toUpperCase());
+        if (o.serial_number_2) $('input[name="serial_number_2"]').val(o.serial_number_2.toUpperCase());
+        // Appearance, PIN
+        if (o.appearance) $('input[name="appearance"]').val(o.appearance);
+        // PIN intentionally not copied from API payloads.
+        // Problem
+        if (o.problem_description) $('textarea[name="problem_description"]').val(o.problem_description);
+        if (o.technician_notes) $('textarea[name="technician_notes"]').val(o.technician_notes);
+        // Priority
+        if (o.priority === 'High') $('#priorityHighOrders').prop('checked', true);
+        // Estimated cost
+        if (o.estimated_cost) $('input[name="estimated_cost"]').val(o.estimated_cost);
+        // Technician
+        if (o.technician_id) $('select[name="technician_id"]').val(o.technician_id);
+    }
+    window.crmFillNewOrderForm = fillNewOrderForm;
+
+<?php if (!empty($order_form_old)): ?>
+    // A failed save returns the operator to the form with what they typed (PIN and files are never kept).
+    fillNewOrderForm(<?php echo json_encode($order_form_old, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>);
+    showBsModal('newOrderModal');
+<?php endif; ?>
 
     // ── Copy Order # ──
     $('#copyOrderBtn').on('click', function() {
         const orderId = parseInt($('#copyOrderIdInput').val(), 10);
         if (!orderId || orderId < 1) {
-            showAlert('<?php echo __('copy_order_enter_id'); ?>');
+            showAlert('<?php echo crmJsText(__('copy_order_enter_id')); ?>');
             return;
         }
         const btn = $(this);
         btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
         $.get('api/copy_order.php', { id: orderId }, function(res) {
-            btn.prop('disabled', false).html('<i class="fas fa-copy me-1"></i><?php echo __('copy_order_btn'); ?>');
+            btn.prop('disabled', false).html('<i class="fas fa-copy me-1"></i><?php echo crmJsText(__('copy_order_btn')); ?>');
             if (!res.success) {
-                showAlert(res.message || '<?php echo __('copy_order_not_found'); ?>');
+                showAlert(res.message || '<?php echo crmJsText(__('copy_order_not_found')); ?>');
                 return;
             }
             const o = res.order;
 
             // Build confirmation message
-            let info = '<?php echo __('copy_order_confirm'); ?>\n\n';
-            info += '<?php echo __('client'); ?>: ' + (o.first_name || '') + ' ' + (o.last_name || '') + '\n';
-            info += '<?php echo __('device_brand'); ?>: ' + (o.device_brand || '') + '\n';
-            info += '<?php echo __('device_model'); ?>: ' + (o.device_model || '') + '\n';
+            let info = '<?php echo crmJsText(__('copy_order_confirm')); ?>\n\n';
+            info += '<?php echo crmJsText(__('client')); ?>: ' + (o.first_name || '') + ' ' + (o.last_name || '') + '\n';
+            info += '<?php echo crmJsText(__('device_brand')); ?>: ' + (o.device_brand || '') + '\n';
+            info += '<?php echo crmJsText(__('device_model')); ?>: ' + (o.device_model || '') + '\n';
             info += 'S/N: ' + (o.serial_number || '') + '\n';
             info += 'IMEI 2: ' + (o.serial_number_2 || '') + '\n';
-            info += '<?php echo __('problem'); ?>: ' + (o.problem_description || '') + '\n';
+            info += '<?php echo crmJsText(__('problem')); ?>: ' + (o.problem_description || '') + '\n';
 
             showConfirm(info, function() {
-                // Fill customer
-                if (o.customer_id) {
-                    const custLabel = ((o.first_name || '') + ' ' + (o.last_name || '')).trim();
-                    const $sel = $('.select2-customer');
-                    const opt = new Option(custLabel, o.customer_id, true, true);
-                    $sel.append(opt).trigger('change');
-                }
-                // Fill device type
-                if (o.device_type) {
-                    $('input[name="device_type"]').filter(function() {
-                        return this.value === o.device_type;
-                    }).prop('checked', true);
-                }
-                // Fill order type
-                if (o.order_type) $('select[name="order_type"]').val(o.order_type);
-                // Fill brand
-                if (o.device_brand) {
-                    const $brand = $('select[name="device_brand"]');
-                    if ($brand.find('option[value="' + o.device_brand + '"]').length === 0) {
-                        $brand.append(new Option(o.device_brand, o.device_brand, true, true));
-                    } else {
-                        $brand.val(o.device_brand);
-                    }
-                    $brand.trigger('change');
-                }
-                // Fill model
-                if (o.device_model) {
-                    const $model = $('#deviceModelSelect');
-                    $model.append(new Option(o.device_model, o.device_model, true, true)).trigger('change');
-                }
-                // Fill S/N
-                if (o.serial_number) $('input[name="serial_number"]').val(o.serial_number.toUpperCase());
-                if (o.serial_number_2) $('input[name="serial_number_2"]').val(o.serial_number_2.toUpperCase());
-                // Appearance, PIN
-                if (o.appearance) $('input[name="appearance"]').val(o.appearance);
-                // PIN intentionally not copied from API payloads.
-                // Problem
-                if (o.problem_description) $('textarea[name="problem_description"]').val(o.problem_description);
-                if (o.technician_notes) $('textarea[name="technician_notes"]').val(o.technician_notes);
-                // Priority
-                if (o.priority === 'High') $('#priorityHighOrders').prop('checked', true);
-                // Estimated cost
-                if (o.estimated_cost) $('input[name="estimated_cost"]').val(o.estimated_cost);
-                // Technician
-                if (o.technician_id) $('select[name="technician_id"]').val(o.technician_id);
+                fillNewOrderForm(o);
             });
         }, 'json').fail(function() {
-            btn.prop('disabled', false).html('<i class="fas fa-copy me-1"></i><?php echo __('copy_order_btn'); ?>');
-            showAlert('<?php echo __('error'); ?>');
+            btn.prop('disabled', false).html('<i class="fas fa-copy me-1"></i><?php echo crmJsText(__('copy_order_btn')); ?>');
+            showAlert('<?php echo crmJsText(__('error')); ?>');
         });
     });
 
@@ -776,15 +790,15 @@ $(document).ready(function() {
             csrf_token: '<?php echo $_SESSION['csrf_token'] ?? ''; ?>'
         }, function(res) {
             if (res.success) {
-                showQuickToast('<?php echo __('updated_success'); ?>', 'success');
+                showQuickToast('<?php echo crmJsText(__('updated_success')); ?>', 'success');
                 setTimeout(() => window.location.reload(), 300);
             } else {
                 if (btn) btn.prop('disabled', false);
-                showQuickToast(res.message || '<?php echo __('error'); ?>', 'danger');
+                showQuickToast(res.message || '<?php echo crmJsText(__('error')); ?>', 'danger');
             }
         }, 'json').fail(function() {
             if (btn) btn.prop('disabled', false);
-            showQuickToast('<?php echo __('error'); ?>', 'danger');
+            showQuickToast('<?php echo crmJsText(__('error')); ?>', 'danger');
         });
     }
 
@@ -798,17 +812,12 @@ $(document).ready(function() {
         btn.prop('disabled', true);
 
         if (status === 'Repair Cancelled') {
-            // Re-enable if the operator dismisses the confirm dialog without accepting.
+            // The button stays enabled if the operator dismisses the dialog without a reason.
             btn.prop('disabled', false);
-            return showConfirm('<?php echo __('delete_confirm'); ?>', function() {
+            return showPrompt('<?php echo crmJsText(__('cancellation_reason')); ?>', function(reason) {
                 btn.prop('disabled', true);
-                const reason = window.prompt('<?php echo __('cancellation_reason'); ?>');
-                if (reason === null || !reason.trim()) {
-                    btn.prop('disabled', false);
-                    return;
-                }
-                performQuickStatusUpdate(id, status, btn, reason.trim());
-            }, undefined, 'danger');
+                performQuickStatusUpdate(id, status, btn, reason);
+            });
         }
 
         performQuickStatusUpdate(id, status, btn);
@@ -830,7 +839,7 @@ $(document).ready(function() {
     // Inline New Customer: ARES fetch
     $('#inline_btn_fetch_ares').on('click', function() {
         const ico = $('#inline_ico_input').val().trim();
-        if (!ico) return showAlert('<?php echo __('enter_ico'); ?>');
+        if (!ico) return showAlert('<?php echo crmJsText(__('enter_ico')); ?>');
         
         const btn = $(this);
         btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
@@ -840,7 +849,7 @@ $(document).ready(function() {
             method: 'GET',
             dataType: 'json',
             success: function(data) {
-                btn.prop('disabled', false).html('<i class="fas fa-search me-1"></i> <?php echo __('fetch_ares'); ?>');
+                btn.prop('disabled', false).html('<i class="fas fa-search me-1"></i> <?php echo crmJsText(__('fetch_ares')); ?>');
                 if (data && data.obchodniJmeno) {
                     $('#inline_ares_name').val(data.obchodniJmeno);
                     $('#inline_last_name').val(data.obchodniJmeno);
@@ -856,12 +865,12 @@ $(document).ready(function() {
                         $('#inline_address').val(addr.trim());
                     }
                 } else {
-                    showAlert('<?php echo __('ares_data_not_found'); ?>');
+                    showAlert('<?php echo crmJsText(__('ares_data_not_found')); ?>');
                 }
             },
             error: function() {
-                btn.prop('disabled', false).html('<i class="fas fa-search me-1"></i> <?php echo __('fetch_ares'); ?>');
-                showAlert('<?php echo __('ares_fetch_error'); ?>');
+                btn.prop('disabled', false).html('<i class="fas fa-search me-1"></i> <?php echo crmJsText(__('fetch_ares')); ?>');
+                showAlert('<?php echo crmJsText(__('ares_fetch_error')); ?>');
             }
         });
     });
@@ -874,12 +883,12 @@ $(document).ready(function() {
         const phone = String($('#inline_phone').val() || '').trim();
 
         if (!firstName || !lastName || !phone) {
-            showAlert('<?php echo __('fill_required_fields'); ?>');
+            showAlert('<?php echo crmJsText(__('fill_required_fields')); ?>');
             return;
         }
 
         const btn = $(this);
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> <?php echo __('saving'); ?>...');
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> <?php echo crmJsText(__('saving')); ?>...');
 
         const csrfFromForm = String($panel.closest('form').find('input[name="csrf_token"]').val() || '');
         const csrfFromMeta = String($('meta[name="csrf-token"]').attr('content') || '');
@@ -927,7 +936,7 @@ $(document).ready(function() {
                     bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false }).hide();
                 }
             } else {
-                showAlert((res && res.message) || '<?php echo __('add_client_error'); ?>');
+                showAlert((res && res.message) || '<?php echo crmJsText(__('add_client_error')); ?>');
             }
         }).fail(function(xhr) {
             let message = xhr.responseJSON && xhr.responseJSON.message;
@@ -940,13 +949,13 @@ $(document).ready(function() {
                 } catch (e) { /* non-JSON body (empty 500, HTML login, etc.) */ }
             }
             if (!message && xhr.status === 403) {
-                message = '<?php echo __('csrf_token_invalid'); ?>';
+                message = '<?php echo crmJsText(__('csrf_token_invalid')); ?>';
             } else if (!message && xhr.status === 401) {
-                message = '<?php echo __('unauthorized'); ?>';
+                message = '<?php echo crmJsText(__('unauthorized')); ?>';
             }
-            showAlert(message || '<?php echo __('network_error_client'); ?>');
+            showAlert(message || '<?php echo crmJsText(__('network_error_client')); ?>');
         }).always(function() {
-            btn.prop('disabled', false).html('<i class="fas fa-check me-2"></i><?php echo __('save'); ?>');
+            btn.prop('disabled', false).html('<i class="fas fa-check me-2"></i><?php echo crmJsText(__('save')); ?>');
         });
     });
 
@@ -962,7 +971,7 @@ $(document).ready(function() {
         $('#dynamic-items-container').html(`
             <div class="row g-2 mb-2 item-row">
                 <div class="col-8">
-                    <input type="text" name="item_name[]" class="form-control form-control-sm" value="<?php echo __('repair_service'); ?> #${orderId}" required>
+                    <input type="text" name="item_name[]" class="form-control form-control-sm" value="<?php echo crmJsText(__('repair_service')); ?> #${orderId}" required>
                 </div>
                 <div class="col-3">
                     <input type="number" name="item_price[]" class="form-control form-control-sm item-price" step="0.01" required>
@@ -995,7 +1004,7 @@ $(document).ready(function() {
                 hideBsModal('invoiceModal');
             }
         }).fail(function() {
-            showAlert('<?php echo __('error'); ?>');
+            showAlert('<?php echo crmJsText(__('error')); ?>');
             hideBsModal('invoiceModal');
         });
     });
@@ -1005,7 +1014,7 @@ $(document).ready(function() {
         const newRow = `
             <div class="row g-2 mb-2 item-row">
                 <div class="col-8">
-                    <input type="text" name="item_name[]" class="form-control form-control-sm" placeholder="<?php echo __('invoice_item_placeholder'); ?>" required>
+                    <input type="text" name="item_name[]" class="form-control form-control-sm" placeholder="<?php echo crmJsText(__('invoice_item_placeholder')); ?>" required>
                 </div>
                 <div class="col-3">
                     <input type="number" name="item_price[]" class="form-control form-control-sm item-price" step="0.01" required>
@@ -1056,12 +1065,12 @@ $(document).ready(function() {
                 location.reload();
             } else {
                 showAlert(res.message);
-                saveBtn.prop('disabled', false).text('<?php echo __('create_invoice'); ?>');
+                saveBtn.prop('disabled', false).text('<?php echo crmJsText(__('create_invoice')); ?>');
             }
         }, 'json').fail(function(xhr) {
-            const message = (xhr.responseJSON && xhr.responseJSON.message) || '<?php echo __('error'); ?>';
+            const message = (xhr.responseJSON && xhr.responseJSON.message) || '<?php echo crmJsText(__('error')); ?>';
             showAlert(message);
-            saveBtn.prop('disabled', false).text('<?php echo __('create_invoice'); ?>');
+            saveBtn.prop('disabled', false).text('<?php echo crmJsText(__('create_invoice')); ?>');
         });
     });
 });
@@ -1084,7 +1093,7 @@ $(document).ready(function() {
         
         // Client reception act only; workshop uses print_workshop.php (work order).
         const url = `print_reception_thermal.php?id=${orderId}&lang=${lang}`;
-        openUniversalPreview(url, `<?php echo __('reception_act_thermal'); ?> #${orderId}`);
+        openUniversalPreview(url, `<?php echo crmJsText(__('reception_act_thermal')); ?> #${orderId}`);
     });
 });
 
@@ -1107,9 +1116,9 @@ function deleteMedia(id) {
                         $(this).remove();
                     });
                 } else {
-                    const message = (res && res.message) ? res.message : '<?php echo __('error'); ?>';
+                    const message = (res && res.message) ? res.message : '<?php echo crmJsText(__('error')); ?>';
                     if (typeof showAlert === 'function') {
-                        showAlert('<?php echo __('error'); ?>: ' + message);
+                        showAlert('<?php echo crmJsText(__('error')); ?>: ' + message);
                     } else {
                         alert('Error: ' + message);
                     }
@@ -1118,9 +1127,9 @@ function deleteMedia(id) {
             error: function(xhr) {
                 const message = xhr.responseJSON && xhr.responseJSON.message
                     ? xhr.responseJSON.message
-                    : '<?php echo __('error'); ?>';
+                    : '<?php echo crmJsText(__('error')); ?>';
                 if (typeof showAlert === 'function') {
-                    showAlert('<?php echo __('error'); ?>: ' + message);
+                    showAlert('<?php echo crmJsText(__('error')); ?>: ' + message);
                 } else {
                     alert('Error: ' + message);
                 }
@@ -1129,18 +1138,18 @@ function deleteMedia(id) {
     };
 
     if (typeof showConfirm !== 'function') {
-        if (confirm('<?php echo __('confirm_delete_file'); ?>')) {
+        if (confirm('<?php echo crmJsText(__('confirm_delete_file')); ?>')) {
             performDelete();
         }
         return;
     }
-    showConfirm('<?php echo __('confirm_delete_file'); ?>', function() {
+    showConfirm('<?php echo crmJsText(__('confirm_delete_file')); ?>', function() {
         performDelete();
     }, undefined, 'danger');
 }
 
 function deleteOrder(id) {
-    showConfirm('<?php echo __('confirm_delete_order_full'); ?>', function() {
+    showConfirm('<?php echo crmJsText(__('confirm_delete_order_full')); ?>', function() {
         $.post('api/delete_order.php', {id: id}, function(res) {
             if (res.success) {
                 location.reload();

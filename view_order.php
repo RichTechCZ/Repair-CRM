@@ -823,7 +823,7 @@ foreach ($status_log as $log_row) {
                     <div class="row g-3">
                         <div class="col-md-12">
                             <label class="form-label"><?php echo __('client'); ?></label>
-                            <select name="customer_id" class="form-select select2-modal-customer">
+                            <select name="customer_id" class="form-select select2-modal-customer" <?php echo !hasPermission('admin_access') ? 'disabled' : ''; ?>>
                                 <?php
                                 $current_customer_name = trim(($order['last_name'] ?? '') . ' ' . ($order['first_name'] ?? ''));
                                 $current_customer_company = trim($order['company'] ?? '');
@@ -852,10 +852,7 @@ foreach ($status_log as $log_row) {
                         <div class="col-md-4">
                             <label class="form-label"><?php echo __('device_type'); ?></label>
                             <select name="device_type" class="form-select">
-                                <option value="Phone" <?php echo ($order['device_type'] == 'Phone') ? 'selected' : ''; ?>><?php echo __('phone_type'); ?></option>
-                                <option value="Notebook" <?php echo ($order['device_type'] == 'Notebook') ? 'selected' : ''; ?>><?php echo __('notebook_type'); ?></option>
-                                <option value="Tablet" <?php echo ($order['device_type'] == 'Tablet') ? 'selected' : ''; ?>><?php echo __('tablet_type'); ?></option>
-                                <option value="Other" <?php echo ($order['device_type'] == 'Other') ? 'selected' : ''; ?>><?php echo __('other_type'); ?></option>
+                                <?php echo crmDeviceTypeOptionsHtml($order['device_type'] ?? ''); ?>
                             </select>
                         </div>
                         <div class="col-md-4">

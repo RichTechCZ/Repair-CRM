@@ -238,6 +238,6 @@ $crmScriptNonce = function_exists('crmCspNonce') ? (string)crmCspNonce() : '';
     </div>
 </div>
 
-<script<?php echo $crmScriptNonce !== '' ? ' nonce="' . e($crmScriptNonce) . '"' : ''; ?> src="assets/js/print.js"></script>
+<script<?php echo $crmScriptNonce !== '' ? ' nonce="' . e($crmScriptNonce) . '"' : ''; ?> src="assets/js/print.js?v=<?php echo (int)@filemtime(__DIR__ . '/assets/js/print.js'); ?>"></script>
 </body>
 </html>

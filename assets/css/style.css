@@ -760,11 +760,11 @@ small,
 .workspace-overview__metric.is-active {
     color: var(--text-primary);
     background: rgba(255, 255, 255, 0.035);
-    box-shadow: inset 0 3px 0 var(--accent-warm);
+    box-shadow: inset 0 3px 0 var(--accent);
 }
 
 .workspace-overview__metric:focus-visible {
-    outline: 2px solid var(--accent-warm);
+    outline: 2px solid var(--accent);
     outline-offset: -3px;
 }
 
@@ -1650,7 +1650,23 @@ small,
 .accounting-items-table-wrap {
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    overflow: hidden;
+    overflow-x: auto;
+}
+
+.accounting-items-table-wrap > .table {
+    min-width: 34rem;
+}
+
+.lang-code {
+    display: inline-block;
+    min-width: 1.75rem;
+    padding: 0.1rem 0.35rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm, 0.4rem);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-align: center;
 }
 
 .accounting-totals-card {
@@ -3656,12 +3672,6 @@ h1 { letter-spacing: -0.026em; }
 :focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
-}
-
-.form-control:focus,
-.form-select:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 ::selection {

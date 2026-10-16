@@ -435,7 +435,15 @@ final class TelegramBotRouter
                 $priceRaw = isset($parts[1]) ? str_replace([' ', 'Kč', 'kc', 'czk'], '', $parts[1]) : '';
                 $source = $parts[2] ?? 'Вручную';
 
-                if ($partName === '' || !is_numeric($priceRaw) || (float)$priceRaw < 0) {
+                $partName = mb_substr($partName, 0, 255);
+                $source = mb_substr($source !== '' ? $source : 'Вручную', 0, 100);
+                if (
+                    $partName === ''
+                    || !is_numeric($priceRaw)
+                    || !is_finite((float)$priceRaw)
+                    || (float)$priceRaw < 0
+                    || (float)$priceRaw > 99999999
+                ) {
                     telegramSend(
                         $chatId,
                         "⚠️ <b>Неверный формат.</b>\n\nВведите в формате:\n<code>Название детали | Цена | Источник</code>\n\n<i>Пример: Дисплей OLED | 2400 | FixParts</i>\n\nИли отправьте /cancel для отмены."
@@ -444,17 +452,26 @@ final class TelegramBotRouter
                 }
 
                 $price = (float)$priceRaw;
-                $statusStmt = $pdo->prepare('SELECT status FROM orders WHERE id = ?');
-                $statusStmt->execute([$orderId]);
                 try {
-                    OrderStatusService::assertClosedOrderEditable(canonicalOrderStatus((string)$statusStmt->fetchColumn()), !empty($user['is_admin']));
-                } catch (Exception $e) {
+                    $pdo->beginTransaction();
+                    $statusStmt = $pdo->prepare('SELECT status FROM orders WHERE id = ? FOR UPDATE');
+                    $statusStmt->execute([$orderId]);
+                    $currentOrderStatus = $statusStmt->fetchColumn();
+                    if ($currentOrderStatus === false || !telegramCanAccessOrder($pdo, $user, $orderId)) {
+                        throw new Exception("Доступ к заявке #{$orderId} запрещен.");
+                    }
+                    OrderStatusService::assertClosedOrderEditable(canonicalOrderStatus((string)$currentOrderStatus), !empty($user['is_admin']));
+                    $stmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, part_name, source, quantity, price) VALUES (?, NULL, ?, ?, 1, ?)");
+                    $stmt->execute([$orderId, $partName, $source, $price]);
+                    $pdo->commit();
+                } catch (Throwable $e) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
                     telegramClearState($pdo, (string)$fromId);
-                    telegramSend($chatId, "❌ " . telegramHtml($e->getMessage()));
+                    telegramSend($chatId, "❌ " . telegramHtml(publicExceptionMessage($e)));
                     return;
                 }
-                $stmt = $pdo->prepare("INSERT INTO order_items (order_id, inventory_id, part_name, source, quantity, price) VALUES (?, NULL, ?, ?, 1, ?)");
-                $stmt->execute([$orderId, $partName, $source, $price]);
 
                 telegramClearState($pdo, (string)$fromId);
                 telegramSend($chatId, "✅ <b>Деталь «" . telegramHtml($partName) . "» добавлена к заявке #{$orderId}!</b>");
@@ -881,6 +898,11 @@ final class TelegramBotRouter
 
     public static function promptNoteInput(PDO $pdo, $chatId, array $user, int $orderId, string $mode, ?int $messageId = null): void
     {
+        if (!telegramCanAccessOrder($pdo, $user, $orderId)) {
+            telegramSend($chatId, "⛔ Доступ к заявке #{$orderId} запрещен.");
+            return;
+        }
+
         $state = ($mode === 'append') ? 'WAITING_NOTE_APPEND' : 'WAITING_NOTE_REPLACE';
         telegramSetState($pdo, (string)$user['telegram_id'], $state, $orderId);
 
@@ -953,6 +975,11 @@ final class TelegramBotRouter
 
     public static function promptPartSearch(PDO $pdo, $chatId, array $user, int $orderId, ?int $messageId = null): void
     {
+        if (!telegramCanAccessOrder($pdo, $user, $orderId)) {
+            telegramSend($chatId, "⛔ Доступ к заявке #{$orderId} запрещен.");
+            return;
+        }
+
         telegramSetState($pdo, (string)$user['telegram_id'], 'WAITING_PART_SEARCH', $orderId);
 
         $text = "📦 <b>Поиск детали на складе для заявки #{$orderId}</b>\n\nВведите название детали или артикул (например: <code>аккумулятор iphone 13</code> или <code>дисплей</code>):";
@@ -1027,6 +1054,11 @@ final class TelegramBotRouter
 
     public static function promptManualPart(PDO $pdo, $chatId, array $user, int $orderId, ?int $messageId = null): void
     {
+        if (!telegramCanAccessOrder($pdo, $user, $orderId)) {
+            telegramSend($chatId, "⛔ Доступ к заявке #{$orderId} запрещен.");
+            return;
+        }
+
         telegramSetState($pdo, (string)$user['telegram_id'], 'WAITING_PART_MANUAL', $orderId);
 
         $text = "➕ <b>Добавление детали вручную (Заявка #{$orderId})</b>\n\n";
@@ -1238,6 +1270,10 @@ final class TelegramBotRouter
             if (!$order) {
                 throw new Exception("Заявка не найдена.");
             }
+            // The order may have been reassigned while the bot waited for input.
+            if (!telegramCanAccessOrder($pdo, $user, $orderId)) {
+                throw new Exception("Доступ к заявке #{$orderId} запрещен.");
+            }
 
             $currentStatus = $order['status'];
             $costToUse = $finalCost !== null ? $finalCost : ($order['final_cost'] ?? $order['estimated_cost']);
@@ -1272,8 +1308,14 @@ final class TelegramBotRouter
                 $updReason->execute([$cancelReason, $orderId]);
             }
 
-            $updStatus = $pdo->prepare("UPDATE orders SET status = ? WHERE id = ?");
+            $updStatus = $pdo->prepare("UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?");
             $updStatus->execute([$newStatus, $orderId]);
+
+            // The webhook has no session: name the actor so order_status_log keeps who changed it.
+            $GLOBALS['crm_status_actor'] = [
+                'role' => ($user['type'] ?? '') === 'technician' ? 'technician' : 'admin',
+                'id' => ($user['type'] ?? '') === 'technician' ? ($user['technician_id'] ?? null) : ($user['id'] ?? null),
+            ];
 
             // Run central OrderStatusService transition rules inside transaction
             $transition = OrderStatusService::applyInTransaction(
@@ -1283,6 +1325,7 @@ final class TelegramBotRouter
                 $newStatus,
                 $costToUse
             );
+            unset($GLOBALS['crm_status_actor']);
 
             $pdo->commit();
             telegramClearState($pdo, (string)$user['telegram_id']);
@@ -1301,6 +1344,7 @@ final class TelegramBotRouter
             telegramSend($chatId, "✅ <b>Статус заявки #{$orderId} успешно изменен на «" . getStatusLabel($newStatus) . "»!</b>");
             self::sendOrderDetail($pdo, $chatId, $user, $orderId, false);
         } catch (Throwable $e) {
+            unset($GLOBALS['crm_status_actor']);
             if ($pdo->inTransaction()) $pdo->rollBack();
             error_log("commitStatusChange error: " . $e->getMessage());
             telegramSend($chatId, "❌ Ошибка при смене статуса: " . telegramHtml(publicExceptionMessage($e)));

@@ -117,32 +117,42 @@ $(document).ready(function() {
     $('#statusForm select[name="status"]').on('change', syncStatusConditionalFields);
     syncStatusConditionalFields();
     
-    $('#editOrderDatesForm').on('submit', function(e) {
-        e.preventDefault();
-        $.post('api/update_order_dates.php', $(this).serialize(), function(res) {
-            if(res.success) {
+    // Submit a modal form once: the button stays disabled until the request fails.
+    function postFormOnce($form, url) {
+        const $submit = $form.find('button[type="submit"]');
+        if ($submit.prop('disabled')) {
+            return;
+        }
+        $submit.prop('disabled', true);
+        const fail = function(message) {
+            $submit.prop('disabled', false);
+            showAlert(<?php echo $crmJs(__('error') . ': '); ?> + message);
+        };
+        $.post(url, $form.serialize(), function(res) {
+            if (res && res.success) {
                 location.reload();
             } else {
-                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + res.message);
+                fail((res && res.message) || '');
             }
+        }, 'json').fail(function(xhr) {
+            fail((xhr.responseJSON && xhr.responseJSON.message) || window.LANG_NETWORK_ERROR || '');
         });
+    }
+
+    $('#editOrderDatesForm').on('submit', function(e) {
+        e.preventDefault();
+        postFormOnce($(this), 'api/update_order_dates.php');
     });
 
     $('.edit-attachment-date').on('click', function() {
         $('#edit_attachment_id').val($(this).data('id'));
         $('#edit_attachment_date').val($(this).data('date'));
-        $('#editAttachmentDateModal').modal('show');
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('editAttachmentDateModal')).show();
     });
 
     $('#editAttachmentDateForm').on('submit', function(e) {
         e.preventDefault();
-        $.post('api/update_attachment_date.php', $(this).serialize(), function(res) {
-            if(res.success) {
-                location.reload();
-            } else {
-                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + res.message);
-            }
-        });
+        postFormOnce($(this), 'api/update_attachment_date.php');
     });
 
     // Select2 is optional: a missing/broken plugin must not kill mode toggle or form submit.
@@ -542,7 +552,7 @@ function deleteMedia(id) {
 // Show animated modal when shipping method is required for Issued status
 function showShippingRequiredModal() {
     const modal = $('#shippingRequiredModal');
-    modal.modal('show');
+    bootstrap.Modal.getOrCreateInstance(modal[0]).show();
     
     // Add shake animation
     setTimeout(function() {
@@ -569,7 +579,7 @@ function showStatusConfirmModal(form) {
     };
     
     $('#confirmStatusText').text(statusLabels[status] || status);
-    modal.modal('show');
+    bootstrap.Modal.getOrCreateInstance(modal[0]).show();
     
     // Add pulse animation
     setTimeout(function() {
@@ -608,7 +618,7 @@ function showStatusConfirmModal(form) {
                 }
 
                 if (res && res.success) {
-                    modal.modal('hide');
+                    bootstrap.Modal.getOrCreateInstance(modal[0]).hide();
                     location.reload();
                     return;
                 }
@@ -635,7 +645,7 @@ function showStatusConfirmModal(form) {
 
 // Go to shipping section
 function goToShipping() {
-    $('#shippingRequiredModal').modal('hide');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('shippingRequiredModal')).hide();
     const target = $('#statusShippingMethodWrap:visible').length ? $('#statusShippingMethodWrap') : $('#shippingForm');
     if (!target.length) return;
     const scrollTarget = target.offset().top - 100;

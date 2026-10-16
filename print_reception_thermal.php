@@ -415,6 +415,6 @@ $crmScriptNonce = function_exists('crmCspNonce') ? (string)crmCspNonce() : '';
     <button type="button" class="secondary" data-print-action="close"><?php echo $h(_l('close')); ?></button>
 </div>
 
-<script<?php echo $crmScriptNonce !== '' ? ' nonce="' . e($crmScriptNonce) . '"' : ''; ?> src="assets/js/print.js"></script>
+<script<?php echo $crmScriptNonce !== '' ? ' nonce="' . e($crmScriptNonce) . '"' : ''; ?> src="assets/js/print.js?v=<?php echo (int)@filemtime(__DIR__ . '/assets/js/print.js'); ?>"></script>
 </body>
 </html>

@@ -81,6 +81,7 @@ $page_title = $page_titles[$current_page] ?? $company_name;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="robots" content="noindex, nofollow">
     <meta name="theme-color" content="#0f1115">
     <meta name="color-scheme" content="dark">
     <meta name="mobile-web-app-capable" content="yes">
@@ -116,10 +117,9 @@ $page_title = $page_titles[$current_page] ?? $company_name;
     <!-- Phone / iPhone layer -->
     <link rel="stylesheet" href="assets/css/mobile.css?v=<?php echo (int)@filemtime(__DIR__ . '/../assets/css/mobile.css'); ?>" media="(max-width: 991.98px)">
 
-    <!-- JQuery -->
-    <script nonce="<?php echo e(crmCspNonce()); ?>" src="https://code.jquery.com/jquery-3.6.0.min.js"
-            integrity="sha384-vtXRMe3mGCbOeY7l30aIg8H9p3GdeSe4IFlP6G8JMa7o7lXvnz3GFKzPxzJdPfGK"
-            crossorigin="anonymous"></script>
+    <!-- jQuery 4.0.0, self-hosted (sha256 matches releases.jquery.com) -->
+    <script nonce="<?php echo e(crmCspNonce()); ?>" src="assets/js/jquery-4.0.0.min.js"
+            integrity="sha256-OaVG6prZf4v69dPg6PhVattBXkcOWQB62pdZ3ORyrao="></script>
     <!-- Bootstrap 5 JS Bundle -->
     <script nonce="<?php echo e(crmCspNonce()); ?>" src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
             integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
@@ -143,7 +143,8 @@ $page_title = $page_titles[$current_page] ?? $company_name;
             var method = String(options.type || options.method || 'GET').toUpperCase();
             var data = originalOptions.data !== undefined ? originalOptions.data : options.data;
 
-            if (method !== 'POST' || !csrfToken) {
+            // Never hand the session CSRF token to another origin.
+            if (method !== 'POST' || !csrfToken || options.crossDomain) {
                 return;
             }
 
@@ -190,12 +191,12 @@ $page_title = $page_titles[$current_page] ?? $company_name;
     });
     </script>
     <script nonce="<?php echo e(crmCspNonce()); ?>">
-    window.LANG_NOTICE = '<?php echo __("notice_title"); ?>';
-    window.LANG_CONFIRM = '<?php echo __("confirm_title"); ?>';
-    window.LANG_PREVIEW = '<?php echo __("preview_btn"); ?>';
-    window.LANG_CLOSE = '<?php echo __("close"); ?>';
-    window.LANG_OPEN_NAVIGATION = '<?php echo __("open_navigation"); ?>';
-    window.LANG_CLOSE_NAVIGATION = '<?php echo __("close_navigation"); ?>';
+    window.LANG_NOTICE = '<?php echo crmJsText(__('notice_title')); ?>';
+    window.LANG_CONFIRM = '<?php echo crmJsText(__('confirm_title')); ?>';
+    window.LANG_PREVIEW = '<?php echo crmJsText(__('preview_btn')); ?>';
+    window.LANG_CLOSE = '<?php echo crmJsText(__('close')); ?>';
+    window.LANG_OPEN_NAVIGATION = '<?php echo crmJsText(__('open_navigation')); ?>';
+    window.LANG_CLOSE_NAVIGATION = '<?php echo crmJsText(__('close_navigation')); ?>';
     window.LANG_NETWORK_ERROR = <?php echo json_encode(__('network_error'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>;
     </script>
 </head>

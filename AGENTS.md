@@ -110,6 +110,8 @@ When the user requests a durable behavior change, record it here or in the relev
 - HTML responses enforce nonce-based CSP with `script-src-attr 'none'`; trusted templates must set `crmCspNonce()` explicitly and third-party browser dependencies must stay exact-version pinned with verified SRI or be self-hosted.
 - Issuing an order with handover `Self Pickup` (`Клиент забрал сам`) is a complete handover: no delivery expenses, no positive final-cost gate, and no «Уведомление» / shipping-required modal. Order type `Warranty` / «Рекламация» also skips the final-cost-for-issue message. Paid (`Non-Warranty`) carrier handover still requires a positive final cost.
 - Customer phone numbers that open the QR popover must not show a hover tooltip such as “Показать QR-код телефона”; keep an accessible `aria-label` only.
+- The customer-facing A4 order sheet (`print_order.php`) never prints the device PIN, labels the price column «Цена» (never purchase price), and shows one repair line at the customer total with parts listed as included in the price (no re-added part prices). The workshop sheet and thermal reception slip may carry the PIN.
+- Loading an order into a manual invoice (`accounting_actions.php?action=get_order_data`) splits the customer total through `crmInvoiceAmountsFromCustomerTotal()` (net price + VAT rate when a VAT payer); the accounting UI follows the invoice's own `is_vat_payer` snapshot, not the unsaved settings checkbox.
 - A4 invoice print (`print_invoice.php`) keeps the `Vystavil:` label with an empty issuer name; do not print the session display name (for example `Администратор`).
 
 ## Child DOX Index

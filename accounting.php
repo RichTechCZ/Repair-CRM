@@ -744,6 +744,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
+// VAT treatment follows the invoice's own snapshot (hidden field), never the unsaved settings checkbox.
+function invoiceIsVatPayer() {
+    const flag = document.getElementById('inv_is_vat_payer');
+    return !!flag && (flag.value === '1' || flag.value === 'true');
+}
+
 function showNewInvoiceModal() {
     document.getElementById('invoiceForm').reset();
     if (typeof jQuery !== 'undefined') jQuery('#inv_customer').val('').trigger('change');
@@ -751,7 +757,7 @@ function showNewInvoiceModal() {
     document.querySelector('#invoiceForm [name="action"]').value = 'save_invoice';
     document.getElementById('inv_id').value = '';
     document.getElementById('inv_order_id').value = '';
-    document.getElementById('inv_is_vat_payer').value = (document.getElementById('vatPayerCheck')?.checked ? '1' : '0');
+    document.getElementById('inv_is_vat_payer').value = <?php echo json_encode(get_setting('acc_is_vat_payer', '0') == '1' ? '1' : '0'); ?>;
     document.getElementById('invModalTitle').innerText = "<?php echo __('new_invoice'); ?>";
     document.querySelector('#itemsTable tbody').innerHTML = '';
     
@@ -766,8 +772,7 @@ function showNewInvoiceModal() {
 function addInvItem(data = {}) {
     const tbody = document.querySelector('#itemsTable tbody');
     const tr = document.createElement('tr');
-    const isVatPayer = document.getElementById('vatPayerCheck')?.checked ||
-        <?php echo json_encode((string)get_setting('acc_is_vat_payer', '0')); ?> === '1';
+    const isVatPayer = invoiceIsVatPayer();
     const defaultVatRate = <?php echo json_encode((string)get_setting('acc_vat_rate', '21')); ?>;
     
     tr.innerHTML = `
@@ -797,8 +802,7 @@ function addInvItem(data = {}) {
 function calcTotals() {
     let subtotal = 0;
     let vatTotal = 0;
-    const isVatPayer = document.getElementById('vatPayerCheck')?.checked ||
-        <?php echo json_encode((string)get_setting('acc_is_vat_payer', '0')); ?> === '1';
+    const isVatPayer = invoiceIsVatPayer();
     
     document.querySelectorAll('#itemsTable tbody tr').forEach(tr => {
         const qty = parseFloat(tr.querySelector('.item-qty').value) || 0;
@@ -846,7 +850,7 @@ function editInvoice(id) {
             
             document.getElementById('inv_id').value = data.id;
             document.getElementById('inv_order_id').value = data.order_id || '';
-            document.getElementById('inv_is_vat_payer').value = data.is_vat_payer || '0';
+            document.getElementById('inv_is_vat_payer').value = (data.is_vat_payer == 1 || data.is_vat_payer === true || data.is_vat_payer === '1') ? '1' : '0';
             document.getElementById('inv_number').value = data.invoice_number;
             setInvoiceCustomer(data.customer_id, data);
 

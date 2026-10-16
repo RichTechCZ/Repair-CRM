@@ -25,6 +25,7 @@ $current_customer = $customer_stmt->fetch();
 
 $success = false;
 $error = false;
+$can_reassign = hasPermission('admin_access');
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
@@ -97,6 +98,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if (!$customer_id) {
                 throw new InvalidArgumentException(__('missing_data'));
             }
+            if ($customer_id !== (int)$current_order['customer_id']) {
+                $customerCheck = $pdo->prepare('SELECT 1 FROM customers WHERE id = ?');
+                $customerCheck->execute([$customer_id]);
+                if (!$customerCheck->fetchColumn()) {
+                    throw new InvalidArgumentException(__('missing_data'));
+                }
+            }
+            $device_type = crmValidatedDeviceType($_POST['device_type'] ?? null, $current_order['device_type']);
             $technician_id = $is_admin
                 ? (filter_var($_POST['technician_id'] ?? null, FILTER_VALIDATE_INT) ?: null)
                 : $current_order['technician_id'];
@@ -124,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $update->execute([
                 $customer_id,
                 $technician_id,
-                trim((string)($_POST['device_type'] ?? $current_order['device_type'])),
+                $device_type,
                 $posted_order_type,
                 trim((string)($_POST['device_brand'] ?? $current_order['device_brand'])),
                 trim((string)($_POST['device_model'] ?? $current_order['device_model'])),
@@ -215,7 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label"><i class="fas fa-user me-2 text-primary"></i><?php echo __('client'); ?></label>
-                    <select name="customer_id" class="form-select select2-customer-remote" required>
+                    <select name="customer_id" class="form-select select2-customer-remote" <?php echo $can_reassign ? 'required' : 'disabled'; ?>>
                         <?php
                         $edit_customer_name = trim(($current_customer['last_name'] ?? '') . ' ' . ($current_customer['first_name'] ?? ''));
                         $edit_customer_company = trim($current_customer['company'] ?? '');
@@ -231,7 +240,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </div>
                 <div class="col-md-4">
                     <label class="form-label"><i class="fas fa-user-cog me-2 text-info"></i><?php echo __('technician'); ?></label>
-                    <select name="technician_id" class="form-select">
+                    <select name="technician_id" class="form-select" <?php echo $can_reassign ? '' : 'disabled'; ?>>
                         <option value="">-- <?php echo __('technician'); ?> --</option>
                         <?php 
                         $techs = $pdo->query("SELECT id, name FROM technicians WHERE is_active = 1 ORDER BY name ASC")->fetchAll();
@@ -255,10 +264,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <div class="col-md-4">
                     <label class="form-label"><i class="fas fa-laptop-medical me-2 text-secondary"></i><?php echo __('device_type'); ?></label>
                     <select name="device_type" class="form-select">
-                        <option value="Phone" <?php if($order['device_type']=='Phone') echo 'selected'; ?>><?php echo __('phone_type'); ?></option>
-                        <option value="Notebook" <?php if($order['device_type']=='Notebook') echo 'selected'; ?>><?php echo __('notebook_type'); ?></option>
-                        <option value="Tablet" <?php if($order['device_type']=='Tablet') echo 'selected'; ?>><?php echo __('tablet_type'); ?></option>
-                        <option value="Other" <?php if($order['device_type']=='Other') echo 'selected'; ?>><?php echo __('other_type'); ?></option>
+                        <?php echo crmDeviceTypeOptionsHtml($order['device_type'] ?? ''); ?>
                     </select>
                 </div>
                 <div class="col-md-4">
@@ -318,9 +324,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             ?>
                                 <div class="col-3 col-md-2" id="media-item-<?php echo $file['id']; ?>">
                                     <div class="card h-100 shadow-sm border position-relative">
+                                        <?php if ($can_reassign): ?>
                                         <button type="button" class="btn btn-danger btn-sm media-tile__remove position-absolute top-0 end-0 m-1 z-3" data-crm-action="delete-media" data-crm-id="<?php echo (int)$file['id']; ?>" aria-label="<?php echo e(__('delete') . ': ' . $file['file_name']); ?>">
                                             <i class="fas fa-times" aria-hidden="true"></i>
                                         </button>
+                                        <?php endif; ?>
                                         <div class="ratio ratio-1x1 bg-dark bg-opacity-25">
                                             <?php if ($isVideo): ?>
                                                 <div class="d-flex align-items-center justify-content-center bg-dark"><i class="fas fa-video text-white"></i></div>
@@ -341,7 +349,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </div>
                 <div class="col-12 mt-4 d-flex justify-content-between">
                     <button type="submit" class="btn btn-primary px-5"><?php echo __('save'); ?></button>
+                    <?php if ($can_reassign): ?>
                     <button type="button" class="btn btn-outline-danger" data-crm-action="delete-order" data-crm-id="<?php echo (int)$id; ?>"><?php echo __('delete'); ?></button>
+                    <?php endif; ?>
                 </div>
             </div>
         </form>

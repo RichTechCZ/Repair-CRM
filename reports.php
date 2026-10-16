@@ -405,8 +405,8 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
 
 <script nonce="<?php echo e(crmCspNonce()); ?>">
 function showOrdersModal(techId, type, title) {
-    const modal = new bootstrap.Modal(document.getElementById('reportOrdersModal'));
-    document.getElementById('reportOrdersModalTitle').innerText = title + ' <?php echo __('detailed_suffix'); ?>';
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('reportOrdersModal'));
+    document.getElementById('reportOrdersModalTitle').innerText = title + ' <?php echo crmJsText(__('detailed_suffix')); ?>';
     document.getElementById('modalLoading').classList.remove('d-none');
     document.getElementById('modalTableWrapper').classList.add('d-none');
     
@@ -464,7 +464,7 @@ function showOrdersModal(techId, type, title) {
                 });
                 document.getElementById('modalTableWrapper').classList.remove('d-none');
             } else {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted"><?php echo __('no_orders_found'); ?></td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted"><?php echo crmJsText(__('no_orders_found')); ?></td></tr>';
                 document.getElementById('modalTableWrapper').classList.remove('d-none');
             }
         })
@@ -474,7 +474,7 @@ function showOrdersModal(techId, type, title) {
             const modalEl = document.getElementById('reportOrdersModal');
             const modalInstance = bootstrap.Modal.getInstance(modalEl);
             if (modalInstance) modalInstance.hide();
-            showAlert('<?php echo __('error_loading_data'); ?>');
+            showAlert('<?php echo crmJsText(__('error_loading_data')); ?>');
         });
 }
 
@@ -501,21 +501,21 @@ function getStatusPillClass(status) {
 
 function getStatusLabel(status) {
     const labels = {
-        'Accepted': '<?php echo getStatusLabel('Accepted'); ?>',
-        'Diagnostics': '<?php echo getStatusLabel('Diagnostics'); ?>',
-        'Approval': '<?php echo getStatusLabel('Approval'); ?>',
-        'In Repair': '<?php echo getStatusLabel('In Repair'); ?>',
-        'Ready': '<?php echo getStatusLabel('Ready'); ?>',
-        'Issued': '<?php echo getStatusLabel('Issued'); ?>',
-        'Issued Without Repair': '<?php echo getStatusLabel('Issued Without Repair'); ?>',
-        'Repair Cancelled': '<?php echo getStatusLabel('Repair Cancelled'); ?>',
-        'New': '<?php echo getStatusLabel('New'); ?>',
-        'Pending Approval': '<?php echo getStatusLabel('Pending Approval'); ?>',
-        'In Progress': '<?php echo getStatusLabel('In Progress'); ?>',
-        'Waiting for Parts': '<?php echo getStatusLabel('Waiting for Parts'); ?>',
-        'Completed': '<?php echo getStatusLabel('Completed'); ?>',
-        'Collected': '<?php echo getStatusLabel('Collected'); ?>',
-        'Cancelled': '<?php echo getStatusLabel('Cancelled'); ?>'
+        'Accepted': '<?php echo crmJsText(getStatusLabel('Accepted')); ?>',
+        'Diagnostics': '<?php echo crmJsText(getStatusLabel('Diagnostics')); ?>',
+        'Approval': '<?php echo crmJsText(getStatusLabel('Approval')); ?>',
+        'In Repair': '<?php echo crmJsText(getStatusLabel('In Repair')); ?>',
+        'Ready': '<?php echo crmJsText(getStatusLabel('Ready')); ?>',
+        'Issued': '<?php echo crmJsText(getStatusLabel('Issued')); ?>',
+        'Issued Without Repair': '<?php echo crmJsText(getStatusLabel('Issued Without Repair')); ?>',
+        'Repair Cancelled': '<?php echo crmJsText(getStatusLabel('Repair Cancelled')); ?>',
+        'New': '<?php echo crmJsText(getStatusLabel('New')); ?>',
+        'Pending Approval': '<?php echo crmJsText(getStatusLabel('Pending Approval')); ?>',
+        'In Progress': '<?php echo crmJsText(getStatusLabel('In Progress')); ?>',
+        'Waiting for Parts': '<?php echo crmJsText(getStatusLabel('Waiting for Parts')); ?>',
+        'Completed': '<?php echo crmJsText(getStatusLabel('Completed')); ?>',
+        'Collected': '<?php echo crmJsText(getStatusLabel('Collected')); ?>',
+        'Cancelled': '<?php echo crmJsText(getStatusLabel('Cancelled')); ?>'
     };
     return labels[status] || status;
 }

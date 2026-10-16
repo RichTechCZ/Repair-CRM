@@ -34,7 +34,7 @@ api_bootstrap([
     },
 ]);
 
-$customer_type = $_POST['customer_type'] ?? 'private';
+$customer_type = trim((string)($_POST['customer_type'] ?? 'private'));
 $first_name = trim((string)($_POST['first_name'] ?? ''));
 $last_name = trim((string)($_POST['last_name'] ?? ''));
 $phone = trim((string)($_POST['phone'] ?? ''));
@@ -44,11 +44,19 @@ $ico = trim((string)($_POST['ico'] ?? ''));
 $dic = trim((string)($_POST['dic'] ?? ''));
 $company_name = trim((string)($_POST['company_name'] ?? ''));
 
-if ($first_name === '' || $last_name === '' || $phone === '') {
+// Limits mirror the customers table columns.
+$invalidInput = $first_name === '' || $last_name === '' || $phone === ''
+    || !in_array($customer_type, ['private', 'company'], true)
+    || ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL))
+    || mb_strlen($first_name) > 50 || mb_strlen($last_name) > 50
+    || mb_strlen($phone) > 20 || mb_strlen($email) > 100
+    || mb_strlen($ico) > 20 || mb_strlen($dic) > 20 || mb_strlen($company_name) > 100;
+
+if ($invalidInput) {
     if ($isAjax) {
         api_json_exit(['success' => false, 'message' => __('fill_required_fields')]);
     }
-    die(__('fill_required_fields') . " <a href='../customers.php'>" . __('back') . '</a>');
+    die(e(__('fill_required_fields')) . " <a href='../customers.php'>" . e(__('back')) . '</a>');
 }
 
 try {

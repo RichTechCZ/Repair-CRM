@@ -38,6 +38,9 @@ header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()');
+// Private CRM pages and JSON are never cached or indexed (endpoints that serve media/QR override Cache-Control).
+header('Cache-Control: private, no-store, must-revalidate');
+header('X-Robots-Tag: noindex, nofollow');
 
 // ── Session Security (must be set BEFORE session_start) ──────────────────────
 $trustProxyHttps = filter_var(getenv('CRM_TRUST_PROXY_HTTPS') ?: '0', FILTER_VALIDATE_BOOL);

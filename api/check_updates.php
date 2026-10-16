@@ -90,7 +90,7 @@ try {
         $cached = json_decode($cacheData, true);
         if ($cached && isset($cached['checked_at'])) {
             $age = time() - $cached['checked_at'];
-            if ($age < 1800 && !isset($_GET['force'])) {
+            if ($age < 1800 && (!isset($_GET['force']) || $age < 60)) {
                 // Return cached result
                 $cached['from_cache'] = true;
                 $cached['cache_age'] = $age;
@@ -135,16 +135,15 @@ try {
     }
 
     if (!$remoteVersion || !isset($remoteVersion['version'])) {
+        error_log('check_updates: remote version.json unavailable: ' . $curlError . ' / ' . $fallbackCurlError);
         jsonExit([
             'success'      => false,
             'message'      => 'Cannot load remote version.json from GitHub',
             'local'        => $localVersion,
             'github_url'   => $githubUrl,
             'http_code'    => $httpCode,
-            'curl_error'   => $curlError,
             'fallback_url' => $contentsApiUrl,
             'fallback_http_code' => $fallbackHttpCode,
-            'fallback_curl_error' => $fallbackCurlError,
         ]);
     }
 
@@ -212,7 +211,7 @@ try {
         'from_cache'     => false,
         'source'         => $versionSource,
         'commits_status' => $commitsCode === 200 ? 'ok' : 'error',
-        'commits_error'  => $commitsCode === 200 ? '' : $commitsError,
+        'commits_error'  => $commitsCode === 200 ? '' : 'GitHub commits request failed',
     ];
 
     // Cache the result
@@ -220,11 +219,11 @@ try {
 
     jsonExit($result);
 } catch (Throwable $e) {
+    error_log('check_updates failed: ' . $e->getMessage());
     jsonExit([
         'success' => false,
         'message' => 'Update check failed unexpectedly.',
         'step'    => 'internal_error',
-        'output'  => $e->getMessage(),
         'hint'    => 'Check PHP extensions, outbound HTTPS access, and database availability for the web server user.',
     ], 500);
 }

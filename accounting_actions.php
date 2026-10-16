@@ -178,14 +178,19 @@ switch ($action) {
         $order = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($order) {
-            $is_vat_payer = (get_setting('acc_is_vat_payer', '0') == '1');
+            require_once __DIR__ . '/models/InvoicePolicy.php';
+            // The order's final cost is what the customer pays; with VAT enabled it is split into
+            // net + VAT so the invoice total never exceeds that amount.
+            $customerTotal = $order['final_cost'] !== null ? (float)$order['final_cost'] : (float)($order['estimated_cost'] ?? 0);
+            $amounts = crmInvoiceAmountsFromCustomerTotal($customerTotal);
+            $is_vat_payer = $amounts['payer'];
             $data = [
                 'customer_id' => $order['customer_id'],
                 'customer_display' => $order['company'] ?: ($order['first_name'] . ' ' . $order['last_name']),
-                'total_amount' => $order['final_cost'] ?: $order['estimated_cost'],
+                'total_amount' => $amounts['total'],
                 'is_vat_payer' => $is_vat_payer,
                 'items' => [
-                    ['name' => 'Oprava ' . $order['device_brand'] . ' ' . $order['device_model'], 'quantity' => 1, 'unit' => 'ks', 'price' => $order['final_cost'] ?: $order['estimated_cost'], 'vat_rate' => $is_vat_payer ? get_setting('acc_vat_rate', '21') : 0]
+                    ['name' => 'Oprava ' . $order['device_brand'] . ' ' . $order['device_model'], 'quantity' => 1, 'unit' => 'ks', 'price' => $amounts['net'], 'vat_rate' => $is_vat_payer ? $amounts['rate'] : 0]
                 ]
             ];
             echo json_encode(['success' => true, 'data' => $data]);

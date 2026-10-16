@@ -395,10 +395,17 @@ assertTrue(
 );
 
 $headerSource = file_get_contents(__DIR__ . '/../includes/header.php');
+$jqueryFile = __DIR__ . '/../assets/js/jquery-4.0.0.min.js';
+assertTrue(
+    is_file($jqueryFile)
+        && strpos($headerSource, 'integrity="sha256-' . base64_encode(hash_file('sha256', $jqueryFile, true)) . '"') !== false
+        && strpos($headerSource, 'code.jquery.com') === false,
+    'jQuery must be the self-hosted pinned file and header SRI must match its real hash'
+);
 $cspSource = file_get_contents(__DIR__ . '/../includes/content_security_policy.php');
 assertTrue(
     $headerSource !== false
-        && substr_count($headerSource, 'integrity="sha384-') >= 8
+        && substr_count($headerSource, 'integrity="sha384-') >= 7
         && substr_count($headerSource, '<script nonce="<?php echo e(crmCspNonce()); ?>"') >= 7
         && strpos($headerSource, 'fonts.googleapis.com') === false,
     'third-party browser dependencies must be version-pinned and protected by SRI'

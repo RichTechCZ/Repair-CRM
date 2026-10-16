@@ -6,6 +6,7 @@
 let globalPreviewModal = null;
 let globalAlertModal = null;
 let globalConfirmModal = null;
+let globalPromptModal = null;
 let activePreviewUrl = null;
 
 // Initialize when DOM is ready
@@ -509,7 +510,49 @@ function initGlobalModals() {
     if (confirmEl && !globalConfirmModal) {
         globalConfirmModal = bootstrap.Modal.getOrCreateInstance(confirmEl);
     }
+
+    const promptEl = document.getElementById('globalPromptModal');
+    if (promptEl && !globalPromptModal) {
+        globalPromptModal = bootstrap.Modal.getOrCreateInstance(promptEl);
+        promptEl.addEventListener('shown.bs.modal', function() {
+            document.getElementById('globalPromptInput').focus();
+        });
+    }
 }
+
+/**
+ * Ask for a required line of text in the shared modal (never window.prompt).
+ * onSubmit receives the trimmed value; closing the dialog cancels.
+ */
+function showPrompt(label, onSubmit, title) {
+    if (!globalPromptModal) initGlobalModals();
+    if (!globalPromptModal) return;
+
+    const form = document.getElementById('globalPromptForm');
+    const input = document.getElementById('globalPromptInput');
+    document.getElementById('globalPromptTitle').innerText = title || window.LANG_CONFIRM || 'Confirm';
+    document.getElementById('globalPromptLabel').textContent = label;
+    input.value = '';
+    input.classList.remove('is-invalid');
+
+    // Replace the form listener from a previous prompt.
+    const freshForm = form.cloneNode(true);
+    form.parentNode.replaceChild(freshForm, form);
+    const freshInput = freshForm.querySelector('#globalPromptInput');
+    freshForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+        const value = freshInput.value.trim();
+        if (!value) {
+            freshInput.classList.add('is-invalid');
+            freshInput.focus();
+            return;
+        }
+        globalPromptModal.hide();
+        if (typeof onSubmit === 'function') onSubmit(value);
+    });
+    globalPromptModal.show();
+}
+window.showPrompt = showPrompt;
 
 /**
  * Show a global alert

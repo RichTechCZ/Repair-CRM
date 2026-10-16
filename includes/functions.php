@@ -329,6 +329,89 @@ function purgeObsoleteTechPermissions(): void {
     }
 }
 
+/**
+ * Escapes text for the inside of a JavaScript string literal (single, double or template quotes)
+ * in an inline script: neither a quote nor `</script>` in a translation can break out.
+ */
+function crmJsText($value): string {
+    $json = json_encode((string)$value, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    return strtr(substr((string)$json, 1, -1), ['`' => '\u0060', '${' => '\u0024{']);
+}
+
+/**
+ * Keep what the operator typed in the New Order form when creation fails, so orders.php can
+ * refill it. Whitelisted, length-capped; the device PIN and attachments are never kept.
+ */
+function crmStashOrderFormInput(array $post): void
+{
+    $text = static function (string $key) use ($post): string {
+        return mb_substr(trim((string)($post[$key] ?? '')), 0, 2000);
+    };
+    $stash = [
+        'device_type' => $text('device_type'),
+        'order_type' => $text('order_type'),
+        'device_brand' => $text('device_brand'),
+        'device_model' => $text('device_model'),
+        'serial_number' => $text('serial_number'),
+        'serial_number_2' => $text('serial_number_2'),
+        'appearance' => $text('appearance'),
+        'problem_description' => $text('problem_description'),
+        'technician_notes' => $text('technician_notes'),
+        'estimated_cost' => $text('estimated_cost'),
+        'technician_id' => (int)($post['technician_id'] ?? 0) ?: '',
+        'priority' => (($post['priority'] ?? '') === 'High') ? 'High' : 'Normal',
+    ];
+
+    $customerId = (int)($post['customer_id'] ?? 0);
+    if ($customerId > 0 && currentUserCanCreateOrderForCustomer($customerId)) {
+        global $pdo;
+        $stmt = $pdo->prepare('SELECT first_name, last_name, company, phone FROM customers WHERE id = ?');
+        $stmt->execute([$customerId]);
+        if ($row = $stmt->fetch()) {
+            $name = trim(($row['last_name'] ?? '') . ' ' . ($row['first_name'] ?? ''));
+            $company = trim((string)($row['company'] ?? ''));
+            if ($company !== '') {
+                $name = $company . ($name !== '' ? ' (' . $name . ')' : '');
+            }
+            $stash['customer_id'] = $customerId;
+            $stash['customer_label'] = $name . (!empty($row['phone']) ? ' (' . $row['phone'] . ')' : '');
+        }
+    }
+    $_SESSION['order_form_old'] = $stash;
+}
+
+/** Device types accepted by order forms and write endpoints. */
+function crmDeviceTypes(): array {
+    return ['Phone', 'Notebook', 'PC', 'Tablet', 'HDD', 'Other'];
+}
+
+/** Returns the posted device type when it is allowed, otherwise throws. */
+function crmValidatedDeviceType($posted, $fallback): string {
+    $value = trim((string)($posted ?? ''));
+    if ($value === '') {
+        $value = trim((string)$fallback);
+    }
+    // A legacy value already stored on the order stays valid so an edit never rewrites it.
+    if (!in_array($value, crmDeviceTypes(), true) && $value !== trim((string)$fallback)) {
+        throw new InvalidArgumentException(__('missing_data'));
+    }
+    return $value;
+}
+
+/** Renders `<option>` tags for the device type select. */
+function crmDeviceTypeOptionsHtml($selected): string {
+    $html = '';
+    $types = crmDeviceTypes();
+    if ((string)$selected !== '' && !in_array((string)$selected, $types, true)) {
+        $types[] = (string)$selected;
+    }
+    foreach ($types as $type) {
+        $html .= '<option value="' . e($type) . '"' . ($type === (string)$selected ? ' selected' : '') . '>'
+            . e(__($type)) . '</option>';
+    }
+    return $html;
+}
+
 function getDeviceIcon($type) {
     $icons = [
         'Phone' => 'fa-mobile-alt',
@@ -1233,15 +1316,22 @@ function logOrderStatusChange($order_id, $old_status, $new_status) {
         if (!$pdo->inTransaction()) {
             ensureOrderStatusLogTable();
         }
-        $changed_role = $_SESSION['role'] ?? null;
-        // changed_by is INT: technicians are stored by technicians.id (session user_id is the string "t<id>"),
-        // admins by users.id. view_order.php resolves the name by changed_role.
-        if ($changed_role === 'technician' && !empty($_SESSION['tech_id'])) {
-            $changed_by = (int)$_SESSION['tech_id'];
-        } elseif ($changed_role === 'admin' && !empty($_SESSION['user_id'])) {
-            $changed_by = (int)$_SESSION['user_id'];
+        // Machine entry points (Telegram webhook) have no session; they declare the actor explicitly.
+        $actor = $GLOBALS['crm_status_actor'] ?? null;
+        if (is_array($actor) && in_array($actor['role'] ?? null, ['technician', 'admin'], true)) {
+            $changed_role = $actor['role'];
+            $changed_by = !empty($actor['id']) ? (int)$actor['id'] : null;
         } else {
-            $changed_by = null;
+            $changed_role = $_SESSION['role'] ?? null;
+            // changed_by is INT: technicians are stored by technicians.id (session user_id is the string "t<id>"),
+            // admins by users.id. view_order.php resolves the name by changed_role.
+            if ($changed_role === 'technician' && !empty($_SESSION['tech_id'])) {
+                $changed_by = (int)$_SESSION['tech_id'];
+            } elseif ($changed_role === 'admin' && !empty($_SESSION['user_id'])) {
+                $changed_by = (int)$_SESSION['user_id'];
+            } else {
+                $changed_by = null;
+            }
         }
         $stmt = $pdo->prepare(
             "INSERT INTO order_status_log (order_id, old_status, new_status, changed_by, changed_role)

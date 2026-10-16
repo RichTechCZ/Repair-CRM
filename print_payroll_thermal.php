@@ -221,6 +221,6 @@ $backUrl = 'reports.php?tab=individual_stats&tech_id=' . $techId
     </div>
 </div>
 
-<script<?php echo $crmScriptNonce !== '' ? ' nonce="' . e($crmScriptNonce) . '"' : ''; ?> src="assets/js/print.js"></script>
+<script<?php echo $crmScriptNonce !== '' ? ' nonce="' . e($crmScriptNonce) . '"' : ''; ?> src="assets/js/print.js?v=<?php echo (int)@filemtime(__DIR__ . '/assets/js/print.js'); ?>"></script>
 </body>
 </html>

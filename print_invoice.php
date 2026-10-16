@@ -716,6 +716,6 @@ $page_title = $doc_title . ' ' . ($invoice['invoice_number'] ?? '');
     </div>
 </div>
 
-<script nonce="<?php echo e(crmCspNonce()); ?>" src="assets/js/print.js"></script>
+<script nonce="<?php echo e(crmCspNonce()); ?>" src="assets/js/print.js?v=<?php echo (int)@filemtime(__DIR__ . '/assets/js/print.js'); ?>"></script>
 </body>
 </html>

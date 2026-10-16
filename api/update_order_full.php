@@ -174,11 +174,21 @@ try {
         ? $_POST['technician_id']
         : $current['technician_id'];
 
+    $new_customer_id = ($is_admin && !empty($_POST['customer_id'])) ? (int)$_POST['customer_id'] : $current['customer_id'];
+    if ((int)$new_customer_id !== (int)$current['customer_id']) {
+        $customerCheck = $pdo->prepare('SELECT 1 FROM customers WHERE id = ?');
+        $customerCheck->execute([$new_customer_id]);
+        if (!$customerCheck->fetchColumn()) {
+            throw new Exception(__('missing_data'));
+        }
+    }
+    $new_device_type = crmValidatedDeviceType($_POST['device_type'] ?? null, $current['device_type']);
+
     $params = [
-        ($is_admin && !empty($_POST['customer_id'])) ? $_POST['customer_id'] : $current['customer_id'],
+        $new_customer_id,
         isset($_POST['device_model']) ? $_POST['device_model'] : $current['device_model'],
         isset($_POST['device_brand']) ? $_POST['device_brand'] : $current['device_brand'],
-        isset($_POST['device_type']) ? $_POST['device_type'] : $current['device_type'],
+        $new_device_type,
         isset($_POST['order_type']) ? $_POST['order_type'] : $current['order_type'],
         $new_status,
         $new_tech_id,

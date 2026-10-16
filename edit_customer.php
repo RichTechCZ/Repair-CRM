@@ -38,37 +38,48 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         die(__('access_denied_msg'));
     }
 
-    $customer_type = $_POST['customer_type'] ?? 'private';
-    $first_name = $_POST['first_name'];
-    $last_name = $_POST['last_name'];
-    $phone = $_POST['phone'];
-    $email = $_POST['email'];
-    $address = $_POST['address'];
-    $ico = $_POST['ico'] ?? '';
-    $dic = $_POST['dic'] ?? '';
-    $company = $_POST['company'] ?? '';
+    $customer_type = (string)($_POST['customer_type'] ?? 'private');
+    $first_name = trim((string)($_POST['first_name'] ?? ''));
+    $last_name = trim((string)($_POST['last_name'] ?? ''));
+    $phone = trim((string)($_POST['phone'] ?? ''));
+    $email = trim((string)($_POST['email'] ?? ''));
+    $address = trim((string)($_POST['address'] ?? ''));
+    $ico = trim((string)($_POST['ico'] ?? ''));
+    $dic = trim((string)($_POST['dic'] ?? ''));
+    $company = trim((string)($_POST['company'] ?? ''));
 
-    try {
-        $update = $pdo->prepare("UPDATE customers SET customer_type = ?, first_name = ?, last_name = ?, phone = ?, phone_search = ?, email = ?, address = ?, ico = ?, dic = ?, company = ? WHERE id = ?");
-        $update->execute([
-            $customer_type,
-            $first_name,
-            $last_name,
-            $phone,
-            normalizePhoneForSearch($phone),
-            $email,
-            $address,
-            $ico,
-            $dic,
-            $company,
-            $id,
-        ]);
-        $success = __('customer_updated_success');
-        // Refresh
-        $stmt->execute([$id]);
-        $customer = $stmt->fetch();
-    } catch (Exception $e) {
-        $error = publicExceptionMessage($e);
+    $validationFailed = $first_name === '' || $last_name === '' || $phone === ''
+        || !in_array($customer_type, ['private', 'company'], true)
+        || ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL))
+        || mb_strlen($first_name) > 50 || mb_strlen($last_name) > 50
+        || mb_strlen($phone) > 20 || mb_strlen($email) > 100
+        || mb_strlen($ico) > 20 || mb_strlen($dic) > 20 || mb_strlen($company) > 100;
+
+    if ($validationFailed) {
+        $error = __('missing_data');
+    } else {
+        try {
+            $update = $pdo->prepare("UPDATE customers SET customer_type = ?, first_name = ?, last_name = ?, phone = ?, phone_search = ?, email = ?, address = ?, ico = ?, dic = ?, company = ? WHERE id = ?");
+            $update->execute([
+                $customer_type,
+                $first_name,
+                $last_name,
+                $phone,
+                normalizePhoneForSearch($phone),
+                $email,
+                $address,
+                $ico,
+                $dic,
+                $company,
+                $id,
+            ]);
+            $success = __('customer_updated_success');
+            // Refresh
+            $stmt->execute([$id]);
+            $customer = $stmt->fetch();
+        } catch (Exception $e) {
+            $error = publicExceptionMessage($e);
+        }
     }
 }
 ?>
@@ -79,7 +90,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 </div>
 
 <?php if ($success): ?>
-    <div class="alert alert-success"><?php echo $success; ?></div>
+    <div class="alert alert-success"><?php echo e($success); ?></div>
+<?php endif; ?>
+
+<?php if ($error): ?>
+    <div class="alert alert-danger" role="alert"><?php echo e($error); ?></div>
 <?php endif; ?>
 
 <div class="card">

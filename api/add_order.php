@@ -60,6 +60,9 @@ api_bootstrap([
             exit;
         }
         $_SESSION['order_form_error'] = $message;
+        if ($status !== 401 && !empty($_SESSION['user_id'])) {
+            crmStashOrderFormInput($_POST);
+        }
         header('Location: ../orders.php');
         exit;
     },
@@ -82,7 +85,8 @@ $priority         = in_array($_POST['priority'] ?? '', ['High', 'Normal']) ? $_P
 $estimated_cost   = max(0, filter_input(INPUT_POST, 'estimated_cost', FILTER_VALIDATE_FLOAT) ?: 0);
 $shipping_method  = trim($_POST['shipping_method'] ?? '') ?: null;
 
-if (!$customer_id || !$device_model) {
+if (!$customer_id || !$device_model || !in_array($device_type, crmDeviceTypes(), true)) {
+    crmStashOrderFormInput($_POST);
     $_SESSION['order_form_error'] = __('missing_fields');
     header('Location: ../orders.php');
     exit;
@@ -93,6 +97,7 @@ if (($_SESSION['role'] ?? '') === 'technician') {
 }
 
 if (!currentUserCanCreateOrderForCustomer((int)$customer_id)) {
+    crmStashOrderFormInput($_POST);
     $_SESSION['order_form_error'] = __('access_denied_msg');
     header('Location: ../orders.php');
     exit;
@@ -176,6 +181,7 @@ try {
     if ($pdo->inTransaction()) $pdo->rollBack();
     crmRemoveStoredUploadPaths($storedUploadPaths);
     error_log("add_order error: " . $e->getMessage());
+    crmStashOrderFormInput($_POST);
     $_SESSION['order_form_error'] = __('order_create_failed');
     header('Location: ../orders.php');
     exit;
