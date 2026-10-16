@@ -1,0 +1,2 @@
+# Pinned vendor files are verified by SRI: never normalise their line endings.
+*.min.js -text
