@@ -859,8 +859,7 @@ small,
 
 .surface-card,
 .glass-card,
-.glass-panel,
-.surface-card {
+.glass-panel {
     overflow: hidden;
     background: var(--bg-panel);
     backdrop-filter: none;

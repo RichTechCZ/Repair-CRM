@@ -8,8 +8,10 @@ $is_admin_check = (($_SESSION['role'] ?? '') == 'admin') || (hasPermission('admi
 
 if (isset($_POST['set_lang']) && $is_admin_check) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
-    $_SESSION['lang'] = $_POST['lang'];
-    set_setting('language', $_POST['lang']);
+    $allowed_langs = ['ru', 'cs'];
+    $new_lang = in_array($_POST['lang'] ?? '', $allowed_langs, true) ? $_POST['lang'] : 'ru';
+    $_SESSION['lang'] = $new_lang;
+    set_setting('language', $new_lang);
     header("Location: settings.php?tab=system");
     exit;
 }
@@ -214,7 +216,12 @@ if (isset($_POST['change_admin_password']) && ($_SESSION['role'] ?? '') === 'adm
         $stmt->execute([$hashed, (int)$_POST['admin_id']]);
         log_error('Admin password changed', 'audit', 'actor=' . $actor['username'] . ' target_id=' . (int)$_POST['admin_id'] . ' ip=' . ($_SERVER['REMOTE_ADDR'] ?? ''));
         
-        if ($_POST['admin_id'] == $_SESSION['user_id'] && $_SESSION['role'] === 'admin') {
+        if ((int)$_POST['admin_id'] === (int)$_SESSION['user_id'] && $_SESSION['role'] === 'admin') {
+            $_SESSION = [];
+            if (ini_get('session.use_cookies')) {
+                $params = session_get_cookie_params();
+                setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+            }
             session_destroy();
             header("Location: login.php");
             exit;

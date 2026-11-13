@@ -30,11 +30,11 @@ $stmt = $pdo->prepare("SELECT oi.*, COALESCE(NULLIF(oi.part_name, ''), i.part_na
 $stmt->execute([$id]);
 $order_items = $stmt->fetchAll();
 
-$target_lang = $_GET['lang'] ?? 'cs';
+$target_lang = in_array($_GET['lang'] ?? 'cs', ['cs', 'ru'], true) ? $_GET['lang'] : 'cs';
 function _l($key) { global $target_lang; return __($key, $target_lang); }
 ?>
 <!DOCTYPE html>
-<html lang="cs">
+<html lang="<?php echo htmlspecialchars($target_lang, ENT_QUOTES, 'UTF-8'); ?>">
 <head>
     <meta charset="UTF-8">
     <title>Pracovní příkaz #<?php echo $order['id']; ?></title>
@@ -85,7 +85,7 @@ function _l($key) { global $target_lang; return __($key, $target_lang); }
             </div>
             <div>
                 <div class="label"><?php echo mb_strtoupper(_l('device_type')); ?> / <?php echo mb_strtoupper(_l('status')); ?>:</div>
-                <div class="value"><?php echo $order['device_type']; ?> / <?php echo $order['order_type'] == 'Warranty' ? _l('warranty') : _l('non_warranty'); ?></div>
+                <div class="value"><?php echo htmlspecialchars((string)$order['device_type'], ENT_QUOTES, 'UTF-8'); ?> / <?php echo $order['order_type'] == 'Warranty' ? _l('warranty') : _l('non_warranty'); ?></div>
             </div>
             <div>
                 <div class="label">S/N:</div>

@@ -9,6 +9,10 @@ api_bootstrap([
     'rate' => 'parse_catalog',
 ]);
 
+// Release session lock before long-running network scraping loop.
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
 set_time_limit(300);
 
 function redirectToInventory(array $params = []): void {

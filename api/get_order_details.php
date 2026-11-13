@@ -1,16 +1,11 @@
 <?php
-ob_start();
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
+require_once __DIR__ . '/../includes/api_bootstrap.php';
 require_once __DIR__ . '/../includes/upload_security.php';
-
-ob_clean(); // discard any output/warnings
-header('Content-Type: application/json');
-
-if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['success' => false, 'message' => __('unauthorized')]);
-    exit;
-}
+api_bootstrap([
+    'post' => false,
+    'csrf' => false,
+    'rate' => 'get_order_details',
+]);
 
 $id = $_GET['id'] ?? null;
 if (!$id) {
@@ -38,7 +33,7 @@ try {
         exit;
     }
 
-    crmDecryptDevicePinInRow($order);
+    unset($order['pin_code'], $order['pin_code_encrypted']);
 
     // Fetch attachments
     $stmt = $pdo->prepare("SELECT * FROM order_attachments WHERE order_id = ? ORDER BY created_at DESC");

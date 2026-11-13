@@ -260,12 +260,12 @@ if (isset($_SESSION['user_id'])) {
             <form method="POST">
                 <?php echo csrfField(); ?>
                 <div class="mb-3">
-                    <label class="form-label"><?php echo e(__('username_label')); ?></label>
-                    <input type="text" name="username" class="form-control" required autofocus autocomplete="username">
+                    <label for="login_username" class="form-label"><?php echo e(__('username_label')); ?></label>
+                    <input type="text" id="login_username" name="username" class="form-control" value="<?php echo e((string)($_POST['username'] ?? '')); ?>" required autofocus autocomplete="username">
                 </div>
                 <div class="mb-4">
-                    <label class="form-label"><?php echo e(__('password')); ?></label>
-                    <input type="password" name="password" class="form-control" required autocomplete="current-password">
+                    <label for="login_password" class="form-label"><?php echo e(__('password')); ?></label>
+                    <input type="password" id="login_password" name="password" class="form-control" required autocomplete="current-password">
                 </div>
                 <div class="d-grid">
                     <button type="submit" name="login" class="btn btn-primary"><?php echo e(__('login_btn')); ?></button>

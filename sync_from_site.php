@@ -164,10 +164,15 @@ function sync_orders($data) {
     return $updated;
 }
 
-// Data will be passed via temporary file or similar
-if (file_exists('temp_sync_data.json')) {
-    $data = json_decode(file_get_contents('temp_sync_data.json'), true);
-    if ($data) {
+// CLI reads optional temp_sync_data.json; HTTP POST reads the authenticated request body only.
+if (php_sapi_name() === 'cli' && is_file(__DIR__ . '/temp_sync_data.json')) {
+    $rawSyncInput = file_get_contents(__DIR__ . '/temp_sync_data.json');
+} else {
+    $rawSyncInput = file_get_contents('php://input');
+}
+if (is_string($rawSyncInput) && $rawSyncInput !== '') {
+    $data = json_decode($rawSyncInput, true);
+    if (is_array($data)) {
         $count = sync_orders($data);
         echo "Sync finished. Total updated: $count\n";
     }

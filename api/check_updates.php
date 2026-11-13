@@ -5,6 +5,7 @@
  */
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/rate_limit.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -67,6 +68,7 @@ try {
     if (($_SESSION['role'] ?? '') !== 'admin' && !hasPermission('admin_access')) {
         jsonExit(['success' => false, 'message' => __('access_denied')], 403);
     }
+    checkApiRateLimit('check_updates', 30, 60);
 
     // Read local version
     $localVersionFile = __DIR__ . '/../version.json';

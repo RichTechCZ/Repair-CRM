@@ -18,26 +18,34 @@ if (isset($_POST['save_acc_settings'])) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
         $settings_error = 'Security token invalid.';
     } else {
-        set_setting('acc_company_name', $_POST['acc_company_name']);
-        set_setting('acc_address', $_POST['acc_address']);
-        set_setting('acc_ico', $_POST['acc_ico']);
-        set_setting('acc_dic', $_POST['acc_dic']);
-        set_setting('acc_bank_name', $_POST['acc_bank_name']);
-        set_setting('acc_bank_account', $_POST['acc_bank_account']);
-        set_setting('acc_iban', $_POST['acc_iban']);
-        set_setting('acc_swift', $_POST['acc_swift']);
-        set_setting('acc_trade_register', $_POST['acc_trade_register'] ?? '');
-        set_setting('acc_invoice_prefix', $_POST['acc_invoice_prefix']);
+        $acc_prefix = preg_replace('/[^A-Za-z0-9_\/-]/', '', trim((string)($_POST['acc_invoice_prefix'] ?? date('Y')))) ?: date('Y');
+        $acc_vat_rate = (string)max(0.0, min(100.0, (float)($_POST['acc_vat_rate'] ?? 21)));
+        $country_id = (string)max(1, (int)($_POST['myinvoice_default_country_id'] ?? 1));
+        $fallback_email = trim((string)($_POST['myinvoice_fallback_email'] ?? ''));
+        if ($fallback_email !== '' && !filter_var($fallback_email, FILTER_VALIDATE_EMAIL)) {
+            $fallback_email = '';
+        }
+
+        set_setting('acc_company_name', trim((string)($_POST['acc_company_name'] ?? '')));
+        set_setting('acc_address', trim((string)($_POST['acc_address'] ?? '')));
+        set_setting('acc_ico', trim((string)($_POST['acc_ico'] ?? '')));
+        set_setting('acc_dic', trim((string)($_POST['acc_dic'] ?? '')));
+        set_setting('acc_bank_name', trim((string)($_POST['acc_bank_name'] ?? '')));
+        set_setting('acc_bank_account', trim((string)($_POST['acc_bank_account'] ?? '')));
+        set_setting('acc_iban', trim((string)($_POST['acc_iban'] ?? '')));
+        set_setting('acc_swift', trim((string)($_POST['acc_swift'] ?? '')));
+        set_setting('acc_trade_register', trim((string)($_POST['acc_trade_register'] ?? '')));
+        set_setting('acc_invoice_prefix', $acc_prefix);
         set_setting('acc_auto_create_invoice', isset($_POST['acc_auto_create_invoice']) ? 1 : 0);
         set_setting('acc_is_vat_payer', isset($_POST['acc_is_vat_payer']) ? 1 : 0);
-        set_setting('acc_vat_rate', $_POST['acc_vat_rate']);
+        set_setting('acc_vat_rate', $acc_vat_rate);
         set_setting('myinvoice_enabled', isset($_POST['myinvoice_enabled']) ? 1 : 0);
         set_setting('myinvoice_auto_issue', isset($_POST['myinvoice_auto_issue']) ? 1 : 0);
-        set_setting('myinvoice_default_country_id', $_POST['myinvoice_default_country_id'] ?? '1');
-        set_setting('myinvoice_default_street', $_POST['myinvoice_default_street'] ?? '-');
-        set_setting('myinvoice_default_city', $_POST['myinvoice_default_city'] ?? 'Praha');
-        set_setting('myinvoice_default_zip', $_POST['myinvoice_default_zip'] ?? '11000');
-        set_setting('myinvoice_fallback_email', $_POST['myinvoice_fallback_email'] ?? '');
+        set_setting('myinvoice_default_country_id', $country_id);
+        set_setting('myinvoice_default_street', trim((string)($_POST['myinvoice_default_street'] ?? '-')));
+        set_setting('myinvoice_default_city', trim((string)($_POST['myinvoice_default_city'] ?? 'Praha')));
+        set_setting('myinvoice_default_zip', trim((string)($_POST['myinvoice_default_zip'] ?? '11000')));
+        set_setting('myinvoice_fallback_email', $fallback_email);
         $settings_saved = true;
     }
 }

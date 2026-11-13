@@ -84,10 +84,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $posted_order_type
                 );
             }
+            $has_cancel_col = tableColumnExists('orders', 'cancellation_reason');
+            $incoming_cancellation_reason = trim((string)($_POST['cancellation_reason'] ?? ''));
             OrderStatusService::assertCancellationReason(
                 $canonical_status,
-                null,
-                tableColumnExists('orders', 'cancellation_reason'),
+                $incoming_cancellation_reason,
+                $has_cancel_col,
                 true,
                 $current_order['cancellation_reason'] ?? null
             );
@@ -114,6 +116,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 ? ', shipping_date = CURRENT_TIMESTAMP'
                 : '';
 
+            $cancel_sql = '';
+            $extra_params = [];
+            if ($has_cancel_col) {
+                if (in_array($canonical_status, OrderStatusService::REASON_REQUIRED, true) && $incoming_cancellation_reason !== '') {
+                    $cancel_sql = ', cancellation_reason = ?';
+                    $extra_params[] = $incoming_cancellation_reason;
+                } elseif (!in_array($canonical_status, OrderStatusService::REASON_REQUIRED, true)) {
+                    $cancel_sql = ', cancellation_reason = ?';
+                    $extra_params[] = null;
+                }
+            }
+
             $update = $pdo->prepare("UPDATE orders SET
                 customer_id = ?,
                 technician_id = ?,
@@ -129,8 +143,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 status = ?,
                 updated_at = CURRENT_TIMESTAMP
                 $shipping_date_sql
+                $cancel_sql
                 WHERE id = ?");
-            $update->execute([
+            $update->execute(array_merge([
                 $customer_id,
                 $technician_id,
                 $device_type,
@@ -143,8 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 trim((string)($_POST['technician_notes'] ?? $current_order['technician_notes'])),
                 (float)$estimated_cost_raw,
                 $status,
-                $id
-            ]);
+            ], $extra_params, [$id]));
 
             $effects = OrderStatusService::applyInTransaction(
                 $pdo,
@@ -308,6 +322,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <div class="col-12">
                     <label class="form-label"><i class="fas fa-comment-alt me-2 text-info"></i><?php echo __('notes'); ?></label>
                     <textarea name="technician_notes" class="form-control" rows="3"><?php echo htmlspecialchars($order['technician_notes']); ?></textarea>
+                </div>
+                <div class="col-12">
+                    <label class="form-label"><i class="fas fa-ban me-2 text-warning"></i><?php echo __('cancellation_reason'); ?></label>
+                    <textarea name="cancellation_reason" class="form-control" rows="2"><?php echo htmlspecialchars((string)($order['cancellation_reason'] ?? '')); ?></textarea>
                 </div>
                 <div class="col-12 mt-3">
                     <label class="form-label"><i class="fas fa-images me-2 text-info"></i><?php echo __('media_files'); ?></label>

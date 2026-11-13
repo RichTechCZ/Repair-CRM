@@ -278,7 +278,7 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
                     $nameStmt->execute([(int)$selected_tech_id]);
                     $individualTechName = (string)($nameStmt->fetchColumn() ?: '');
                 } else {
-                    $individualTechName = (string)($_SESSION['tech_name'] ?? '');
+                    $individualTechName = (string)($_SESSION['full_name'] ?? $_SESSION['tech_name'] ?? '');
                 }
                 $individualPayrollTitle = __('payroll_statement')
                     . ($individualTechName !== '' ? ' — ' . $individualTechName : '');

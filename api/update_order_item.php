@@ -46,9 +46,11 @@ try {
 
     // If order is in a stock-consuming state (repaired/handed over), adjust inventory
     if (in_array(canonicalOrderStatus($item['status']), ['Ready', 'Issued'], true) && !empty($item['inventory_id'])) {
-        $diff = $new_qty - $item['quantity'];
-        // Subtract the difference from stock
-        changeInventoryQuantity($item['inventory_id'], -$diff);
+        $diff = $new_qty - (int)$item['quantity'];
+        if ($diff !== 0) {
+            // Subtract the difference from stock (changeInventoryQuantity locks FOR UPDATE and rejects negative stock)
+            changeInventoryQuantity($item['inventory_id'], -$diff);
+        }
     }
 
     // Update item

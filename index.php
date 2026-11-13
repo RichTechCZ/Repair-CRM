@@ -224,8 +224,10 @@ if (hasPermission('admin_access')) {
             <div class="card-body">
                 <div class="d-grid gap-2">
                     <a class="btn btn-outline-primary" href="orders.php?new_order=1"><i class="fas fa-plus me-2" aria-hidden="true"></i> <?php echo __('new_order'); ?></a>
-                    <?php if (hasPermission('admin_access')): ?>
+                    <?php if (hasPermission('edit_customers')): ?>
                     <a href="customers.php" class="btn btn-outline-secondary"><i class="fas fa-user-plus me-2"></i> <?php echo __('customers'); ?></a>
+                    <?php endif; ?>
+                    <?php if (hasPermission('admin_access')): ?>
                     <a href="inventory.php" class="btn btn-outline-info"><i class="fas fa-search me-2"></i> <?php echo __('check_stock'); ?></a>
                     <?php endif; ?>
                 </div>
@@ -241,9 +243,9 @@ if (hasPermission('admin_access')) {
             <div class="card-body p-0">
                 <ul class="list-group list-group-flush">
                     <?php
-                    $all_techs = $pdo->query("SELECT name, last_seen FROM technicians WHERE is_active = 1 ORDER BY last_seen DESC")->fetchAll();
+                    $all_techs = $pdo->query("SELECT name, last_seen, (last_seen > (NOW() - INTERVAL 5 MINUTE)) AS is_online FROM technicians WHERE is_active = 1 ORDER BY last_seen DESC")->fetchAll();
                     foreach ($all_techs as $tech):
-                        $is_online = (strtotime($tech['last_seen'] ?? '0') > strtotime("-5 minutes"));
+                        $is_online = !empty($tech['is_online']);
                     ?>
                     <li class="list-group-item bg-transparent d-flex justify-content-between align-items-center py-3">
                         <div class="d-flex align-items-center">

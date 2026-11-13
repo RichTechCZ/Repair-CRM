@@ -868,47 +868,6 @@ unset($_SESSION['order_form_old']);
 </div>
 
 
-<!-- Quick View & Edit Modal -->
-<div class="modal fade" id="quickOrderModal" tabindex="-1" data-bs-focus="false">
-    <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="quickOrderTitle"><?php echo __('order_header'); ?> #</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="quickOrderBody">
-                <div class="text-center py-4">
-                    <div class="spinner-border text-primary" role="status"></div>
-                </div>
-            </div>
-            <div class="modal-footer d-flex justify-content-between">
-                <div>
-                    <?php if(hasPermission('admin_access')): ?>
-                    <button type="button" class="btn btn-outline-danger me-2" id="deleteQuickOrderBtn"><?php echo __('delete'); ?></button>
-                    <?php endif; ?>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?php echo __('close'); ?></button>
-                </div>
-                <div class="d-flex gap-2">
-                    <div class="dropdown">
-                        <button class="btn btn-outline-info dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                            <i class="fas fa-print me-2"></i> <?php echo __('print'); ?>
-                        </button>
-                        <ul class="dropdown-menu shadow">
-                            <li><a class="dropdown-item" href="#" data-crm-action="open-preview" data-preview-url="print_order.php?id=${o.id}" data-preview-title="<?php echo e(__('order_header')); ?> #${o.id}"><i class="fas fa-file-invoice me-2 text-primary"></i> <?php echo __('a4_invoice'); ?></a></li>
-                            <li><a class="dropdown-item" href="#" data-crm-action="open-reception-language" data-crm-id="${o.id}"><i class="fas fa-file-import me-2 text-info"></i> <?php echo __('reception_act_thermal'); ?></a></li>
-                            <li><a class="dropdown-item" href="#" data-crm-action="open-preview" data-preview-url="print_workshop.php?id=${o.id}" data-preview-title="Workshop #${o.id}"><i class="fas fa-tools me-2 text-warning"></i> <?php echo __('work_order'); ?></a></li>
-                            <li><a class="dropdown-item" href="#" data-crm-action="open-preview" data-preview-url="print_thermal.php?id=${o.id}" data-preview-title="<?php echo e(__('thermal_receipt')); ?> #${o.id}"><i class="fas fa-receipt me-2 text-success"></i> <?php echo __('thermal_receipt'); ?></a></li>
-                        </ul>
-                    </div>
-                    <a href="#" id="fullViewBtn" class="btn btn-outline-primary"><?php echo __('open_full_view'); ?></a>
-                    <button type="button" class="btn btn-primary" id="saveQuickOrderBtn"><?php echo __('save_changes'); ?></button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-
 <!-- Invoice Modal -->
 <div class="modal fade" id="invoiceModal" tabindex="-1">
     <div class="modal-dialog">

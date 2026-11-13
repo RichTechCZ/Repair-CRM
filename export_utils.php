@@ -122,7 +122,20 @@ class AccountingExporter {
 
         $stmt = $this->pdo->prepare("SELECT * FROM customers WHERE id = ?");
         $stmt->execute([$invoice['customer_id']]);
-        $invoice['customer'] = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $customer = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        if (trim((string)($invoice['cust_name_override'] ?? '')) !== '') {
+            $customer['company'] = trim((string)$invoice['cust_name_override']);
+        }
+        if (trim((string)($invoice['cust_address_override'] ?? '')) !== '') {
+            $customer['address'] = trim((string)$invoice['cust_address_override']);
+        }
+        if (trim((string)($invoice['cust_ico_override'] ?? '')) !== '') {
+            $customer['ico'] = trim((string)$invoice['cust_ico_override']);
+        }
+        if (trim((string)($invoice['cust_dic_override'] ?? '')) !== '') {
+            $customer['dic'] = trim((string)$invoice['cust_dic_override']);
+        }
+        $invoice['customer'] = $customer;
 
         $stmt = $this->pdo->prepare("SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY id");
         $stmt->execute([$id]);

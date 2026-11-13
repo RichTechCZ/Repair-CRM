@@ -1061,5 +1061,90 @@ assertTrue(
     'adding a part must not require migration 008'
 );
 
+// ── Regression: 2026-11 audit fixes ─────────────────────────────────────────
+$overrideDb = new PDO('sqlite::memory:');
+$overrideDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$overrideDb->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+$overrideDb->exec('CREATE TABLE system_settings (setting_key TEXT, setting_value TEXT)');
+$overrideDb->exec("INSERT INTO system_settings VALUES ('acc_ico', '11223344'), ('myinvoice_fallback_email', 'acc@example.com')");
+$overrideDb->exec('CREATE TABLE invoices (id INTEGER, customer_id INTEGER, invoice_number TEXT, invoice_type TEXT, date_issue TEXT,
+    date_tax TEXT, date_due TEXT, payment_method TEXT, is_vat_payer INTEGER,
+    cust_name_override TEXT, cust_address_override TEXT, cust_ico_override TEXT, cust_dic_override TEXT)');
+$overrideDb->exec('CREATE TABLE customers (id INTEGER, customer_type TEXT, company TEXT, first_name TEXT, last_name TEXT, address TEXT, ico TEXT, dic TEXT, phone TEXT, email TEXT, myinvoice_client_id INTEGER)');
+$overrideDb->exec('CREATE TABLE invoice_items (id INTEGER, invoice_id INTEGER, item_name TEXT, quantity REAL, unit TEXT, vat_rate REAL, price REAL)');
+$overrideDb->exec("INSERT INTO customers VALUES (1, 'person', '', 'Jan', 'Novak', 'Old St 1, Brno', '00000001', 'CZ00000001', '+420123456789', 'jan@example.com', NULL)");
+$overrideDb->exec("INSERT INTO invoices VALUES (1, 1, '20260010', 'invoice', '2026-11-01', '2026-11-01', '2026-11-15', 'bank_transfer', 0, 'Override Corp s.r.o.', 'New Ave 5, 11000 Praha', '87654321', 'CZ87654321')");
+$overrideDb->exec("INSERT INTO invoice_items VALUES (1, 1, 'Repair', 1, 'ks', 0, 1000)");
+$GLOBALS['pdo'] = $overrideDb;
+$overrideExporter = new AccountingExporter($overrideDb);
+$overridePohoda = $overrideExporter->exportToPohoda(1);
+$overrideS3 = $overrideExporter->exportToS3Money(1);
+$loadedMyInvoice = loadLocalInvoiceForMyInvoice($overrideDb, 1);
+assertTrue(
+    strpos($overridePohoda['content'], 'Override Corp s.r.o.') !== false
+        && strpos($overridePohoda['content'], '87654321') !== false
+        && strpos($overridePohoda['content'], 'CZ87654321') !== false
+        && strpos($overridePohoda['content'], 'New Ave 5') !== false,
+    'Pohoda export must respect invoice-level customer overrides'
+);
+assertTrue(
+    strpos($overrideS3['content'], 'Override Corp s.r.o.') !== false,
+    'S3 Money export must respect cust_name_override'
+);
+assertTrue(
+    $loadedMyInvoice !== null
+        && $loadedMyInvoice['company'] === 'Override Corp s.r.o.'
+        && $loadedMyInvoice['ico'] === '87654321'
+        && $loadedMyInvoice['dic'] === 'CZ87654321'
+        && $loadedMyInvoice['address'] === 'New Ave 5, 11000 Praha',
+    'MyInvoice sync loader must apply invoice-level customer overrides'
+);
+$myInvoicePayload = buildMyInvoiceClientPayload($loadedMyInvoice);
+assertSameValue('Override Corp s.r.o.', $myInvoicePayload['company_name'], 'MyInvoice client payload must use overridden company name');
+assertSameValue('87654321', $myInvoicePayload['ic'], 'MyInvoice client payload must use overridden ICO');
+$GLOBALS['pdo'] = $pdoBeforeAudit;
+
+$workshopPrintSource = (string)file_get_contents(__DIR__ . '/../print_workshop.php');
+$orderPrintSource = (string)file_get_contents(__DIR__ . '/../print_order.php');
+assertTrue(
+    strpos($workshopPrintSource, "htmlspecialchars((string)\$order['device_type']") !== false
+        && strpos($workshopPrintSource, '<html lang="cs">') === false
+        && strpos($orderPrintSource, '<html lang="cs">') === false,
+    'print templates must escape device_type and render dynamic <html lang>'
+);
+
+$editOrderAfterFix = (string)file_get_contents(__DIR__ . '/../edit_order.php');
+assertTrue(
+    strpos($editOrderAfterFix, "\$_POST['cancellation_reason']") !== false
+        && strpos($editOrderAfterFix, 'name="cancellation_reason"') !== false,
+    'edit_order.php must accept and persist cancellation_reason'
+);
+
+foreach (['get_order_details', 'get_customer_orders', 'get_invoice_details'] as $bootstrappedGetApi) {
+    $apiSrc = (string)file_get_contents(__DIR__ . '/../api/' . $bootstrappedGetApi . '.php');
+    assertTrue(
+        strpos($apiSrc, 'api_bootstrap(') !== false,
+        "api/{$bootstrappedGetApi}.php must enforce api_bootstrap rate limiting and auth"
+    );
+}
+assertTrue(
+    strpos((string)file_get_contents(__DIR__ . '/../api/get_order_details.php'), 'crmDecryptDevicePinInRow') === false
+        && strpos((string)file_get_contents(__DIR__ . '/../api/get_order_details.php'), "unset(\$order['pin_code']") !== false,
+    'api/get_order_details.php must not return decrypted device PINs'
+);
+
+$settingsAfterFix = (string)file_get_contents(__DIR__ . '/../settings.php');
+assertTrue(
+    strpos($settingsAfterFix, "\$allowed_langs = ['ru', 'cs']") !== false
+        && strpos($settingsAfterFix, 'setcookie(session_name()') !== false,
+    'settings.php must validate UI language and expire session cookie on self password change'
+);
+
+$reportsAfterFix = (string)file_get_contents(__DIR__ . '/../reports.php');
+assertTrue(
+    strpos($reportsAfterFix, "\$_SESSION['full_name']") !== false,
+    'reports.php must resolve technician name from $_SESSION[full_name]'
+);
+
 echo "OK: security and financial regression checks passed\n";
 

@@ -196,6 +196,19 @@ function loadLocalInvoiceForMyInvoice(PDO $pdo, int $invoiceId): ?array {
         return null;
     }
 
+    if (trim((string)($invoice['cust_name_override'] ?? '')) !== '') {
+        $invoice['company'] = trim((string)$invoice['cust_name_override']);
+    }
+    if (trim((string)($invoice['cust_address_override'] ?? '')) !== '') {
+        $invoice['address'] = trim((string)$invoice['cust_address_override']);
+    }
+    if (trim((string)($invoice['cust_ico_override'] ?? '')) !== '') {
+        $invoice['ico'] = trim((string)$invoice['cust_ico_override']);
+    }
+    if (trim((string)($invoice['cust_dic_override'] ?? '')) !== '') {
+        $invoice['dic'] = trim((string)$invoice['cust_dic_override']);
+    }
+
     $items = $pdo->prepare('SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY id ASC');
     $items->execute([$invoiceId]);
     $invoice['items'] = $items->fetchAll(PDO::FETCH_ASSOC);

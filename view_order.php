@@ -957,7 +957,7 @@ foreach ($status_log as $log_row) {
                     </div>
                     <div class="mb-3">
                         <label class="form-label"><?php echo __('quantity'); ?></label>
-                        <input type="number" name="quantity" id="edit_item_quantity" class="form-control" step="0.01" required>
+                        <input type="number" name="quantity" id="edit_item_quantity" class="form-control" min="1" step="1" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label"><?php echo __('price_per_unit'); ?></label>
