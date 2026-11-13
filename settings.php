@@ -661,7 +661,7 @@ require_once 'includes/header.php';
 <div class="modal fade" id="addTechModal" tabindex="-1" aria-labelledby="addTechModalTitle">
     <div class="modal-dialog"><div class="modal-content glass-card border-secondary text-white"><form method="POST">
         <?php echo csrfField(); ?>
-        <div class="modal-header border-secondary"><h5 class="modal-title" id="addTechModalTitle"><?php echo __('add_employee_title'); ?></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header border-secondary"><h5 class="modal-title" id="addTechModalTitle"><?php echo __('add_employee_title'); ?></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button></div>
         <div class="modal-body">
             <div class="mb-3"><label class="form-label text-white-75 small"><?php echo __('full_name_label'); ?></label><input type="text" name="tech_name" class="form-control" required></div>
             <div class="row">
@@ -695,7 +695,7 @@ require_once 'includes/header.php';
     <div class="modal-dialog"><div class="modal-content glass-card border-secondary text-white"><form method="POST">
         <?php echo csrfField(); ?>
         <input type="hidden" name="tech_id" value="<?php echo $t['id']; ?>">
-        <div class="modal-header border-secondary"><h5 class="modal-title" id="editTechModalTitle<?php echo (int)$t['id']; ?>"><?php echo __('edit_title'); ?><?php echo htmlspecialchars($t['name']); ?></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header border-secondary"><h5 class="modal-title" id="editTechModalTitle<?php echo (int)$t['id']; ?>"><?php echo __('edit_title'); ?><?php echo htmlspecialchars($t['name']); ?></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button></div>
         <div class="modal-body">
             <?php if ($is_admin_user): ?>
             <div class="mb-3">
@@ -768,7 +768,7 @@ require_once 'includes/header.php';
     <div class="modal-dialog"><div class="modal-content glass-card border-secondary text-white"><form method="POST">
         <?php echo csrfField(); ?>
         <input type="hidden" name="tech_id" value="<?php echo $t['id']; ?>">
-        <div class="modal-header border-secondary"><h5 class="modal-title" id="permModalTitle<?php echo (int)$t['id']; ?>"><?php echo __('permissions_title'); ?><?php echo htmlspecialchars($t['name']); ?></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header border-secondary"><h5 class="modal-title" id="permModalTitle<?php echo (int)$t['id']; ?>"><?php echo __('permissions_title'); ?><?php echo htmlspecialchars($t['name']); ?></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button></div>
         <div class="modal-body">
             <div class="alert alert-info border-0 bg-info bg-opacity-10 text-white-75 small mb-3">
                 <i class="fas fa-info-circle me-1"></i><?php echo __('perm_orders_note'); ?>
@@ -788,7 +788,7 @@ require_once 'includes/header.php';
     <div class="modal-dialog modal-sm"><div class="modal-content glass-card border-secondary text-white"><form method="POST">
         <?php echo csrfField(); ?>
         <input type="hidden" name="admin_id" value="<?php echo $admin['id']; ?>">
-        <div class="modal-header border-secondary"><h6 class="modal-title" id="adminPwdModalTitle<?php echo (int)$admin['id']; ?>"><?php echo __('change_password_title'); ?></h6><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header border-secondary"><h6 class="modal-title" id="adminPwdModalTitle<?php echo (int)$admin['id']; ?>"><?php echo __('change_password_title'); ?></h6><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button></div>
         <div class="modal-body">
             <label class="form-label small text-white-75" for="adminCurrentPwd<?php echo (int)$admin['id']; ?>"><?php echo __('your_current_password'); ?></label>
             <input type="password" name="current_password" id="adminCurrentPwd<?php echo (int)$admin['id']; ?>" class="form-control mb-2" required autocomplete="current-password">

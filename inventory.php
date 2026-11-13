@@ -243,7 +243,7 @@ $catalog_import_success = isset($_GET['catalog_imported']);
                 <?php echo csrfField(); ?>
                 <div class="modal-header">
                     <h5 class="modal-title" id="newPartModalTitle"><?php echo __('add_part'); ?></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
                 </div>
                 <div class="modal-body">
                     <div class="row g-3">

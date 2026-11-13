@@ -230,7 +230,7 @@ if (isset($pdo)) {
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="customerOrdersModalTitle"><?php echo __('customer_orders_title'); ?>: <span id="modalCustomerName"></span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
             </div>
             <div class="modal-body p-0" style="max-height: 400px; overflow-y: auto;">
                 <div class="table-responsive">
@@ -343,7 +343,7 @@ function showCustomerOrders(id, name) {
                 <?php echo csrfField(); ?>
                 <div class="modal-header">
                     <h5 class="modal-title" id="newCustomerModalTitle"><?php echo __('add_customer'); ?></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">

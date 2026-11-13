@@ -1120,7 +1120,7 @@ assertTrue(
     'edit_order.php must accept and persist cancellation_reason'
 );
 
-foreach (['get_order_details', 'get_customer_orders', 'get_invoice_details'] as $bootstrappedGetApi) {
+foreach (['get_order_details', 'get_customer_orders', 'get_invoice_details', 'get_orders_for_report', 'get_invoice_data', 'get_imei_duplicates', 'get_device_models'] as $bootstrappedGetApi) {
     $apiSrc = (string)file_get_contents(__DIR__ . '/../api/' . $bootstrappedGetApi . '.php');
     assertTrue(
         strpos($apiSrc, 'api_bootstrap(') !== false,
@@ -1132,6 +1132,25 @@ assertTrue(
         && strpos((string)file_get_contents(__DIR__ . '/../api/get_order_details.php'), "unset(\$order['pin_code']") !== false,
     'api/get_order_details.php must not return decrypted device PINs'
 );
+$reportOrdersSrc = (string)file_get_contents(__DIR__ . '/../api/get_orders_for_report.php');
+assertTrue(
+    strpos($reportOrdersSrc, "!empty(\$_SESSION['tech_id'])") !== false
+        && strpos($reportOrdersSrc, "403") !== false,
+    'api/get_orders_for_report.php must fail closed when technician session lacks tech_id'
+);
+$invoiceDataSrc = (string)file_get_contents(__DIR__ . '/../api/get_invoice_data.php');
+assertTrue(
+    strpos($invoiceDataSrc, 'FILTER_VALIDATE_INT') !== false
+        && strpos($invoiceDataSrc, "pin_code_encrypted") !== false,
+    'api/get_invoice_data.php must validate order_id as int and strip encrypted PIN fields'
+);
+foreach (['includes/footer.php', 'customers.php', 'inventory.php', 'orders.php', 'reports.php', 'settings.php', 'view_order.php'] as $modalTemplate) {
+    $tplSrc = (string)file_get_contents(__DIR__ . '/../' . $modalTemplate);
+    assertTrue(
+        preg_match('/class="btn-close[^"]*"(?![^>]*aria-label=)/', $tplSrc) === 0,
+        "{$modalTemplate} must provide aria-label on every modal .btn-close button"
+    );
+}
 
 $settingsAfterFix = (string)file_get_contents(__DIR__ . '/../settings.php');
 assertTrue(

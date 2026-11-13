@@ -628,7 +628,7 @@ foreach ($status_log as $log_row) {
                 <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                 <div class="modal-header border-secondary">
                     <h5 class="modal-title" id="addPartModalTitle"><?php echo __('add_part_to_order'); ?></h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
                 </div>
                 <div class="modal-body">
                     <div class="btn-group w-100 mb-3" role="group" aria-label="<?php echo e(__('add_part_to_order')); ?>">
@@ -684,7 +684,7 @@ foreach ($status_log as $log_row) {
                 <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                 <div class="modal-header border-secondary">
                     <h5 class="modal-title" id="uploadMediaModalTitle"><?php echo __('upload_media'); ?></h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -712,7 +712,7 @@ foreach ($status_log as $log_row) {
                 <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                 <div class="modal-header border-secondary">
                     <h5 class="modal-title" id="editOrderDatesModalTitle"><?php echo __('edit_order_dates'); ?></h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -741,7 +741,7 @@ foreach ($status_log as $log_row) {
                 <input type="hidden" name="attachment_id" id="edit_attachment_id">
                 <div class="modal-header border-secondary">
                     <h5 class="modal-title" id="editAttachmentDateModalTitle"><?php echo __('edit_upload_date'); ?></h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -765,7 +765,7 @@ foreach ($status_log as $log_row) {
         <div class="modal-content glass-card border-secondary text-white">
             <div class="modal-header border-secondary">
                 <h5 class="modal-title" id="shippingRequiredModalTitle"><i class="fas fa-exclamation-triangle me-2 text-warning" aria-hidden="true"></i><?php echo __('shipping_required_title'); ?></h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
             </div>
             <div class="modal-body text-center py-4">
                 <div class="mb-4">
@@ -789,7 +789,7 @@ foreach ($status_log as $log_row) {
         <div class="modal-content glass-card border-secondary text-white">
             <div class="modal-header border-secondary">
                 <h5 class="modal-title" id="statusConfirmModalTitle"><i class="fas fa-check-circle me-2 text-success" aria-hidden="true"></i><?php echo __('confirm_title'); ?></h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
             </div>
             <div class="modal-body text-center py-4">
                 <div class="mb-3">
@@ -817,7 +817,7 @@ foreach ($status_log as $log_row) {
                 <input type="hidden" name="csrf_token" value="<?php echo e(generateCsrfToken()); ?>">
                 <div class="modal-header border-secondary">
                     <h5 class="modal-title" id="editOrderFullModalTitle"><?php echo __('edit_order_title'); ?> #<?php echo $order['id']; ?></h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
                 </div>
                 <div class="modal-body">
                     <div class="row g-3">
@@ -948,7 +948,7 @@ foreach ($status_log as $log_row) {
                 <input type="hidden" name="id" id="edit_item_id">
                 <div class="modal-header border-secondary">
                     <h5 class="modal-title" id="editPartModalTitle"><?php echo __('edit_part_title'); ?></h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">

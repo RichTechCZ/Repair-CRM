@@ -1,26 +1,21 @@
 <?php
-ob_start();
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
+require_once __DIR__ . '/../includes/api_bootstrap.php';
+api_bootstrap([
+    'post' => false,
+    'csrf' => false,
+    'rate' => 'get_orders_for_report',
+]);
 
-if (ob_get_length()) ob_clean();
-header('Content-Type: application/json');
-
-if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['success' => false, 'message' => __('unauthorized')]);
-    exit;
-}
-
-$tech_id = $_GET['tech_id'] ?? null;
 $type = $_GET['type'] ?? '';
 
-// Security: If not admin, force tech_id to current user's tech_id
-if (!hasPermission('admin_access') && ($_SESSION['role'] ?? '') == 'technician') {
-    $tech_id = $_SESSION['tech_id'];
-} elseif (!hasPermission('admin_access')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => __('access_denied_msg')]);
-    exit;
+// Security: Admin/admin_access may filter by tech_id; technicians are strictly scoped to their own non-empty tech_id.
+if (hasPermission('admin_access')) {
+    $requestedTechId = filter_input(INPUT_GET, 'tech_id', FILTER_VALIDATE_INT);
+    $tech_id = ($requestedTechId && $requestedTechId > 0) ? $requestedTechId : null;
+} elseif (($_SESSION['role'] ?? '') === 'technician' && !empty($_SESSION['tech_id'])) {
+    $tech_id = (int)$_SESSION['tech_id'];
+} else {
+    api_json_exit(['success' => false, 'message' => __('access_denied_msg')], 403);
 }
 
 $startDateRaw = (string)($_GET['start_date'] ?? date('Y-m-01'));
@@ -35,9 +30,7 @@ if (
     $endDate < $startDate ||
     $startDate->diff($endDate)->days > 366
 ) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'message' => 'Invalid report date range']);
-    exit;
+    api_json_exit(['success' => false, 'message' => 'Invalid report date range'], 400);
 }
 $start = $startDateRaw . ' 00:00:00';
 $end = $endDateRaw . ' 23:59:59';
@@ -86,31 +79,29 @@ switch ($type) {
         $where .= " AND o.status IN ('Issued Without Repair','Repair Cancelled','Cancelled') AND report_status.transition_at BETWEEN ? AND ?";
         break;
     default:
-        echo json_encode(['success' => false, 'message' => 'Invalid type']);
-        exit;
+        api_json_exit(['success' => false, 'message' => 'Invalid type'], 400);
 }
 
 $params[] = $start;
 $params[] = $end;
 
 try {
-    $sql = "SELECT o.id, o.device_brand, o.device_model, o.status, o.final_cost, o.estimated_cost, o.created_at, c.first_name, c.last_name 
-            FROM orders o 
-            JOIN customers c ON o.customer_id = c.id 
+    $sql = "SELECT o.id, o.device_brand, o.device_model, o.status, o.final_cost, o.estimated_cost, o.created_at, c.first_name, c.last_name
+            FROM orders o
+            JOIN customers c ON o.customer_id = c.id
             $statusJoin
-            $where 
+            $where
             ORDER BY o.id DESC
             LIMIT 1001";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
+
     $truncated = count($orders) > 1000;
     if ($truncated) {
         array_pop($orders);
     }
-    echo json_encode(['success' => true, 'data' => $orders, 'truncated' => $truncated]);
+    api_json_exit(['success' => true, 'data' => $orders, 'truncated' => $truncated]);
 } catch (Exception $e) {
-    echo json_encode(['success' => false, 'message' => publicExceptionMessage($e)]);
+    api_exception_exit($e, 500);
 }
-?>

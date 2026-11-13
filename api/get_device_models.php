@@ -3,17 +3,16 @@
  * API: Get Device Models (AJAX autocomplete)
  * Returns model names filtered by brand and search term.
  */
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
-require_once '../includes/rate_limit.php';
-header('Content-Type: application/json');
+require_once __DIR__ . '/../includes/api_bootstrap.php';
 
-checkApiRateLimit('device_models', 60, 60);
-
-if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['results' => []]);
-    exit;
-}
+api_bootstrap([
+    'post' => false,
+    'csrf' => false,
+    'rate' => ['action' => 'device_models', 'max' => 60, 'window' => 60],
+    'fail' => static function (string $message, int $status): void {
+        api_json_exit(['results' => [], 'error' => $message], $status);
+    },
+]);
 
 $brand = trim($_GET['brand'] ?? '');
 $term  = trim($_GET['term'] ?? ($_GET['q'] ?? ''));
@@ -29,8 +28,7 @@ try {
     }, $models);
 
     // Select2 expects { results: [{id, text}, ...] }
-    echo json_encode(['results' => $results]);
+    api_json_exit(['results' => $results]);
 } catch (Exception $e) {
-    echo json_encode(['results' => []]);
+    api_json_exit(['results' => []]);
 }
-?>

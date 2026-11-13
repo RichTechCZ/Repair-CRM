@@ -21,7 +21,7 @@
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header border-secondary py-2">
                 <h6 class="modal-title mb-0" id="universalPreviewTitle"><?php echo e(__('preview_btn')); ?></h6>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
             </div>
             <div class="modal-body p-0" style="max-height: 85vh; overflow-y: auto; background: #f5f5f5;">
                 <div id="universalPreviewContent"></div>
@@ -45,7 +45,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="globalAlertTitle"><?php echo __('confirm_title'); ?></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
             </div>
             <div class="modal-body" id="globalAlertBody"></div>
             <div class="modal-footer">
@@ -61,7 +61,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="globalConfirmTitle"><?php echo __('confirm_title'); ?></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
             </div>
             <div class="modal-body" id="globalConfirmBody"></div>
             <div class="modal-footer">

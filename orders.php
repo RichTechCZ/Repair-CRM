@@ -528,7 +528,7 @@ unset($_SESSION['order_form_old']);
                     <i class="fas fa-copy me-2 text-danger"></i>
                     Дубликаты: <span id="imeiModalSn" class="text-warning font-monospace"></span>
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
             </div>
             <div class="modal-body" id="imeiModalBody">
                 <div class="text-center py-4">
@@ -877,7 +877,7 @@ unset($_SESSION['order_form_old']);
                 <input type="hidden" name="order_id" id="invoiceOrderId">
                 <div class="modal-header">
                     <h5 class="modal-title"><?php echo __('invoice'); ?></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
                 </div>
                 <div class="modal-body">
                     <div class="row mb-3 border-bottom pb-2">
@@ -945,7 +945,7 @@ unset($_SESSION['order_form_old']);
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header bg-dark bg-opacity-25 border-secondary border-0">
                 <h6 class="modal-title fw-bold"><?php echo __('select_print_language'); ?></h6>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
             </div>
             <div class="modal-body p-4">
                 <input type="hidden" id="langOrderId">

@@ -374,7 +374,7 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
         <div class="modal-content glass-panel border-0 shadow-lg">
             <div class="modal-header border-bottom-0 py-3">
                 <h5 class="modal-title fw-bold text-white" id="reportOrdersModalTitle"><?php echo __('orders_title'); ?></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
             </div>
             <div class="modal-body p-0">
                 <div id="modalLoading" class="text-center py-5">

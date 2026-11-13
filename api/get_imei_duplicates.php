@@ -6,31 +6,25 @@
  * GET ?sn=<serial_or_imei>
  * Response: { orders: [...] } | { error: "..." }
  */
-ob_start();
-require_once '../includes/config.php';
-require_once '../includes/functions.php';
+require_once __DIR__ . '/../includes/api_bootstrap.php';
 
-ob_clean(); // discard any warnings/notices before JSON output
-header('Content-Type: application/json; charset=utf-8');
-
-// Auth check (same pattern as other API endpoints)
-if (!isset($_SESSION['user_id'])) {
-    http_response_code(401);
-    echo json_encode(['error' => 'Unauthorized']);
-    exit;
-}
+api_bootstrap([
+    'post' => false,
+    'csrf' => false,
+    'rate' => 'get_imei_duplicates',
+    'fail' => static function (string $message, int $status): void {
+        api_json_exit(['error' => $message, 'orders' => []], $status);
+    },
+]);
 
 $sn = trim($_GET['sn'] ?? '');
 
 if ($sn === '') {
-    echo json_encode(['orders' => []]);
-    exit;
+    api_json_exit(['orders' => []]);
 }
 
 if (!isset($pdo)) {
-    http_response_code(500);
-    echo json_encode(['error' => 'DB unavailable']);
-    exit;
+    api_json_exit(['error' => 'DB unavailable'], 500);
 }
 
 try {
@@ -39,8 +33,7 @@ try {
 
     if (!hasPermission('admin_access')) {
         if (($_SESSION['role'] ?? '') !== 'technician' || empty($_SESSION['tech_id'])) {
-            echo json_encode(['orders' => []], JSON_UNESCAPED_UNICODE);
-            exit;
+            api_json_exit(['orders' => []]);
         }
         $where .= " AND o.technician_id = ?";
         $params[] = (int)$_SESSION['tech_id'];
@@ -65,10 +58,9 @@ try {
     $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    echo json_encode(['orders' => $rows], JSON_UNESCAPED_UNICODE);
+    api_json_exit(['orders' => $rows]);
 
 } catch (PDOException $e) {
     error_log('get_imei_duplicates.php: ' . $e->getMessage());
-    http_response_code(500);
-    echo json_encode(['error' => 'DB error']);
+    api_json_exit(['error' => 'DB error'], 500);
 }
