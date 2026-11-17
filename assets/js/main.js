@@ -389,6 +389,10 @@ function setSidebarOpen(shouldOpen, restoreFocus = false) {
             isOpen ? (window.LANG_CLOSE_NAVIGATION || 'Close navigation') : (window.LANG_OPEN_NAVIGATION || 'Open navigation')
         );
     }
+    const mobileTabMore = document.querySelector('.ios-tabbar [data-tab-action="more"]');
+    if (mobileTabMore) {
+        mobileTabMore.setAttribute('aria-expanded', String(isOpen));
+    }
     if (sidebarBackdrop) {
         // Decorative backdrop is never part of the reading order; pointer interaction stays enabled in CSS.
         sidebarBackdrop.setAttribute('aria-hidden', 'true');
@@ -557,17 +561,26 @@ window.showPrompt = showPrompt;
 /**
  * Show a global alert
  */
-function showAlert(message, title = window.LANG_NOTICE || 'Notice') {
+function showAlert(message, title = window.LANG_NOTICE || 'Notice', onHidden = null) {
     if (!globalAlertModal) initGlobalModals();
-    
+    const alertEl = document.getElementById('globalAlertModal');
+
     document.getElementById('globalAlertTitle').innerText = title;
     document.getElementById('globalAlertBody').textContent = message;
     announceStatus(message);
-    
-    if (globalAlertModal) {
+
+    if (globalAlertModal && alertEl) {
+        if (typeof onHidden === 'function') {
+            alertEl.addEventListener('hidden.bs.modal', function handleAlertHidden() {
+                onHidden();
+            }, { once: true });
+        }
         globalAlertModal.show();
     } else {
         alert(message);
+        if (typeof onHidden === 'function') {
+            onHidden();
+        }
     }
 }
 

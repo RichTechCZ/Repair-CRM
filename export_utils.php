@@ -7,6 +7,7 @@
  * and would otherwise accumulate invoice data on disk.
  */
 class AccountingExporter {
+    private const NS_DAT = 'http://www.stormware.cz/schema/version_2/data.xsd';
     private const NS_INV = 'http://www.stormware.cz/schema/version_2/invoice.xsd';
     private const NS_TYP = 'http://www.stormware.cz/schema/version_2/type.xsd';
 
@@ -29,48 +30,49 @@ class AccountingExporter {
             xmlns:inv="http://www.stormware.cz/schema/version_2/invoice.xsd"
             xmlns:typ="http://www.stormware.cz/schema/version_2/type.xsd"></dat:dataPack>');
 
-        $item = $xml->addChild('dat:dataPackItem');
+        $item = $xml->addChild('dat:dataPackItem', null, self::NS_DAT);
         $item->addAttribute('version', '2.0');
         $item->addAttribute('id', (string)$invoice['invoice_number']);
 
         $inv = $item->addChild('inv:invoice', null, self::NS_INV);
         $inv->addAttribute('version', '2.0');
 
-        $header = $inv->addChild('inv:invoiceHeader');
+        $header = $inv->addChild('inv:invoiceHeader', null, self::NS_INV);
         $header->addChild(
             'inv:invoiceType',
             ($invoice['invoice_type'] ?? 'invoice') === 'credit_note'
                 ? 'issuedCreditNotice'
-                : 'issuedInvoice'
+                : 'issuedInvoice',
+            self::NS_INV
         );
-        $header->addChild('inv:number', $this->xml($invoice['invoice_number']));
-        $header->addChild('inv:date', $this->xml($invoice['date_issue']));
-        $header->addChild('inv:dateTax', $this->xml($invoice['date_tax']));
-        $header->addChild('inv:dateDue', $this->xml($invoice['date_due']));
-        $header->addChild('inv:text', 'Faktura za opravu zařízení');
+        $header->addChild('inv:number', $this->xml($invoice['invoice_number']), self::NS_INV);
+        $header->addChild('inv:date', $this->xml($invoice['date_issue']), self::NS_INV);
+        $header->addChild('inv:dateTax', $this->xml($invoice['date_tax']), self::NS_INV);
+        $header->addChild('inv:dateDue', $this->xml($invoice['date_due']), self::NS_INV);
+        $header->addChild('inv:text', 'Faktura za opravu zařízení', self::NS_INV);
 
         // Partner (Customer). addChild() does not escape "&", so every text value goes through xml().
         $customer = $invoice['customer'];
-        $partner = $header->addChild('inv:partnerIdentity');
+        $partner = $header->addChild('inv:partnerIdentity', null, self::NS_INV);
         $address = $partner->addChild('typ:address', null, self::NS_TYP);
-        $address->addChild('typ:company', $this->xml($this->partnerName($customer)));
-        $address->addChild('typ:city', $this->xml($this->parseCity((string)($customer['address'] ?? ''))));
-        $address->addChild('typ:street', $this->xml($this->parseStreet((string)($customer['address'] ?? ''))));
-        if (!empty($customer['ico'])) $address->addChild('typ:ico', $this->xml($customer['ico']));
-        if (!empty($customer['dic'])) $address->addChild('typ:dic', $this->xml($customer['dic']));
+        $address->addChild('typ:company', $this->xml($this->partnerName($customer)), self::NS_TYP);
+        $address->addChild('typ:city', $this->xml($this->parseCity((string)($customer['address'] ?? ''))), self::NS_TYP);
+        $address->addChild('typ:street', $this->xml($this->parseStreet((string)($customer['address'] ?? ''))), self::NS_TYP);
+        if (!empty($customer['ico'])) $address->addChild('typ:ico', $this->xml($customer['ico']), self::NS_TYP);
+        if (!empty($customer['dic'])) $address->addChild('typ:dic', $this->xml($customer['dic']), self::NS_TYP);
 
-        $header->addChild('inv:paymentType', $this->mapPaymentMethod($invoice['payment_method']));
+        $header->addChild('inv:paymentType', $this->mapPaymentMethod($invoice['payment_method']), self::NS_INV);
 
-        $invItems = $inv->addChild('inv:invoiceDetail');
+        $invItems = $inv->addChild('inv:invoiceDetail', null, self::NS_INV);
         foreach ($invoice['items'] as $row) {
-            $invItem = $invItems->addChild('inv:invoiceItem');
-            $invItem->addChild('inv:text', $this->xml($row['item_name']));
-            $invItem->addChild('inv:quantity', $this->xml($row['quantity']));
-            $invItem->addChild('inv:unit', $this->xml($row['unit']));
-            $invItem->addChild('inv:payVat', $invoice['is_vat_payer'] ? 'true' : 'false');
-            $invItem->addChild('inv:rateVAT', $this->mapVatRate($row['vat_rate']));
+            $invItem = $invItems->addChild('inv:invoiceItem', null, self::NS_INV);
+            $invItem->addChild('inv:text', $this->xml($row['item_name']), self::NS_INV);
+            $invItem->addChild('inv:quantity', $this->xml($row['quantity']), self::NS_INV);
+            $invItem->addChild('inv:unit', $this->xml($row['unit']), self::NS_INV);
+            $invItem->addChild('inv:payVat', $invoice['is_vat_payer'] ? 'true' : 'false', self::NS_INV);
+            $invItem->addChild('inv:rateVAT', $this->mapVatRate($row['vat_rate']), self::NS_INV);
 
-            $homeCurr = $invItem->addChild('inv:homeCurrency');
+            $homeCurr = $invItem->addChild('inv:homeCurrency', null, self::NS_INV);
             $homeCurr->addChild('typ:unitPrice', $this->xml($row['price']), self::NS_TYP);
         }
 

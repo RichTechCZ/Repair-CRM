@@ -76,11 +76,10 @@ $cust_name = trim((string)(
 ));
 $device = trim(($order['device_brand'] ?? '') . ' ' . ($order['device_model'] ?? ''));
 
-// Customer total: final_cost is authoritative; do not double-count parts into it.
-$order_total = (float)($order['final_cost'] ?? 0);
-if ($order_total <= 0) {
-    $order_total = (float)($order['estimated_cost'] ?? 0);
-}
+// Customer total: final_cost is authoritative (explicit 0 stays 0); do not double-count parts into it.
+$order_total = $order['final_cost'] !== null
+    ? (float)$order['final_cost']
+    : (float)($order['estimated_cost'] ?? 0);
 
 $parts_sum = 0.0;
 $lines = [];
@@ -100,7 +99,7 @@ foreach ($items as $item) {
 
 // Labor / service remainder so line items sum to order total (no double count).
 $labor = round($order_total - $parts_sum, 2);
-if (abs($labor) >= 0.01) {
+if ($labor >= 0.01) {
     array_unshift($lines, [
         'name' => 'Oprava / práce' . ($device !== '' ? ': ' . $device : ''),
         'qty' => 1.0,
@@ -108,6 +107,14 @@ if (abs($labor) >= 0.01) {
         'price' => $labor,
         'line' => $labor,
     ]);
+} elseif ($labor <= -0.01 && !empty($lines)) {
+    $lines[] = [
+        'name' => __('discount_label', 'cs'),
+        'qty' => 1.0,
+        'unit' => 'ks',
+        'price' => $labor,
+        'line' => $labor,
+    ];
 } elseif (empty($lines)) {
     $lines[] = [
         'name' => 'Oprava / servisní služba' . ($device !== '' ? ': ' . $device : ''),
@@ -128,9 +135,10 @@ if ($is_vat_payer) {
 }
 
 $doc_number = 'Z' . (int)$order['id'];
-$issue_date = !empty($order['updated_at'])
-    ? date('d.m.Y H:i', strtotime($order['updated_at']))
-    : date('d.m.Y H:i', strtotime($order['created_at'] ?? 'now'));
+$issue_source_date = !empty($order['shipping_date'])
+    ? $order['shipping_date']
+    : (!empty($order['updated_at']) ? $order['updated_at'] : ($order['created_at'] ?? 'now'));
+$issue_date = date('d.m.Y H:i', strtotime($issue_source_date));
 
 $crmScriptNonce = function_exists('crmCspNonce') ? (string)crmCspNonce() : '';
 ?>

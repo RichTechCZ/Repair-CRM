@@ -164,9 +164,13 @@ $catalog_import_success = isset($_GET['catalog_imported']);
                                 <?php foreach ($inventory as $item): ?>
                                 <tr>
                                     <td class="ps-4" data-label="<?php echo e(__('photo_col')); ?>">
-                                        <?php if(!empty($item['image_path'])): ?>
-                                            <a href="<?php echo e($item['image_path']); ?>" data-fancybox="inventory">
-                                                <img src="<?php echo e($item['image_path']); ?>" class="rounded shadow-sm" style="width: 40px; height: 40px; object-fit: cover;" alt="<?php echo htmlspecialchars($item['part_name']); ?>">
+                                        <?php
+                                        $itemImgPath = trim((string)($item['image_path'] ?? ''));
+                                        $itemImgIsSafeLocal = $itemImgPath !== '' && !preg_match('#^(?:https?:)?//#i', $itemImgPath);
+                                        ?>
+                                        <?php if ($itemImgIsSafeLocal): ?>
+                                            <a href="<?php echo e($itemImgPath); ?>" data-fancybox="inventory">
+                                                <img src="<?php echo e($itemImgPath); ?>" class="rounded shadow-sm" style="width: 40px; height: 40px; object-fit: cover;" alt="<?php echo e($item['part_name']); ?>">
                                             </a>
                                         <?php else: ?>
                                             <div class="bg-dark bg-opacity-25 rounded d-flex align-items-center justify-content-center shadow-sm border border-secondary" style="width: 40px; height: 40px;">

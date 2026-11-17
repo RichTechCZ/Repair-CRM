@@ -68,12 +68,7 @@ AI_PROVIDER=openrouter
 
 ### 4. Spuštění migrací
 
-Otevřete v prohlížeči:
-```
-https://your-domain.com/run_migrations.php
-```
-
-Nebo přes příkazový řádek:
+Migrace databáze jsou pouze přes CLI s vyhrazeným migračním účtem:
 ```bash
 php run_migrations.php
 ```
@@ -120,7 +115,15 @@ server {
         deny all;
     }
     
-    location ~ /(backup_db|includes|models|migrations) {
+    location ~ /(backup_db|crm_backups|includes|models|migrations|uploads|tools|tests|temp|outputs|facktura|graphify-out) {
+        deny all;
+    }
+
+    location ~ ^/(cron|run_migrations|set_tg|analyze_import|find_missing|parse_new_dump|verify_migration)\.php$ {
+        deny all;
+    }
+
+    location ~ ^/(crm_.*_redesign\.html|clear_database\.sql)$ {
         deny all;
     }
 }
@@ -168,7 +171,8 @@ Repair-CRM/
 ├── orders.php             # Zakázky
 ├── customers.php          # Zákazníci
 ├── inventory.php          # Sklad
-├── invoices.php           # Faktury
+├── accounting.php          # Účetnictví a faktury
+├── statistics.php          # Statistika
 ├── reports.php            # Reporty
 ├── settings.php           # Nastavení
 └── run_migrations.php     # Spouštěč migrací

@@ -961,8 +961,11 @@ $exporter = new AccountingExporter($exportDb);
 $pohoda = $exporter->exportToPohoda(1);
 $pohodaDom = new DOMDocument();
 assertTrue(
-    @$pohodaDom->loadXML($pohoda['content']) && strpos($pohoda['content'], 'Smith &amp; Sons &lt;Ltd&gt;') !== false,
-    'Pohoda export must stay well-formed XML when customer data contains & or <'
+    @$pohodaDom->loadXML($pohoda['content'])
+        && strpos($pohoda['content'], 'Smith &amp; Sons &lt;Ltd&gt;') !== false
+        && strpos($pohoda['content'], '<dat:dataPackItem') !== false
+        && strpos($pohoda['content'], '<inv:invoice') !== false,
+    'Pohoda export must stay well-formed XML with preserved namespace prefixes when customer data contains & or <'
 );
 $s3 = $exporter->exportToS3Money(1);
 $GLOBALS['pdo'] = $pdoBeforeAudit;
@@ -1164,6 +1167,66 @@ assertTrue(
     strpos($reportsAfterFix, "\$_SESSION['full_name']") !== false,
     'reports.php must resolve technician name from $_SESSION[full_name]'
 );
+
+// ── Regression: P0-P2 audit fixes (2026-11) ─────────────────────────────────
+$statisticsSrc = (string)file_get_contents(__DIR__ . '/../statistics.php');
+assertTrue(
+    strpos($statisticsSrc, 'uksort($deviceRows') !== false && strpos($statisticsSrc, "left['device_type']") === false,
+    'statistics.php must sort deviceRows by key without reading nonexistent device_type field'
+);
+
+assertTrue(
+    strpos($botSource, 'if (empty($user[\'is_admin\'])) {' . "\n" . '                    telegramAnswerCallbackQuery($callbackId, "Доступ разрешен только администраторам.", true);') !== false
+        || preg_match('/case\s+\'orders_all\':\s*if\s*\(empty\(\$user\[\'is_admin\'\]\)\)/', $botSource) === 1,
+    'TelegramBotRouter::orders_all must check admin before answering callback query'
+);
+assertTrue(
+    strpos($botSource, '$page = min($page, $totalPages);') !== false
+        && strpos($botSource, '$offset = ($page - 1) * $limit;') > strpos($botSource, '$page = min($page, $totalPages);')
+        && strpos($botSource, '): bool') !== false
+        && strpos($botSource, 'report_period:month:all') !== false,
+    'TelegramBotRouter must clamp page before offset, return bool from commitStatusChange, and pass :all scope for SC reports'
+);
+
+assertTrue(
+    strpos($settingsAfterFix, "\$is_super_admin = ((\$_SESSION['role'] ?? '') === 'admin');") !== false
+        && strpos($settingsAfterFix, '<?php if ($is_super_admin): ?>') !== false,
+    'settings.php must expose admin password management only to super-admin sessions'
+);
+
+foreach (['upload_media.php', 'delete_media.php'] as $mediaEndpoint) {
+    $mediaSrc = (string)file_get_contents(__DIR__ . '/../api/' . $mediaEndpoint);
+    assertTrue(
+        strpos($mediaSrc, 'OrderStatusService::assertClosedOrderEditable') !== false,
+        "api/{$mediaEndpoint} must enforce the closed-order lock for technicians"
+    );
+}
+
+$parseCatalogSrc = (string)file_get_contents(__DIR__ . '/../api/parse_catalog.php');
+assertTrue(
+    strpos($parseCatalogSrc, 'round($price * 0.7, 2) : null') !== false
+        && strpos($parseCatalogSrc, 'downloadCatalogImage') !== false,
+    'api/parse_catalog.php must keep unknown cost NULL and cache images locally under img-src self'
+);
+assertTrue(
+    is_file(__DIR__ . '/../api/catalog_image.php')
+        && strpos((string)file_get_contents(__DIR__ . '/../api/catalog_image.php'), "api_bootstrap([") !== false,
+    'api/catalog_image.php must enforce api_bootstrap admin access and serve cached images safely'
+);
+
+$accountingActionsSrc = (string)file_get_contents(__DIR__ . '/../accounting_actions.php');
+assertTrue(
+    strpos($accountingActionsSrc, 'api_bootstrap(') !== false,
+    'accounting_actions.php must enforce api_bootstrap rate limiting and guards'
+);
+
+foreach (['orders.php', 'reports.php', 'view_order.php'] as $strictModalFile) {
+    $strictModalSrc = (string)file_get_contents(__DIR__ . '/../' . $strictModalFile);
+    assertTrue(
+        strpos($strictModalSrc, 'data-bs-focus="false"') === false,
+        "{$strictModalFile} must not disable Bootstrap modal focus trapping"
+    );
+}
 
 echo "OK: security and financial regression checks passed\n";
 

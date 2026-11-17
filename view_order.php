@@ -3,23 +3,46 @@ require_once 'includes/config.php';
 require_once 'includes/functions.php';
 require_once 'includes/upload_security.php';
 require_once 'models/InvoicePolicy.php';
-require_once 'includes/header.php';
+require_once 'models/OrderStatusService.php';
 
 $id = $_GET['id'] ?? $_GET['order_id'] ?? null;
-if (!$id) die(__('order_id_missing'));
+$pageErrorStatus = null;
+$pageErrorMessage = null;
+$order = null;
 
-$stmt = $pdo->prepare("SELECT o.*, c.first_name, c.last_name, c.phone, c.company, t.name as tech_name 
-                       FROM orders o 
-                       JOIN customers c ON o.customer_id = c.id 
-                       LEFT JOIN technicians t ON o.technician_id = t.id
-                       WHERE o.id = ?");
-$stmt->execute([$id]);
-$order = $stmt->fetch();
+if (isset($_SESSION['user_id'])) {
+    if (!$id) {
+        $pageErrorStatus = 400;
+        $pageErrorMessage = __('order_id_missing');
+    } else {
+        $stmt = $pdo->prepare("SELECT o.*, c.first_name, c.last_name, c.phone, c.company, t.name as tech_name 
+                               FROM orders o 
+                               JOIN customers c ON o.customer_id = c.id 
+                               LEFT JOIN technicians t ON o.technician_id = t.id
+                               WHERE o.id = ?");
+        $stmt->execute([$id]);
+        $order = $stmt->fetch();
 
-if (!$order) die(__('order_not_found'));
+        if (!$order) {
+            $pageErrorStatus = 404;
+            $pageErrorMessage = __('order_not_found');
+        } elseif (!currentUserCanViewOrder($id)) {
+            $pageErrorStatus = 403;
+            $pageErrorMessage = __('no_edit_permission');
+        }
+    }
+    if ($pageErrorStatus !== null) {
+        http_response_code($pageErrorStatus);
+    }
+}
 
-if (!currentUserCanViewOrder($id)) {
-    die(__('no_edit_permission'));
+require_once 'includes/header.php';
+
+if ($pageErrorMessage !== null) {
+    echo '<div class="container-fluid py-4"><div class="alert alert-danger" role="alert">' . e($pageErrorMessage) . '</div>';
+    echo '<a href="orders.php" class="btn btn-outline-secondary"><i class="fas fa-arrow-left me-2" aria-hidden="true"></i>' . e(__('back')) . '</a></div>';
+    require_once 'includes/footer.php';
+    exit;
 }
 // PIN is encrypted at rest. Decrypt only after authorization; never show ciphertext.
 if (!function_exists('crmDecryptDevicePinInRow')) {
@@ -51,6 +74,7 @@ try {
 $techs = getActiveTechnicians();
 
 $status = canonicalOrderStatus($order['status'] ?? 'Accepted');
+$isClosedOrderLocked = OrderStatusService::isTerminal($status) && !hasPermission('admin_access');
 $show_shipping = $status === 'Issued';
 $show_invoice = hasPermission('admin_access')
     && in_array($status, ['Ready', 'Issued'], true)
@@ -106,7 +130,7 @@ foreach ($status_log as $log_row) {
 <div class="page-header">
     <div class="page-header__copy">
         <div class="page-kicker"><?php echo __('order'); ?></div>
-        <h1>#<?php echo $order['id']; ?> · <?php echo htmlspecialchars($order['device_model']); ?></h1>
+        <h1>#<?php echo (int)$order['id']; ?> · <?php echo e($order['device_model']); ?></h1>
         <p class="page-subtitle"><?php echo __('created'); ?>: <?php echo $created_label; ?></p>
     </div>
     <div class="page-actions page-actions--order">
@@ -130,6 +154,12 @@ foreach ($status_log as $log_row) {
     </div>
 </div>
 
+<?php if ($isClosedOrderLocked): ?>
+<div class="alert alert-info mb-3" role="status">
+    <i class="fas fa-lock me-2" aria-hidden="true"></i><?php echo e(__('closed_order_locked_notice')); ?>
+</div>
+<?php endif; ?>
+
 <div class="row">
     <div class="col-md-8">
         <div class="card glass-card mb-4 ui-ready">
@@ -144,8 +174,25 @@ foreach ($status_log as $log_row) {
                 <div class="detail-grid mb-4">
                     <div class="detail-card">
                         <h6><?php echo __('client'); ?></h6>
-                        <p class="mb-1"><strong><?php echo htmlspecialchars($order['first_name'].' '.$order['last_name']); ?></strong></p>
-                        <p class="text-white-75"><i class="fas fa-phone me-2 text-success"></i><?php echo htmlspecialchars($order['phone']); ?></p>
+                        <p class="mb-1"><strong><?php echo e(trim((string)($order['first_name'] ?? '') . ' ' . (string)($order['last_name'] ?? ''))); ?></strong></p>
+                        <?php
+                            $viewPhoneRaw = trim((string)($order['phone'] ?? ''));
+                            $viewPhoneClean = preg_replace('/[^0-9+]/', '', $viewPhoneRaw);
+                        ?>
+                        <?php if ($viewPhoneRaw !== ''): ?>
+                        <div class="phone-qr-trigger text-white-75 d-inline-flex align-items-center gap-2"
+                             data-phone="<?php echo e($viewPhoneClean); ?>"
+                             role="button"
+                             tabindex="0"
+                             aria-expanded="false"
+                             aria-controls="phoneQrPopover"
+                             aria-haspopup="dialog"
+                             aria-label="<?php echo e($viewPhoneRaw . ' — ' . __('phone_show_qr')); ?>">
+                            <i class="fas fa-phone text-success" aria-hidden="true"></i>
+                            <span><?php echo e($viewPhoneRaw); ?></span>
+                            <i class="fas fa-qrcode phone-qr-trigger__hint" aria-hidden="true"></i>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div class="detail-card">
                         <h6><?php echo __('device_model'); ?></h6>
@@ -247,9 +294,11 @@ foreach ($status_log as $log_row) {
                 <!-- Media Section -->
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h6 class="mb-0"><?php echo __('media_files'); ?></h6>
+                    <?php if (!$isClosedOrderLocked): ?>
                     <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#uploadMediaModal">
                         <i class="fas fa-upload me-1" aria-hidden="true"></i> <?php echo __('upload'); ?>
                     </button>
+                    <?php endif; ?>
                 </div>
                 <div class="row g-2 mb-4">
                     <?php 
@@ -298,12 +347,14 @@ foreach ($status_log as $log_row) {
                                     <div class="text-white-75 d-flex justify-content-center align-items-center" style="font-size: 0.75rem;">
                                         <i class="far fa-clock me-1"></i>
                                         <span><?php echo date('d.m.Y H:i', strtotime($file['created_at'])); ?></span>
+                                        <?php if (!$isClosedOrderLocked): ?>
                                         <button type="button" class="btn btn-link p-0 ms-1 text-primary edit-attachment-date"
                                            data-id="<?php echo (int)$file['id']; ?>"
                                            data-date="<?php echo date('Y-m-d\TH:i', strtotime($file['created_at'])); ?>"
                                            aria-label="<?php echo e(__('edit_upload_date')); ?>">
                                             <i class="fas fa-calendar-alt" aria-hidden="true"></i>
                                         </button>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                             </div>
@@ -313,9 +364,11 @@ foreach ($status_log as $log_row) {
 
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h6 class="mb-0"><?php echo __('parts_used'); ?></h6>
+                    <?php if (!$isClosedOrderLocked): ?>
                     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addPartModal">
                         <i class="fas fa-plus me-1"></i> <?php echo __('add_part'); ?>
                     </button>
+                    <?php endif; ?>
                 </div>
                 
                 <div class="table-responsive">
@@ -326,7 +379,9 @@ foreach ($status_log as $log_row) {
                             <th class="text-center"><?php echo __('quantity'); ?></th>
                             <th class="text-end"><?php echo __('price'); ?></th>
                             <th class="text-end"><?php echo __('sum'); ?></th>
+                            <?php if (!$isClosedOrderLocked): ?>
                             <th class="text-end" style="width: 80px;"><?php echo __('action'); ?></th>
+                            <?php endif; ?>
                         </tr>
                     </thead>
                     <tbody>
@@ -337,10 +392,11 @@ foreach ($status_log as $log_row) {
                             $parts_total += $sum;
                         ?>
                         <tr>
-                            <td data-label="<?php echo e(__('part_name')); ?>"><?php echo htmlspecialchars($item['part_name']); ?></td>
+                            <td data-label="<?php echo e(__('part_name')); ?>"><?php echo e($item['part_name']); ?></td>
                             <td class="text-center" data-label="<?php echo e(__('quantity')); ?>"><?php echo $item['quantity']; ?></td>
                             <td class="text-end" data-label="<?php echo e(__('price')); ?>"><?php echo formatMoney($item['price']); ?></td>
                             <td class="text-end fw-bold" data-label="<?php echo e(__('sum')); ?>"><?php echo formatMoney($sum); ?></td>
+                            <?php if (!$isClosedOrderLocked): ?>
                             <td class="text-end mobile-row-actions" data-label="">
                                 <div class="btn-group btn-group-sm">
                                     <button type="button" class="btn btn-outline-primary" data-crm-action="edit-order-part" data-crm-item="<?php echo e(json_encode($item, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>" title="<?php echo __('edit'); ?>" aria-label="<?php echo e(__('edit') . ': ' . $item['part_name']); ?>">
@@ -351,11 +407,12 @@ foreach ($status_log as $log_row) {
                                     </button>
                                 </div>
                             </td>
+                            <?php endif; ?>
                         </tr>
                         <?php endforeach; ?>
                         <?php if(empty($order_items)): ?>
                         <tr>
-                            <td colspan="5">
+                            <td colspan="<?php echo $isClosedOrderLocked ? '4' : '5'; ?>">
                                 <div class="empty-state">
                                     <div class="empty-state__mark" aria-hidden="true"></div>
                                     <p class="mb-0"><?php echo e(__('no_parts')); ?></p>
@@ -406,12 +463,14 @@ foreach ($status_log as $log_row) {
                                 <span><?php echo __('status'); ?></span>
                                 <span class="text-white-75 small">
                                     <span id="display_updated_at"><?php echo date('d.m.Y H:i', strtotime($status_date)); ?></span>
+                                    <?php if (!$isClosedOrderLocked): ?>
                                     <button type="button" class="btn btn-link p-0 ms-1 text-primary align-baseline" data-bs-toggle="modal" data-bs-target="#editOrderDatesModal" aria-label="<?php echo e(__('edit_order_dates')); ?>">
                                         <i class="fas fa-calendar-alt" aria-hidden="true"></i>
                                     </button>
+                                    <?php endif; ?>
                                 </span>
                             </label>
-                            <select name="status" class="form-select mb-2">
+                            <select name="status" class="form-select mb-2" <?php echo $isClosedOrderLocked ? 'disabled' : ''; ?>>
                                 <?php foreach (getAllStatuses() as $status_option): ?>
                                     <option value="<?php echo e($status_option); ?>" <?php echo $status === $status_option ? 'selected' : ''; ?>>
                                         <?php echo e(getStatusLabel($status_option)); ?>
@@ -421,11 +480,11 @@ foreach ($status_log as $log_row) {
                         </div>
                         <div class="mb-3 d-none" id="statusCancellationReasonWrap">
                             <label class="form-label"><?php echo __('cancellation_reason'); ?></label>
-                            <textarea name="cancellation_reason" class="form-control" rows="3" placeholder="<?php echo __('cancellation_reason_placeholder'); ?>"><?php echo e($order['cancellation_reason'] ?? ''); ?></textarea>
+                            <textarea name="cancellation_reason" class="form-control" rows="3" placeholder="<?php echo __('cancellation_reason_placeholder'); ?>" <?php echo $isClosedOrderLocked ? 'disabled' : ''; ?>><?php echo e($order['cancellation_reason'] ?? ''); ?></textarea>
                         </div>
                         <div class="mb-3 d-none" id="statusShippingMethodWrap">
                             <label class="form-label"><?php echo __('shipping_method'); ?></label>
-                            <select name="shipping_method" class="form-select">
+                            <select name="shipping_method" class="form-select" <?php echo $isClosedOrderLocked ? 'disabled' : ''; ?>>
                                 <option value="" <?php echo empty($order['shipping_method']) ? 'selected' : ''; ?>><?php echo __('choose_option'); ?></option>
                                 <option value="Self Pickup" <?php echo ($order['shipping_method'] ?? '') == 'Self Pickup' ? 'selected' : ''; ?>><?php echo __('self_pickup'); ?></option>
                                 <option value="Zasilkovna" <?php echo ($order['shipping_method'] ?? '') == 'Zasilkovna' ? 'selected' : ''; ?>>Zasilkovna</option>
@@ -439,7 +498,7 @@ foreach ($status_log as $log_row) {
                         <div class="mb-3">
                             <label class="form-label"><?php echo __('work_cost'); ?></label>
                             <div class="input-group">
-                                <input type="number" name="final_cost" class="form-control" value="<?php echo e($order['final_cost'] ?? $order['estimated_cost']); ?>">
+                                <input type="number" name="final_cost" class="form-control" value="<?php echo e($order['final_cost'] ?? $order['estimated_cost']); ?>" <?php echo $isClosedOrderLocked ? 'disabled' : ''; ?>>
                                 <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
                             </div>
                         </div>
@@ -452,13 +511,16 @@ foreach ($status_log as $log_row) {
                             </div>
                         </div>
                         <?php endif; ?>
+                        <?php if (!$isClosedOrderLocked): ?>
                         <button type="submit" class="btn btn-primary w-100 mb-2"><?php echo __('update_status'); ?></button>
+                        <?php endif; ?>
                         <div class="dropdown">
                             <button class="btn btn-outline-secondary w-100 dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="fas fa-print me-2" aria-hidden="true"></i> <?php echo __('print'); ?>
                             </button>
                             <ul class="dropdown-menu w-100 shadow">
                                 <li><a class="dropdown-item py-2" href="#" data-crm-action="open-preview" data-preview-url="print_order.php?id=<?php echo (int)$order['id']; ?>" data-preview-title="Order #<?php echo (int)$order['id']; ?>"><i class="fas fa-file-invoice me-2 text-primary"></i> <?php echo __('a4_invoice'); ?></a></li>
+                                <li><a class="dropdown-item py-2" href="#" data-crm-action="open-preview" data-preview-url="print_reception_thermal.php?id=<?php echo (int)$order['id']; ?>" data-preview-title="<?php echo e(__('reception_act_thermal')); ?> #<?php echo (int)$order['id']; ?>"><i class="fas fa-file-import me-2 text-info"></i> <?php echo __('reception_act_thermal'); ?></a></li>
                                 <li><a class="dropdown-item py-2" href="#" data-crm-action="open-preview" data-preview-url="print_workshop.php?id=<?php echo (int)$order['id']; ?>" data-preview-title="Workshop #<?php echo (int)$order['id']; ?>"><i class="fas fa-tools me-2 text-warning"></i> <?php echo __('work_order'); ?></a></li>
                                 <li><a class="dropdown-item py-2" href="#" data-crm-action="open-preview" data-preview-url="print_thermal.php?id=<?php echo (int)$order['id']; ?>" data-preview-title="Receipt #<?php echo (int)$order['id']; ?>"><i class="fas fa-receipt me-2 text-success"></i> <?php echo __('thermal_receipt'); ?></a></li>
                             </ul>
@@ -481,8 +543,8 @@ foreach ($status_log as $log_row) {
                     <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                     <div class="mb-3">
                         <label class="form-label"><?php echo __('shipping_method'); ?></label>
-                        <select name="shipping_method" class="form-select">
-                            <option value="" <?php echo empty($order['shipping_method']) ? 'selected' : ''; ?>>-- <?php echo __('not_found'); ?> --</option>
+                        <select name="shipping_method" class="form-select" <?php echo $isClosedOrderLocked ? 'disabled' : ''; ?>>
+                            <option value="" <?php echo empty($order['shipping_method']) ? 'selected' : ''; ?>><?php echo __('choose_option'); ?></option>
                             <option value="Self Pickup" <?php echo $order['shipping_method'] == 'Self Pickup' ? 'selected' : ''; ?>><?php echo __('self_pickup'); ?></option>
                             <option value="Zasilkovna" <?php echo $order['shipping_method'] == 'Zasilkovna' ? 'selected' : ''; ?>>Zásilkovna</option>
                             <option value="Ceska Posta" <?php echo $order['shipping_method'] == 'Ceska Posta' ? 'selected' : ''; ?>>Česká pošta</option>
@@ -491,16 +553,22 @@ foreach ($status_log as $log_row) {
                             <option value="GLS" <?php echo $order['shipping_method'] == 'GLS' ? 'selected' : ''; ?>>GLS</option>
                             <option value="Courier" <?php echo $order['shipping_method'] == 'Courier' ? 'selected' : ''; ?>><?php echo __('courier'); ?></option>
                         </select>
+                        <?php if ($isClosedOrderLocked): ?>
+                            <input type="hidden" name="shipping_method" value="<?php echo e($order['shipping_method'] ?? ''); ?>">
+                        <?php endif; ?>
                     </div>
-                    <div id="shippingDetails" class="<?php echo in_array($order['shipping_method'], ['Self Pickup', 'Courier', '']) ? 'd-none' : ''; ?>">
+                    <div id="shippingDetails" class="<?php echo in_array($order['shipping_method'], ['Self Pickup', '']) ? 'd-none' : ''; ?>">
                         <div class="mb-3">
                             <label class="form-label"><?php echo __('shipping_tracking'); ?></label>
-                            <input type="text" name="shipping_tracking" class="form-control" value="<?php echo htmlspecialchars($order['shipping_tracking'] ?? ''); ?>" placeholder="<?php echo __('tracking_placeholder'); ?>">
+                            <input type="text" name="shipping_tracking" class="form-control" value="<?php echo e($order['shipping_tracking'] ?? ''); ?>" placeholder="<?php echo __('tracking_placeholder'); ?>">
                         </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label"><?php echo __('shipping_date'); ?></label>
-                        <input type="datetime-local" name="shipping_date" class="form-control" value="<?php echo $order['shipping_date'] ? date('Y-m-d\TH:i', strtotime($order['shipping_date'])) : ''; ?>">
+                        <input type="datetime-local" name="shipping_date" class="form-control" value="<?php echo $order['shipping_date'] ? date('Y-m-d\TH:i', strtotime($order['shipping_date'])) : ''; ?>" <?php echo $isClosedOrderLocked ? 'disabled' : ''; ?>>
+                        <?php if ($isClosedOrderLocked && !empty($order['shipping_date'])): ?>
+                            <input type="hidden" name="shipping_date" value="<?php echo date('Y-m-d\TH:i', strtotime($order['shipping_date'])); ?>">
+                        <?php endif; ?>
                     </div>
                     <button type="submit" class="btn btn-primary w-100"><?php echo __('save'); ?></button>
                 </form>
@@ -587,7 +655,7 @@ foreach ($status_log as $log_row) {
                     <div class="mb-3">
                         <label class="form-label"><?php echo __('total_to_pay'); ?></label>
                         <div class="input-group">
-                            <input type="number" name="total_amount" class="form-control" step="0.01" value="<?php echo $existing_invoice ? $existing_invoice['total_amount'] : ($order['final_cost'] ?: $order['estimated_cost']); ?>" required>
+                            <input type="number" name="total_amount" class="form-control" step="0.01" value="<?php echo e($existing_invoice ? $existing_invoice['total_amount'] : ($order['final_cost'] !== null ? $order['final_cost'] : ($order['estimated_cost'] ?? 0))); ?>" required>
                             <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
                         </div>
                     </div>
@@ -620,7 +688,7 @@ foreach ($status_log as $log_row) {
 </div>
 
 <!-- Modal Add Part -->
-<div class="modal fade" id="addPartModal" tabindex="-1" data-bs-focus="false" aria-labelledby="addPartModalTitle">
+<div class="modal fade" id="addPartModal" tabindex="-1" aria-labelledby="addPartModalTitle">
     <div class="modal-dialog">
         <div class="modal-content glass-card border-secondary text-white">
             <form id="addPartForm">
@@ -809,7 +877,7 @@ foreach ($status_log as $log_row) {
 </div>
 
 <!-- Full Edit Order Modal -->
-<div class="modal fade" id="editOrderFullModal" tabindex="-1" data-bs-focus="false" aria-labelledby="editOrderFullModalTitle">
+<div class="modal fade" id="editOrderFullModal" tabindex="-1" aria-labelledby="editOrderFullModalTitle">
     <div class="modal-dialog modal-xl">
         <div class="modal-content glass-card border-secondary text-white">
             <form id="editOrderFullForm">
@@ -876,7 +944,7 @@ foreach ($status_log as $log_row) {
                         </div>
                         <div class="col-md-4">
                             <label class="form-label"><?php echo __('warranty_type'); ?></label>
-                            <select name="order_type" class="form-select">
+                            <select name="order_type" class="form-select" <?php echo $isClosedOrderLocked ? 'disabled' : ''; ?>>
                                 <option value="Non-Warranty" <?php echo ($order['order_type'] == 'Non-Warranty') ? 'selected' : ''; ?>><?php echo __('paid_repair'); ?></option>
                                 <option value="Warranty" <?php echo ($order['order_type'] == 'Warranty') ? 'selected' : ''; ?>><?php echo __('warranty_repair'); ?></option>
                             </select>
@@ -908,14 +976,14 @@ foreach ($status_log as $log_row) {
                         <div class="col-md-4">
                             <label class="form-label"><?php echo __('price_estimated'); ?></label>
                             <div class="input-group">
-                                <input type="number" name="estimated_cost" class="form-control" step="0.01" value="<?php echo e($order['estimated_cost']); ?>">
+                                <input type="number" name="estimated_cost" class="form-control" step="0.01" value="<?php echo e($order['estimated_cost']); ?>" <?php echo $isClosedOrderLocked ? 'disabled' : ''; ?>>
                                 <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label"><?php echo __('price_final'); ?></label>
                             <div class="input-group">
-                                <input type="number" name="final_cost" class="form-control" step="0.01" value="<?php echo e($order['final_cost']); ?>">
+                                <input type="number" name="final_cost" class="form-control" step="0.01" value="<?php echo e($order['final_cost']); ?>" <?php echo $isClosedOrderLocked ? 'disabled' : ''; ?>>
                                 <span class="input-group-text"><?php echo get_setting('currency', 'Kč'); ?></span>
                             </div>
                         </div>

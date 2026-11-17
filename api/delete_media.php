@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/api_bootstrap.php';
+require_once __DIR__ . '/../models/OrderStatusService.php';
 api_bootstrap([
     'post' => true,
     'csrf' => true,
@@ -13,7 +14,7 @@ if (!$id) {
 
 try {
     // Get file info and order info to check permissions
-    $stmt = $pdo->prepare("SELECT a.id, a.order_id, a.file_path, o.technician_id
+    $stmt = $pdo->prepare("SELECT a.id, a.order_id, a.file_path, o.technician_id, o.status
                            FROM order_attachments a 
                            JOIN orders o ON a.order_id = o.id 
                            WHERE a.id = ?");
@@ -24,6 +25,10 @@ try {
         if (!currentUserCanEditOrder($data['order_id'])) {
             throw new Exception(__('access_denied_msg'));
         }
+        OrderStatusService::assertClosedOrderEditable(
+            canonicalOrderStatus((string)($data['status'] ?? '')),
+            hasPermission('admin_access')
+        );
 
         $project_root = realpath(__DIR__ . '/..');
         $uploads_root = realpath($project_root . DIRECTORY_SEPARATOR . 'uploads');

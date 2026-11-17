@@ -67,8 +67,9 @@ foreach ($timeline as $timelineRow) {
 }
 
 $deviceRows = $statistics['by_device'] ?? [];
-uasort($deviceRows, static function (array $left, array $right): int {
-    return ($right['received'] <=> $left['received']) ?: strcmp((string)$left['device_type'], (string)$right['device_type']);
+uksort($deviceRows, static function ($leftKey, $rightKey) use ($deviceRows): int {
+    return ($deviceRows[$rightKey]['received'] <=> $deviceRows[$leftKey]['received'])
+        ?: strcmp((string)$leftKey, (string)$rightKey);
 });
 
 $summaryCards = [

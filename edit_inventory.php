@@ -6,19 +6,37 @@ if (!hasPermission('admin_access')) {
     header('Location: index.php');
     exit;
 }
-require_once 'includes/header.php';
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
-if ($id <= 0) {
-    die(__("inventory_id_missing"));
+$pageErrorStatus = null;
+$pageErrorMessage = null;
+$item = null;
+
+if (isset($_SESSION['user_id'])) {
+    if ($id <= 0) {
+        $pageErrorStatus = 400;
+        $pageErrorMessage = __('inventory_id_missing');
+    } else {
+        $stmt = $pdo->prepare("SELECT * FROM inventory WHERE id = ?");
+        $stmt->execute([$id]);
+        $item = $stmt->fetch();
+        if (!$item) {
+            $pageErrorStatus = 404;
+            $pageErrorMessage = __('part_not_found');
+        }
+    }
+    if ($pageErrorStatus !== null) {
+        http_response_code($pageErrorStatus);
+    }
 }
 
-$stmt = $pdo->prepare("SELECT * FROM inventory WHERE id = ?");
-$stmt->execute([$id]);
-$item = $stmt->fetch();
+require_once 'includes/header.php';
 
-if (!$item) {
-    die(__("part_not_found"));
+if ($pageErrorMessage !== null) {
+    echo '<div class="container-fluid py-4"><div class="alert alert-danger" role="alert">' . e($pageErrorMessage) . '</div>';
+    echo '<a href="inventory.php" class="btn btn-outline-secondary"><i class="fas fa-arrow-left me-2" aria-hidden="true"></i>' . e(__('back_to_inventory')) . '</a></div>';
+    require_once 'includes/footer.php';
+    exit;
 }
 
 $success = false;

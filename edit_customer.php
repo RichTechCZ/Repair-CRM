@@ -212,12 +212,18 @@ $(document).ready(function() {
 function deleteCustomer(id) {
     showConfirm(<?php echo json_encode(__('confirm_delete_customer'), $crmJsFlags); ?>, function() {
         $.post('api/delete_customer.php', {id: id, csrf_token: <?php echo json_encode($_SESSION['csrf_token'] ?? '', $crmJsFlags); ?>}, function(res) {
-            if (res.success) {
-                showAlert(<?php echo json_encode(__('customer_deleted'), $crmJsFlags); ?>);
-                window.location.href = 'customers.php';
+            if (res && res.success) {
+                showAlert(<?php echo json_encode(__('customer_deleted'), $crmJsFlags); ?>, undefined, function() {
+                    window.location.href = 'customers.php';
+                });
             } else {
-                showAlert(<?php echo json_encode(__('error') . ': ', $crmJsFlags); ?> + res.message);
+                showAlert(<?php echo json_encode(__('error') . ': ', $crmJsFlags); ?> + ((res && res.message) || <?php echo json_encode(__('error'), $crmJsFlags); ?>));
             }
+        }).fail(function(xhr) {
+            const msg = (xhr && xhr.responseJSON && xhr.responseJSON.message)
+                ? xhr.responseJSON.message
+                : <?php echo json_encode(__('network_error'), $crmJsFlags); ?>;
+            showAlert(msg);
         });
     }, undefined, 'danger');
 }

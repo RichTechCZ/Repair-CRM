@@ -3,19 +3,41 @@ require_once 'includes/config.php';
 require_once 'includes/functions.php';
 require_once 'includes/upload_security.php';
 require_once 'models/OrderStatusService.php';
-require_once 'includes/header.php';
 
 $id = $_GET['id'] ?? $_GET['order_id'] ?? null;
-if (!$id) die(__('order_id_missing'));
+$pageErrorStatus = null;
+$pageErrorMessage = null;
+$order = null;
 
-$stmt = $pdo->prepare("SELECT * FROM orders WHERE id = ?");
-$stmt->execute([$id]);
-$order = $stmt->fetch();
+if (isset($_SESSION['user_id'])) {
+    if (!$id) {
+        $pageErrorStatus = 400;
+        $pageErrorMessage = __('order_id_missing');
+    } else {
+        $stmt = $pdo->prepare("SELECT * FROM orders WHERE id = ?");
+        $stmt->execute([$id]);
+        $order = $stmt->fetch();
 
-if (!$order) die(__('order_not_found'));
+        if (!$order) {
+            $pageErrorStatus = 404;
+            $pageErrorMessage = __('order_not_found');
+        } elseif (!currentUserCanEditOrder($id)) {
+            $pageErrorStatus = 403;
+            $pageErrorMessage = __('no_edit_permission');
+        }
+    }
+    if ($pageErrorStatus !== null) {
+        http_response_code($pageErrorStatus);
+    }
+}
 
-if (!currentUserCanEditOrder($id)) {
-    die(__('no_edit_permission'));
+require_once 'includes/header.php';
+
+if ($pageErrorMessage !== null) {
+    echo '<div class="container-fluid py-4"><div class="alert alert-danger" role="alert">' . e($pageErrorMessage) . '</div>';
+    echo '<a href="orders.php" class="btn btn-outline-secondary"><i class="fas fa-arrow-left me-2" aria-hidden="true"></i>' . e(__('back')) . '</a></div>';
+    require_once 'includes/footer.php';
+    exit;
 }
 
 // Fetch current customer for the remote customer selector
@@ -410,12 +432,18 @@ function deleteOrder(id) {
             id: id,
             csrf_token: $('meta[name="csrf-token"]').attr('content')
         }, function(res) {
-            if (res.success) {
-                showAlert(<?php echo json_encode(__('order_deleted'), $crmJsFlags); ?>);
-                window.location.href = 'orders.php';
+            if (res && res.success) {
+                showAlert(<?php echo json_encode(__('order_deleted'), $crmJsFlags); ?>, undefined, function() {
+                    window.location.href = 'orders.php';
+                });
             } else {
-                showAlert(<?php echo json_encode(__('error') . ': ', $crmJsFlags); ?> + res.message);
+                showAlert(<?php echo json_encode(__('error') . ': ', $crmJsFlags); ?> + ((res && res.message) || <?php echo json_encode(__('error'), $crmJsFlags); ?>));
             }
+        }).fail(function(xhr) {
+            const msg = (xhr && xhr.responseJSON && xhr.responseJSON.message)
+                ? xhr.responseJSON.message
+                : <?php echo json_encode(__('network_error'), $crmJsFlags); ?>;
+            showAlert(msg);
         });
     }, undefined, 'danger');
 }

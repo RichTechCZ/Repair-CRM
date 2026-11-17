@@ -238,12 +238,7 @@ if ($current_page == 'index.php' || $current_page == 'orders.php') {
     $search_action = 'inventory.php';
     $search_placeholder = __('inventory') . ' (ID, ' . __('part_name') . ', ' . __('sku') . '...)';
 } elseif ($current_page == 'settings.php') {
-    if (($_SESSION['role'] ?? '') == 'admin') {
-        $search_action = 'settings.php';
-        $search_placeholder = __('technicians') . '...';
-    } else {
-        $show_search = false;
-    }
+    $show_search = false;
 }
 
 // Orders keeps its search next to the page context and primary action.

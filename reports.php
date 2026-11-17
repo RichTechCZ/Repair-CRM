@@ -82,7 +82,7 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
         <!-- STAFF STATS TAB -->
         <?php if ($active_tab == 'staff_stats'): ?>
             <div class="table-responsive">
-                <table class="table table-hover align-middle">
+                <table class="table table-hover align-middle table-mobile-cards">
                     <thead class="table-dark">
                         <tr>
                             <th><?php echo __('technician'); ?></th>
@@ -98,16 +98,45 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
                     </thead>
                     <tbody>
                         <?php
-                        $techs = getActiveTechnicians();
+                        $allTechRows = $pdo->query("SELECT id, name, is_active FROM technicians ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+                        $techMetaById = [];
+                        $staffEntries = [];
+                        foreach ($allTechRows as $tRow) {
+                            $tid = (int)$tRow['id'];
+                            $techMetaById[$tid] = $tRow;
+                            if ((int)($tRow['is_active'] ?? 1) === 1) {
+                                $staffEntries[$tid] = [
+                                    'id' => $tid,
+                                    'name' => (string)$tRow['name'],
+                                    'is_active' => true,
+                                ];
+                            }
+                        }
+                        foreach (($reportStatsBatch['by_technician'] ?? []) as $tidKey => $tStats) {
+                            $tid = (int)$tidKey;
+                            $hasActivity = ((int)$tStats['received'] + (int)$tStats['in_progress'] + (int)$tStats['completed'] + (int)$tStats['cancelled'] + (int)$tStats['finance_orders']) > 0
+                                || abs((float)$tStats['revenue']) > 0.001
+                                || abs((float)$tStats['parts_cost']) > 0.001
+                                || abs((float)$tStats['expenses']) > 0.001;
+                            if (!isset($staffEntries[$tid]) && $hasActivity) {
+                                $meta = $techMetaById[$tid] ?? null;
+                                $staffEntries[$tid] = [
+                                    'id' => $tid,
+                                    'name' => $meta ? (string)$meta['name'] : '---',
+                                    'is_active' => $meta ? ((int)($meta['is_active'] ?? 1) === 1) : false,
+                                ];
+                            }
+                        }
                         $totals = [
                             'received' => 0, 'in_progress' => 0, 'completed' => 0, 'cancelled' => 0,
                             'revenue' => 0, 'parts_cost' => 0, 'expenses' => 0,
                             'earnings' => 0, 'sc_income' => 0
                         ];
 
-                        foreach ($techs as $t):
-                            $s = $reportStatsBatch['by_technician'][(int)$t['id']]
-                                ?? crmEmptyDetailedStats($reportStatsBatch['rates'][(int)$t['id']] ?? 50.0);
+                        foreach ($staffEntries as $t):
+                            $tid = (int)$t['id'];
+                            $s = $reportStatsBatch['by_technician'][$tid]
+                                ?? crmEmptyDetailedStats($reportStatsBatch['rates'][$tid] ?? ($tid === 0 ? 0.0 : 50.0));
                             $totals['received'] += $s['received'];
                             $totals['in_progress'] += $s['in_progress'];
                             $totals['completed'] += $s['completed'];
@@ -117,32 +146,42 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
                             $totals['expenses'] += $s['expenses'];
                             $totals['earnings'] += $s['earnings'];
                             $totals['sc_income'] += $s['sc_income'];
-                            $payrollUrl = 'print_payroll_thermal.php?tech_id=' . (int)$t['id']
+                            $payrollUrl = 'print_payroll_thermal.php?tech_id=' . $tid
                                 . '&start_date=' . rawurlencode($start_date)
                                 . '&end_date=' . rawurlencode($end_date);
                             $payrollTitle = __('payroll_statement') . ' — ' . $t['name'];
                         ?>
                         <tr>
-                            <td>
-                                <strong><?php echo htmlspecialchars($t['name']); ?></strong>
-                                <a href="?tab=individual_stats&tech_id=<?php echo $t['id']; ?>&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="ms-2 small text-primary"><i class="fas fa-external-link-alt"></i></a>
+                            <td data-label="<?php echo e(__('technician')); ?>">
+                                <strong><?php echo e($t['name']); ?></strong>
+                                <?php if ($tid > 0 && !$t['is_active']): ?>
+                                    <span class="status-pill status-pill--closed ms-1"><?php echo e(__('inactive_status')); ?></span>
+                                <?php endif; ?>
+                                <?php if ($tid > 0): ?>
+                                    <a href="?tab=individual_stats&tech_id=<?php echo $tid; ?>&start_date=<?php echo e($start_date); ?>&end_date=<?php echo e($end_date); ?>" class="ms-2 small text-primary" aria-label="<?php echo e(__('individual_stats') . ': ' . $t['name']); ?>"><i class="fas fa-external-link-alt" aria-hidden="true"></i></a>
+                                <?php endif; ?>
                             </td>
-                            <td class="text-center">
-                                <a href="#" data-crm-action="show-report-orders"
-                                   data-crm-id="<?php echo (int)$t['id']; ?>"
-                                   data-report-type="completed"
-                                   data-report-title="<?php echo e(__('repaired_count')); ?>"
-                                   class="status-pill status-pill--ready text-decoration-none">
-                                    <?php echo $s['completed']; ?>
-                                </a>
+                            <td class="text-center" data-label="<?php echo e(__('repaired_count')); ?>">
+                                <?php if ($tid > 0): ?>
+                                    <a href="#" data-crm-action="show-report-orders"
+                                       data-crm-id="<?php echo $tid; ?>"
+                                       data-report-type="completed"
+                                       data-report-title="<?php echo e(__('repaired_count')); ?>"
+                                       class="status-pill status-pill--ready text-decoration-none">
+                                        <?php echo (int)$s['completed']; ?>
+                                    </a>
+                                <?php else: ?>
+                                    <span class="status-pill status-pill--closed"><?php echo (int)$s['completed']; ?></span>
+                                <?php endif; ?>
                             </td>
-                            <td class="text-end"><?php echo formatMoney($s['revenue']); ?></td>
-                            <td class="text-end text-muted small"><?php echo $s['parts_cost'] > 0 ? '-'.formatMoney($s['parts_cost']) : '—'; ?></td>
-                            <td class="text-end text-muted small"><?php echo $s['expenses'] > 0 ? '-'.formatMoney($s['expenses']) : '—'; ?></td>
-                            <td class="text-end fw-bold text-primary"><?php echo formatMoney($s['earnings']); ?></td>
-                            <td class="text-end text-success fw-bold"><?php echo formatMoney($s['sc_income']); ?></td>
-                            <td class="text-center"><span class="status-pill status-pill--closed"><?php echo e((string)$s['engineer_rate']); ?>%</span></td>
-                            <td class="text-end pe-3">
+                            <td class="text-end" data-label="<?php echo e(__('total_revenue')); ?>"><?php echo formatMoney($s['revenue']); ?></td>
+                            <td class="text-end text-muted small" data-label="<?php echo e(__('parts_cost')); ?>"><?php echo $s['parts_cost'] > 0 ? '-'.formatMoney($s['parts_cost']) : '—'; ?></td>
+                            <td class="text-end text-muted small" data-label="<?php echo e(__('expenses_label')); ?>"><?php echo $s['expenses'] > 0 ? '-'.formatMoney($s['expenses']) : '—'; ?></td>
+                            <td class="text-end fw-bold text-primary" data-label="<?php echo e(__('earned')); ?>"><?php echo formatMoney($s['earnings']); ?></td>
+                            <td class="text-end text-success fw-bold" data-label="<?php echo e(__('sc_income')); ?>"><?php echo formatMoney($s['sc_income']); ?></td>
+                            <td class="text-center" data-label="%"><span class="status-pill status-pill--closed"><?php echo e((string)$s['engineer_rate']); ?>%</span></td>
+                            <td class="text-end pe-3" data-label="">
+                                <?php if ($tid > 0): ?>
                                 <button type="button"
                                         class="btn btn-sm btn-outline-secondary"
                                         title="<?php echo e(__('print_payroll')); ?>"
@@ -152,6 +191,7 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
                                         data-preview-title="<?php echo e($payrollTitle); ?>">
                                     <i class="fas fa-receipt" aria-hidden="true"></i>
                                 </button>
+                                <?php endif; ?>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -223,7 +263,7 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
                 <div class="col-md-6">
                     <h5 class="mb-3 border-bottom pb-2"><?php echo __('device_types_stats'); ?></h5>
                     <?php
-                    $stmt = $pdo->prepare("SELECT device_type, COUNT(*) as count FROM orders WHERE (created_at BETWEEN ? AND ?) GROUP BY device_type ORDER BY count DESC");
+                    $stmt = $pdo->prepare("SELECT COALESCE(NULLIF(TRIM(device_type), ''), 'Other') AS device_type, COUNT(*) as count FROM orders WHERE (created_at BETWEEN ? AND ?) GROUP BY COALESCE(NULLIF(TRIM(device_type), ''), 'Other') ORDER BY count DESC");
                     $stmt->execute([$start_date . ' 00:00:00', $end_date . ' 23:59:59']);
                     $types = $stmt->fetchAll();
                     foreach ($types as $t):
@@ -323,7 +363,7 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
 
                 <h5 class="mb-3 mt-5"><?php echo __('completed_works_list'); ?></h5>
                 <div class="table-responsive">
-                    <table class="table table-sm table-hover align-middle">
+                    <table class="table table-sm table-hover align-middle table-mobile-cards">
                         <thead class="table-dark">
                             <tr>
                                 <th><?php echo __('order_id'); ?></th>
@@ -344,14 +384,14 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
                             foreach (array_reverse($payroll['orders']) as $r):
                             ?>
                             <tr>
-                                <td><a href="view_order.php?id=<?php echo (int)$r['id']; ?>&return=<?php echo $current_url; ?>" class="fw-bold">#<?php echo (int)$r['id']; ?></a></td>
-                                <td><?php echo $r['finance_date'] ? date('d.m.Y', strtotime($r['finance_date'])) : '—'; ?></td>
-                                <td><?php echo e($r['device']); ?></td>
-                                <td><?php echo e($r['customer']); ?></td>
-                                <td class="text-end fw-bold"><?php echo formatMoney($r['customer_total']); ?></td>
-                                <td class="text-end text-muted small"><?php echo $r['parts_cost'] > 0 ? '-' . formatMoney($r['parts_cost']) : '—'; ?></td>
-                                <td class="text-end <?php echo $r['net_profit'] < 0 ? 'text-danger' : ''; ?>"><?php echo formatMoney($r['net_profit']); ?></td>
-                                <td class="text-end fw-bold text-primary"><?php echo formatMoney($r['earnings']); ?></td>
+                                <td data-label="<?php echo e(__('order_id')); ?>"><a href="view_order.php?id=<?php echo (int)$r['id']; ?>&return=<?php echo $current_url; ?>" class="fw-bold">#<?php echo (int)$r['id']; ?></a></td>
+                                <td data-label="<?php echo e(__('issue_date')); ?>"><?php echo $r['finance_date'] ? date('d.m.Y', strtotime($r['finance_date'])) : '—'; ?></td>
+                                <td data-label="<?php echo e(__('device')); ?>"><?php echo e($r['device']); ?></td>
+                                <td data-label="<?php echo e(__('client')); ?>"><?php echo e($r['customer']); ?></td>
+                                <td class="text-end fw-bold" data-label="<?php echo e(__('sum')); ?>"><?php echo formatMoney($r['customer_total']); ?></td>
+                                <td class="text-end text-muted small" data-label="<?php echo e(__('parts_cost')); ?>"><?php echo $r['parts_cost'] > 0 ? '-' . formatMoney($r['parts_cost']) : '—'; ?></td>
+                                <td class="text-end <?php echo $r['net_profit'] < 0 ? 'text-danger' : ''; ?>" data-label="<?php echo e(__('profit')); ?>"><?php echo formatMoney($r['net_profit']); ?></td>
+                                <td class="text-end fw-bold text-primary" data-label="<?php echo e(__('earnings_col')); ?>"><?php echo formatMoney($r['earnings']); ?></td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -369,7 +409,7 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
 </div>
 
 <!-- Modal for Report Orders List -->
-<div class="modal fade" id="reportOrdersModal" tabindex="-1">
+<div class="modal fade" id="reportOrdersModal" tabindex="-1" aria-labelledby="reportOrdersModalTitle">
     <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content glass-panel border-0 shadow-lg">
             <div class="modal-header border-bottom-0 py-3">
@@ -382,7 +422,7 @@ $reportStatsBatch = getDetailedStatsBatch($pdo, $start_date, $end_date);
                     <p class="mt-2 text-muted"><?php echo __('loading_data'); ?></p>
                 </div>
                 <div id="modalTableWrapper" class="table-responsive d-none">
-                    <table class="table table-hover align-middle mb-0 text-white">
+                    <table class="table table-hover align-middle mb-0 text-white table-mobile-cards">
                         <thead class="table-dark">
                             <tr>
                                 <th class="ps-4">ID</th>
@@ -426,10 +466,13 @@ function showOrdersModal(techId, type, title) {
             if (res.success && res.data.length > 0) {
                 res.data.forEach(order => {
                     const row = document.createElement('tr');
-                    const cost = order.final_cost > 0 ? order.final_cost : (order.estimated_cost || 0);
+                    const cost = (order.final_cost !== null && order.final_cost !== undefined && order.final_cost !== '')
+                        ? Number(order.final_cost)
+                        : Number(order.estimated_cost || 0);
                     
                     const tdId = document.createElement('td');
                     tdId.className = 'ps-4';
+                    tdId.setAttribute('data-label', 'ID');
                     const aId = document.createElement('a');
                     aId.href = 'view_order.php?id=' + order.id + '&return=' + currentUrl;
                     aId.className = 'fw-bold text-decoration-none';
@@ -437,15 +480,18 @@ function showOrdersModal(techId, type, title) {
                     tdId.appendChild(aId);
 
                     const tdDevice = document.createElement('td');
+                    tdDevice.setAttribute('data-label', <?php echo json_encode(__('device'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>);
                     const strong = document.createElement('strong');
                     strong.textContent = order.device_brand || '';
                     tdDevice.appendChild(strong);
                     tdDevice.append(' ' + (order.device_model || ''));
 
                     const tdClient = document.createElement('td');
+                    tdClient.setAttribute('data-label', <?php echo json_encode(__('client'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>);
                     tdClient.textContent = (order.first_name || '') + ' ' + (order.last_name || '');
 
                     const tdStatus = document.createElement('td');
+                    tdStatus.setAttribute('data-label', <?php echo json_encode(__('status'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>);
                     const badge = document.createElement('span');
                     badge.className = 'status-pill ' + getStatusPillClass(order.status);
                     badge.textContent = getStatusLabel(order.status);
@@ -453,6 +499,7 @@ function showOrdersModal(techId, type, title) {
 
                     const tdSum = document.createElement('td');
                     tdSum.className = 'text-end pe-4 fw-bold';
+                    tdSum.setAttribute('data-label', <?php echo json_encode(__('sum'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>);
                     tdSum.textContent = parseFloat(cost).toFixed(2) + ' <?php echo get_setting('currency', 'Kč'); ?>';
 
                     row.appendChild(tdId);

@@ -256,7 +256,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function renderImeiDuplicates(orders, sn) {
         var body = document.getElementById('imeiModalBody');
         if (!orders || !orders.length) {
-            body.innerHTML = '<div class="alert alert-info">Заявок не найдено</div>';
+            body.innerHTML = '<div class="alert alert-info">' + escHtml(<?php echo json_encode(__('no_orders_found'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>) + '</div>';
             return;
         }
 
@@ -867,16 +867,21 @@ $(document).ready(function() {
 
         const saveBtn = $(this);
         saveBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-        
+        const invoiceWindow = window.open('', '_blank', 'noopener,noreferrer');
+
         $.post('api/create_invoice.php', formData, function(res) {
-            if (res.success) {
-                window.open('print_invoice.php?id=' + res.id, '_blank');
+            if (res && res.success) {
+                if (invoiceWindow) {
+                    invoiceWindow.location.href = 'print_invoice.php?id=' + encodeURIComponent(res.id);
+                }
                 location.reload();
             } else {
-                showAlert(res.message);
+                if (invoiceWindow && !invoiceWindow.closed) invoiceWindow.close();
+                showAlert((res && res.message) || '<?php echo crmJsText(__('error')); ?>');
                 saveBtn.prop('disabled', false).text('<?php echo crmJsText(__('create_invoice')); ?>');
             }
         }, 'json').fail(function(xhr) {
+            if (invoiceWindow && !invoiceWindow.closed) invoiceWindow.close();
             const message = (xhr.responseJSON && xhr.responseJSON.message) || '<?php echo crmJsText(__('error')); ?>';
             showAlert(message);
             saveBtn.prop('disabled', false).text('<?php echo crmJsText(__('create_invoice')); ?>');
@@ -905,57 +910,6 @@ $(document).ready(function() {
         openUniversalPreview(url, `<?php echo crmJsText(__('reception_act_thermal')); ?> #${orderId}`);
     });
 });
-
-function deleteMedia(id) {
-    const mediaNode = $('#media-item-' + id);
-    const requestData = {
-        id: id,
-        csrf_token: $('meta[name="csrf-token"]').attr('content')
-    };
-
-    const performDelete = function() {
-        $.ajax({
-            url: 'api/delete_media.php',
-            type: 'POST',
-            dataType: 'json',
-            data: requestData,
-            success: function(res) {
-                if (res && res.success) {
-                    mediaNode.fadeOut(180, function() {
-                        $(this).remove();
-                    });
-                } else {
-                    const message = (res && res.message) ? res.message : '<?php echo crmJsText(__('error')); ?>';
-                    if (typeof showAlert === 'function') {
-                        showAlert('<?php echo crmJsText(__('error')); ?>: ' + message);
-                    } else {
-                        alert('Error: ' + message);
-                    }
-                }
-            },
-            error: function(xhr) {
-                const message = xhr.responseJSON && xhr.responseJSON.message
-                    ? xhr.responseJSON.message
-                    : '<?php echo crmJsText(__('error')); ?>';
-                if (typeof showAlert === 'function') {
-                    showAlert('<?php echo crmJsText(__('error')); ?>: ' + message);
-                } else {
-                    alert('Error: ' + message);
-                }
-            }
-        });
-    };
-
-    if (typeof showConfirm !== 'function') {
-        if (confirm('<?php echo crmJsText(__('confirm_delete_file')); ?>')) {
-            performDelete();
-        }
-        return;
-    }
-    showConfirm('<?php echo crmJsText(__('confirm_delete_file')); ?>', function() {
-        performDelete();
-    }, undefined, 'danger');
-}
 
 function deleteOrder(id) {
     showConfirm('<?php echo crmJsText(__('confirm_delete_order_full')); ?>', function() {

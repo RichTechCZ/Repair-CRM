@@ -234,7 +234,7 @@ if (isset($pdo)) {
             </div>
             <div class="modal-body p-0" style="max-height: 400px; overflow-y: auto;">
                 <div class="table-responsive">
-                    <table class="table table-hover mb-0">
+                    <table class="table table-hover mb-0 table-mobile-cards">
                         <thead class="table-dark sticky-top">
                             <tr>
                                 <th class="ps-3">ID</th>
@@ -261,7 +261,10 @@ const CUSTOMER_ORDERS_I18N = {
     empty: <?php echo json_encode(__('orders_not_found'), $crmJsFlags); ?>,
     open: <?php echo json_encode(__('open_btn'), $crmJsFlags); ?>,
     loadError: <?php echo json_encode(__('error_loading_data'), $crmJsFlags); ?>,
-    networkError: <?php echo json_encode(__('network_error'), $crmJsFlags); ?>
+    networkError: <?php echo json_encode(__('network_error'), $crmJsFlags); ?>,
+    deviceCol: <?php echo json_encode(__('device'), $crmJsFlags); ?>,
+    statusCol: <?php echo json_encode(__('status'), $crmJsFlags); ?>,
+    dateCol: <?php echo json_encode(__('date_issue'), $crmJsFlags); ?>
 };
 
 function customerOrdersMessageRow(text, isError) {
@@ -283,13 +286,13 @@ function customerOrderRow(order) {
     const variant = /^[a-z-]+$/.test(String(order.status_variant || '')) ? order.status_variant : 'closed';
     const created = order.created_at ? new Date(String(order.created_at).replace(' ', 'T')) : null;
     const $row = $('<tr>');
-    $row.append($('<td class="ps-3">').append($('<span class="fw-bold">').text('#' + id)));
-    $row.append($('<td>').text([order.device_brand, order.device_model].filter(Boolean).join(' ')));
-    $row.append($('<td>').append(
+    $row.append($('<td class="ps-3" data-label="ID">').append($('<span class="fw-bold">').text('#' + id)));
+    $row.append($('<td>').attr('data-label', CUSTOMER_ORDERS_I18N.deviceCol).text([order.device_brand, order.device_model].filter(Boolean).join(' ')));
+    $row.append($('<td>').attr('data-label', CUSTOMER_ORDERS_I18N.statusCol).append(
         $('<span>').addClass('status-pill status-pill--' + variant).text(order.status_label || order.status || '')
     ));
-    $row.append($('<td>').text(created && !Number.isNaN(created.getTime()) ? created.toLocaleDateString() : ''));
-    $row.append($('<td class="text-end pe-3">').append(
+    $row.append($('<td>').attr('data-label', CUSTOMER_ORDERS_I18N.dateCol).text(created && !Number.isNaN(created.getTime()) ? created.toLocaleDateString() : ''));
+    $row.append($('<td class="text-end pe-3" data-label="">').append(
         $('<a class="btn btn-sm btn-outline-primary">').attr('href', 'view_order.php?id=' + id).text(CUSTOMER_ORDERS_I18N.open)
     ));
     return $row;

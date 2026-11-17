@@ -84,7 +84,7 @@ AI_MODEL=google/gemini-2.0-flash-001
 AI_PROVIDER=openrouter
 ```
 
-When Telegram is enabled, sign in as an administrator, open `set_tg.php`, and submit its confirmation form once. The endpoint registers the configured URL and secret with Telegram; `tg_webhook.php` rejects all requests without the matching secret header.
+When Telegram is enabled, configure `TELEGRAM_WEBHOOK_URL` and `TELEGRAM_WEBHOOK_SECRET` in `.env`, then save integrations in **Settings → Integrations** to register the webhook (or use `set_tg.php` only after temporarily removing it from the web server deny rules while setting up). `tg_webhook.php` rejects all requests without the matching secret header.
 
 ### 4. Run migrations
 
@@ -138,11 +138,15 @@ server {
     }
     
     # uploads/ holds private order attachments; they are served only by api/media.php.
-    location ~ /(backup_db|includes|models|migrations|uploads|tools|tests|temp) {
+    location ~ /(backup_db|crm_backups|includes|models|migrations|uploads|tools|tests|temp|outputs|facktura|graphify-out) {
         deny all;
     }
 
     location ~ ^/(cron|run_migrations|set_tg|analyze_import|find_missing|parse_new_dump|verify_migration)\.php$ {
+        deny all;
+    }
+
+    location ~ ^/(crm_.*_redesign\.html|clear_database\.sql)$ {
         deny all;
     }
 }

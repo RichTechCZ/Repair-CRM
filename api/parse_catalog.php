@@ -1,6 +1,7 @@
 <?php
 // Form POST → redirect to inventory (not JSON).
 require_once __DIR__ . '/../includes/api_bootstrap.php';
+require_once __DIR__ . '/../includes/upload_security.php';
 api_bootstrap([
     'post' => true,
     'csrf' => true,
@@ -143,6 +144,10 @@ function resolveCatalogUrl(string $origin, string $currentUrl, string $candidate
 }
 
 function fetchHtml(string $url): string {
+    return fetchPublicUrl($url, 5 * 1024 * 1024);
+}
+
+function fetchPublicUrl(string $url, int $maxBytes = 2097152): string {
     sleep(1);
 
     // Redirects are followed manually: every hop must pass isPublicCatalogUrl(), otherwise a
@@ -176,10 +181,11 @@ function fetchHtml(string $url): string {
         curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
         curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_MAXFILESIZE, $maxBytes);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
 
-        $html = curl_exec($ch);
+        $body = curl_exec($ch);
         $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $redirectUrl = (string)curl_getinfo($ch, CURLINFO_REDIRECT_URL);
         unset($ch);
@@ -188,13 +194,56 @@ function fetchHtml(string $url): string {
             $url = $redirectUrl;
             continue;
         }
-        if (!is_string($html) || $html === '' || $httpCode < 200 || $httpCode >= 300) {
+        if (!is_string($body) || $body === '' || strlen($body) > $maxBytes || $httpCode < 200 || $httpCode >= 300) {
             return '';
         }
-        return $html;
+        return $body;
     }
 
     return '';
+}
+
+function downloadCatalogImage(string $imageUrl): string {
+    if ($imageUrl === '' || !isPublicCatalogUrl($imageUrl)) {
+        return '';
+    }
+
+    $bytes = fetchPublicUrl($imageUrl, 2 * 1024 * 1024);
+    if ($bytes === '') {
+        return '';
+    }
+
+    $extMap = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'image/gif' => 'gif',
+    ];
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mime = (string)$finfo->buffer($bytes);
+    if (!isset($extMap[$mime])) {
+        return '';
+    }
+
+    if (@getimagesizefromstring($bytes) === false) {
+        return '';
+    }
+
+    $catalogDir = __DIR__ . '/../uploads/catalog';
+    crmEnsureUploadDirectory(dirname($catalogDir));
+    crmEnsureUploadDirectory($catalogDir);
+
+    $hash = hash('sha256', $bytes);
+    $fileName = $hash . '.' . $extMap[$mime];
+    $destPath = $catalogDir . DIRECTORY_SEPARATOR . $fileName;
+    if (!is_file($destPath)) {
+        if (file_put_contents($destPath, $bytes, LOCK_EX) === false) {
+            return '';
+        }
+        @chmod($destPath, 0644);
+    }
+
+    return 'api/catalog_image.php?f=' . $fileName;
 }
 
 function createXPathFromHtml(string $html): ?DOMXPath {
@@ -291,17 +340,26 @@ function upsertInventoryItem(string $name, string $sku, float $price, string $im
     }
 
     $existing = $stmt->fetch();
+    $localImagePath = $imageUrl !== '' ? downloadCatalogImage($imageUrl) : '';
 
     if ($existing) {
         $newPrice = $price > 0 ? $price : (float)$existing['sale_price'];
-        $newImageUrl = $imageUrl !== '' ? $imageUrl : (string)($existing['image_path'] ?? '');
+        $existingPath = (string)($existing['image_path'] ?? '');
+        if ($localImagePath !== '') {
+            $newImagePath = $localImagePath;
+        } elseif (preg_match('#^https?://#i', $existingPath)) {
+            // Clear legacy remote image URLs that strict CSP img-src 'self' rejects.
+            $newImagePath = '';
+        } else {
+            $newImagePath = $existingPath;
+        }
         $update = $pdo->prepare("UPDATE inventory SET sale_price = ?, image_path = ? WHERE id = ?");
-        $update->execute([$newPrice, $newImageUrl, $existing['id']]);
+        $update->execute([$newPrice, $newImagePath, $existing['id']]);
         return 'updated';
     }
 
     $insert = $pdo->prepare("INSERT INTO inventory (part_name, sku, sale_price, cost_price, quantity, min_stock, image_path) VALUES (?, ?, ?, ?, 0, 5, ?)");
-    $insert->execute([$name, $lookupBySku ? $sku : null, $price, $price > 0 ? $price * 0.7 : 0, $imageUrl]);
+    $insert->execute([$name, $lookupBySku ? $sku : null, $price, $price > 0 ? round($price * 0.7, 2) : null, $localImagePath]);
     return 'added';
 }
 

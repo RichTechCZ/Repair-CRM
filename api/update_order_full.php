@@ -70,7 +70,34 @@ try {
 
     $incoming_order_type = isset($_POST['order_type'])
         ? trim((string)$_POST['order_type'])
-        : (string)($current['order_type'] ?? '');
+        : (string)($current['order_type'] ?? 'Non-Warranty');
+    $allowed_order_types = ['Non-Warranty', 'Warranty'];
+    if (
+        isset($_POST['order_type'])
+        && $incoming_order_type !== (string)($current['order_type'] ?? '')
+        && !in_array($incoming_order_type, $allowed_order_types, true)
+    ) {
+        throw new InvalidArgumentException(__('missing_data'));
+    }
+
+    $incoming_priority = isset($_POST['priority'])
+        ? trim((string)$_POST['priority'])
+        : (string)($current['priority'] ?? 'Normal');
+    $allowed_priorities = ['Normal', 'High'];
+    if (
+        isset($_POST['priority'])
+        && $incoming_priority !== (string)($current['priority'] ?? '')
+        && !in_array($incoming_priority, $allowed_priorities, true)
+    ) {
+        throw new InvalidArgumentException(__('missing_data'));
+    }
+
+    $incoming_device_model = isset($_POST['device_model'])
+        ? trim((string)$_POST['device_model'])
+        : trim((string)($current['device_model'] ?? ''));
+    if (isset($_POST['device_model']) && $incoming_device_model === '') {
+        throw new InvalidArgumentException(__('missing_fields'));
+    }
     $incoming_estimated_cost = $crmReadOptionalMoney('estimated_cost', $current['estimated_cost'] ?? 0);
     $incoming_extra_expenses = $is_admin
         ? $crmReadOptionalMoney('extra_expenses', $current['extra_expenses'] ?? 0)
@@ -109,6 +136,10 @@ try {
         OrderStatusService::assertClosedOrderEditable($canonical_current_status, $is_admin);
     }
 
+    $effective_final_for_issue = $postedFinal !== null
+        ? $postedFinal
+        : ($current['final_cost'] !== null ? (float)$current['final_cost'] : (float)($current['estimated_cost'] ?? 0));
+
     // Handover requirements guard the transition into Issued and changes to what it was
     // validated on; editing only notes of an already issued (possibly legacy) order must work.
     if (
@@ -117,7 +148,7 @@ try {
     ) {
         OrderStatusService::assertIssuedRequirements(
             $canonical_new_status,
-            $incoming_final_cost,
+            $effective_final_for_issue,
             $incoming_shipping !== '' ? $incoming_shipping : null,
             true,
             $incoming_order_type
@@ -184,23 +215,25 @@ try {
     }
     $new_device_type = crmValidatedDeviceType($_POST['device_type'] ?? null, $current['device_type']);
 
+    $stored_final_cost = ($postedFinal === null && $current['final_cost'] === null) ? null : $incoming_final_cost;
+
     $params = [
         $new_customer_id,
-        isset($_POST['device_model']) ? $_POST['device_model'] : $current['device_model'],
-        isset($_POST['device_brand']) ? $_POST['device_brand'] : $current['device_brand'],
+        $incoming_device_model,
+        isset($_POST['device_brand']) ? trim((string)$_POST['device_brand']) : $current['device_brand'],
         $new_device_type,
-        isset($_POST['order_type']) ? $_POST['order_type'] : $current['order_type'],
+        $incoming_order_type,
         $new_status,
         $new_tech_id,
         $incoming_estimated_cost,
         // Keep an unset final cost NULL: storing 0 would override the estimated_cost revenue fallback.
-        ($postedFinal === null && $current['final_cost'] === null) ? null : $incoming_final_cost,
+        $stored_final_cost,
         $incoming_extra_expenses,
         isset($_POST['problem_description']) ? $_POST['problem_description'] : $current['problem_description'],
         isset($_POST['technician_notes']) ? $_POST['technician_notes'] : $current['technician_notes'],
         $storedPinCode,
         isset($_POST['appearance']) ? $_POST['appearance'] : $current['appearance'],
-        isset($_POST['priority']) ? $_POST['priority'] : $current['priority'],
+        $incoming_priority,
         isset($_POST['serial_number']) ? $_POST['serial_number'] : $current['serial_number'],
         isset($_POST['serial_number_2']) ? $_POST['serial_number_2'] : $current['serial_number_2'],
     ];
@@ -228,17 +261,15 @@ try {
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
 
-    $final_cost = isset($_POST['final_cost']) ? (float)$_POST['final_cost'] : (float)$current['final_cost'];
-
     $effects = OrderStatusService::applyInTransaction(
         $pdo,
         (int)$order_id,
         $current['status'],
         $new_status,
-        $_POST['final_cost'] ?? $final_cost
+        $stored_final_cost
     );
 
-    saveDeviceModelUsage($_POST['device_brand'] ?? $current['device_brand'], $_POST['device_model'] ?? $current['device_model']);
+    saveDeviceModelUsage($_POST['device_brand'] ?? $current['device_brand'], $incoming_device_model);
 
     $pdo->commit();
 
@@ -247,7 +278,7 @@ try {
         (int)$order_id,
         $current['status'],
         $new_status,
-        $final_cost,
+        $stored_final_cost,
         $effects['invoice_to_sync']
     );
 

@@ -187,7 +187,7 @@ if (isset($_POST['delete_tech']) && $is_admin_check) {
     }
     $stmt = $pdo->prepare("DELETE FROM technicians WHERE id = ?");
     $stmt->execute([(int)$_POST['delete_tech']]);
-    header("Location: settings.php?tab=staff");
+    header("Location: settings.php?tab=staff&tech_deleted=1");
     exit;
 }
 
@@ -200,7 +200,11 @@ if (isset($_POST['save_permissions']) && $is_admin_check) {
 
 // Administrator (users table) passwords: only an administrator session, re-authenticated with its
 // own current password, and every change is written to the audit log (system_errors, type audit).
-if (isset($_POST['change_admin_password']) && ($_SESSION['role'] ?? '') === 'admin') {
+if (isset($_POST['change_admin_password'])) {
+    if (($_SESSION['role'] ?? '') !== 'admin') {
+        header("Location: settings.php?tab=staff&error=unauthorized");
+        exit;
+    }
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { die(__('csrf_invalid')); }
     $actorStmt = $pdo->prepare('SELECT username, password FROM users WHERE id = ?');
     $actorStmt->execute([(int)$_SESSION['user_id']]);
@@ -254,6 +258,7 @@ if (isset($_POST['update_system_settings']) && $is_admin_check) {
 }
 
 $is_admin_user = hasPermission('admin_access');
+$is_super_admin = (($_SESSION['role'] ?? '') === 'admin');
 
 $active_tab = $_GET['tab'] ?? ($is_admin_user ? 'company' : 'staff');
 
@@ -262,6 +267,8 @@ if (!$is_admin_user) {
     if ($active_tab == 'company' || $active_tab == 'integrations' || $active_tab == 'system' || $active_tab == 'admins' || $active_tab == 'updates') {
         $active_tab = 'staff';
     }
+} elseif (!$is_super_admin && $active_tab === 'admins') {
+    $active_tab = 'staff';
 }
 
 // One-shot cleanup of obsolete permission rows (view_all_orders, edit_orders, …)
@@ -279,9 +286,25 @@ require_once 'includes/header.php';
             <h1><?php echo __('settings'); ?></h1>
             <p class="page-subtitle"><?php echo e($_SESSION['full_name'] ?? ''); ?></p>
         </div>
-        <?php if (isset($_GET['updated'])): ?>
+        <?php
+        $settings_success_keys = [
+            'updated' => 'updated_success',
+            'tech_added' => 'settings_tech_added',
+            'tech_deleted' => 'settings_tech_deleted',
+            'perms_updated' => 'settings_perms_updated',
+            'admin_pwd_updated' => 'settings_admin_pwd_updated',
+            'logs_cleared' => 'settings_logs_cleared',
+        ];
+        $settings_success_msg = null;
+        foreach ($settings_success_keys as $param => $langKey) {
+            if (isset($_GET[$param])) {
+                $settings_success_msg = __($langKey);
+                break;
+            }
+        }
+        if ($settings_success_msg !== null): ?>
             <div class="page-actions">
-                <span class="status-pill status-pill--stock-ok"><?php echo __('updated_success'); ?></span>
+                <span class="status-pill status-pill--stock-ok"><?php echo e($settings_success_msg); ?></span>
             </div>
         <?php endif; ?>
     </div>
@@ -292,6 +315,8 @@ require_once 'includes/header.php';
         'tech_has_orders' => 'settings_err_tech_has_orders',
         'invalid_telegram_id' => 'settings_err_invalid_telegram_id',
         'wrong_current_password' => 'settings_err_wrong_current_password',
+        'csrf' => 'csrf_invalid',
+        'unauthorized' => 'access_denied_msg',
     ];
     $settings_error = $settings_error_keys[$_GET['error'] ?? ''] ?? null;
     if ($settings_error): ?>
@@ -315,9 +340,11 @@ require_once 'includes/header.php';
         <li class="nav-item">
             <a class="nav-link <?php echo $active_tab == 'system' ? 'active' : 'text-white-75'; ?>" href="?tab=system"><i class="fas fa-server me-2"></i><?php echo __('system_db'); ?></a>
         </li>
+        <?php if ($is_super_admin): ?>
         <li class="nav-item">
             <a class="nav-link <?php echo $active_tab == 'admins' ? 'active' : 'text-white-75'; ?>" href="?tab=admins"><i class="fas fa-user-shield me-2"></i><?php echo __('admin_tab'); ?></a>
         </li>
+        <?php endif; ?>
         <li class="nav-item">
             <a class="nav-link <?php echo $active_tab == 'updates' ? 'active' : 'text-white-75'; ?>" href="?tab=updates" id="updatesNavLink"><i class="fas fa-cloud-download-alt me-2"></i><?php echo __('updates_tab'); ?> <span id="updateBadgeNav" class="status-pill status-pill--waiting ms-1" style="display:none;"><span aria-hidden="true">!</span><span class="visually-hidden"><?php echo e(__('update_available')); ?></span></span></a>
         </li>
@@ -429,7 +456,7 @@ require_once 'includes/header.php';
                 <?php endif; ?>
             </div>
             <div class="table-responsive">
-                <table class="table table-dark table-hover align-middle border-secondary">
+                <table class="table table-dark table-hover align-middle border-secondary table-mobile-cards">
                     <thead class="table-dark"><tr><th><?php echo __('name_col'); ?></th><th><?php echo __('login_col'); ?></th><th><?php echo __('role_col'); ?></th><th><?php echo __('spec_col'); ?></th><th>Telegram</th><th><?php echo __('status_col'); ?></th><th class="text-end"><?php echo __('actions_col'); ?></th></tr></thead>
                     <tbody>
                         <?php 
@@ -437,17 +464,17 @@ require_once 'includes/header.php';
                         $techs = $pdo->query($techs_query)->fetchAll();
                         foreach ($techs as $t): ?>
                         <tr>
-                            <td><strong><?php echo htmlspecialchars($t['name']); ?></strong></td>
-                            <td>@<?php echo htmlspecialchars($t['username'] ?? '-'); ?></td>
-                            <td>
+                            <td data-label="<?php echo e(__('name_col')); ?>"><strong><?php echo htmlspecialchars($t['name']); ?></strong></td>
+                            <td data-label="<?php echo e(__('login_col')); ?>">@<?php echo htmlspecialchars($t['username'] ?? '-'); ?></td>
+                            <td data-label="<?php echo e(__('role_col')); ?>">
                                 <?php 
                                 $r = $t['role'] ?? 'engineer';
                                 if($r == 'manager' || $r == 'admin') echo '<span class="status-pill status-pill--diagnostics">'.__('role_manager').'</span>';
                                 else echo '<span class="status-pill status-pill--closed">'.__('role_engineer').'</span>';
                                 ?>
                             </td>
-                            <td><span class="badge glass-panel text-white border-secondary"><?php echo htmlspecialchars($t['specialization']); ?></span></td>
-                            <td>
+                            <td data-label="<?php echo e(__('spec_col')); ?>"><span class="badge glass-panel text-white border-secondary"><?php echo e($t['specialization']); ?></span></td>
+                            <td data-label="Telegram">
                                 <?php if (!empty($t['telegram_id'])): ?>
                                     <code class="small"><?php echo htmlspecialchars($t['telegram_id']); ?></code>
                                     <?php if (!preg_match('/^\d+$/', (string)$t['telegram_id'])): ?>
@@ -458,8 +485,8 @@ require_once 'includes/header.php';
                                     <span class="text-muted small"><?php echo __('not_linked'); ?></span>
                                 <?php endif; ?>
                             </td>
-                            <td><?php echo ($t['is_active'] ?? 1) ? '<span class="status-pill status-pill--stock-ok">'.__('active_status').'</span>' : '<span class="status-pill status-pill--closed">'.__('inactive_status').'</span>'; ?></td>
-                            <td class="text-end">
+                            <td data-label="<?php echo e(__('status_col')); ?>"><?php echo ($t['is_active'] ?? 1) ? '<span class="status-pill status-pill--stock-ok">'.__('active_status').'</span>' : '<span class="status-pill status-pill--closed">'.__('inactive_status').'</span>'; ?></td>
+                            <td class="text-end" data-label="">
                                 <div class="btn-group btn-group-sm">
                                     <?php if ($is_admin_user): ?>
                                         <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#permModal<?php echo $t['id']; ?>" aria-label="<?php echo e(__('permissions_title') . $t['name']); ?>"><i class="fas fa-shield-alt" aria-hidden="true"></i></button>
@@ -562,20 +589,20 @@ require_once 'includes/header.php';
         </div>
 
         <!-- ADMINS TAB -->
-        <?php if ($is_admin_user): ?>
+        <?php if ($is_super_admin): ?>
         <div class="tab-pane fade <?php echo $active_tab == 'admins' ? 'show active' : ''; ?>">
             <h5 class="mb-3"><?php echo __('admin_management_title'); ?></h5>
             <div class="table-responsive">
-                <table class="table table-dark table-hover align-middle border-secondary">
+                <table class="table table-dark table-hover align-middle border-secondary table-mobile-cards">
                     <thead class="table-dark"><tr><th><?php echo __('login_col'); ?></th><th><?php echo __('name_col'); ?></th><th><?php echo __('role_col'); ?></th><th class="text-end"><?php echo __('actions_col'); ?></th></tr></thead>
                     <tbody>
                         <?php $admins = $pdo->query("SELECT * FROM users ORDER BY role DESC")->fetchAll();
                         foreach ($admins as $admin): ?>
                         <tr>
-                            <td><strong><?php echo htmlspecialchars($admin['username']); ?></strong></td>
-                            <td><?php echo htmlspecialchars($admin['full_name']); ?></td>
-                            <td><span class="status-pill status-pill--priority-high">Admin</span></td>
-                            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#adminPwdModal<?php echo $admin['id']; ?>"><i class="fas fa-key me-1" aria-hidden="true"></i> <?php echo __('password_btn'); ?></button></td>
+                            <td data-label="<?php echo e(__('login_col')); ?>"><strong><?php echo htmlspecialchars($admin['username']); ?></strong></td>
+                            <td data-label="<?php echo e(__('name_col')); ?>"><?php echo e($admin['full_name']); ?></td>
+                            <td data-label="<?php echo e(__('role_col')); ?>"><span class="status-pill status-pill--priority-high">Admin</span></td>
+                            <td class="text-end" data-label=""><button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#adminPwdModal<?php echo $admin['id']; ?>"><i class="fas fa-key me-1" aria-hidden="true"></i> <?php echo __('password_btn'); ?></button></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -679,7 +706,7 @@ require_once 'includes/header.php';
             </div>
             <div class="row"><div class="col-md-6 mb-3"><label class="form-label">Email</label><input type="email" name="tech_email" class="form-control"></div><div class="col-md-6 mb-3"><label class="form-label"><?php echo __('phone_label'); ?></label><input type="text" name="tech_phone" class="form-control"></div></div>
             <div class="mb-3">
-                <label class="form-label">Telegram ID / Username</label>
+                <label class="form-label">Telegram ID</label>
                 <input type="text" name="tech_tg" class="form-control" placeholder="123456789">
                 <div class="form-text small"><?php echo __('tg_notification_hint'); ?></div>
             </div>
@@ -738,7 +765,7 @@ require_once 'includes/header.php';
                 <?php endif; ?>
             </div>
             <div class="mb-3">
-                <label class="form-label">Telegram ID / Username</label>
+                <label class="form-label">Telegram ID</label>
                 <div class="input-group">
                     <input type="text" name="tech_tg" class="form-control" value="<?php echo htmlspecialchars($t['telegram_id'] ?? ''); ?>" placeholder="123456789">
                     <button class="btn btn-outline-secondary" type="button" data-crm-action="test-technician-telegram" data-crm-id="<?php echo (int)$t['id']; ?>" aria-label="<?php echo e(__('test_notification')); ?>"><i class="fab fa-telegram-plane" aria-hidden="true"></i></button>
@@ -782,7 +809,7 @@ require_once 'includes/header.php';
 </div>
 <?php endforeach; ?>
 
-<?php if ($is_admin_user): ?>
+<?php if ($is_super_admin): ?>
 <?php foreach ($admins as $admin): ?>
 <div class="modal fade" id="adminPwdModal<?php echo (int)$admin['id']; ?>" tabindex="-1" aria-labelledby="adminPwdModalTitle<?php echo (int)$admin['id']; ?>">
     <div class="modal-dialog modal-sm"><div class="modal-content glass-card border-secondary text-white"><form method="POST">
@@ -803,7 +830,21 @@ require_once 'includes/header.php';
 
 <?php $crmJsFlags = JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE; ?>
 <script nonce="<?php echo e(crmCspNonce()); ?>">
-function testTechTG(id) { if (!id) return; $.post('api/test_tech_tg.php', {id: id, csrf_token: $('meta[name="csrf-token"]').attr('content')}, function(res) { if (res.success) { showAlert(<?php echo json_encode(__('test_msg_sent'), $crmJsFlags); ?>); } else { showAlert(res.message); } }); }
+function testTechTG(id) {
+    if (!id) return;
+    $.post('api/test_tech_tg.php', {id: id, csrf_token: $('meta[name="csrf-token"]').attr('content')}, function(res) {
+        if (res && res.success) {
+            showAlert(<?php echo json_encode(__('test_msg_sent'), $crmJsFlags); ?>);
+        } else {
+            showAlert((res && res.message) || <?php echo json_encode(__('error_js'), $crmJsFlags); ?>);
+        }
+    }).fail(function(xhr) {
+        const msg = (xhr && xhr.responseJSON && xhr.responseJSON.message)
+            ? xhr.responseJSON.message
+            : <?php echo json_encode(__('network_error'), $crmJsFlags); ?>;
+        showAlert(msg);
+    });
+}
 
 function triggerBackupDownload(path, filename) {
     var csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
@@ -1024,8 +1065,10 @@ function escapeHtml(s) {
     return div.innerHTML;
 }
 
-// Auto-check on page load (use cache, no force)
+<?php if ($active_tab === 'updates'): ?>
+// Auto-check on updates tab load (use cache, no force)
 document.addEventListener('DOMContentLoaded', () => checkForUpdates(false));
+<?php endif; ?>
 </script>
 <?php endif; ?>
 

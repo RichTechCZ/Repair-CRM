@@ -71,7 +71,8 @@ final class TelegramBotRouter
 
         if ($text === '/my' || $text === '📂 Мои заявки') {
             telegramClearState($pdo, (string)$fromId);
-            self::sendOrdersList($pdo, $chatId, $user, 'all', 1, false);
+            $isGlobalAdmin = !empty($user['is_admin']) && empty($user['technician_id']);
+            self::sendOrdersList($pdo, $chatId, $user, 'all', 1, false, null, $isGlobalAdmin);
             return;
         }
 
@@ -154,11 +155,11 @@ final class TelegramBotRouter
                 break;
 
             case 'orders_all':
-                telegramAnswerCallbackQuery($callbackId);
                 if (empty($user['is_admin'])) {
                     telegramAnswerCallbackQuery($callbackId, "Доступ разрешен только администраторам.", true);
                     return;
                 }
+                telegramAnswerCallbackQuery($callbackId);
                 $filter = $parts[1] ?? 'all';
                 $page = (int)($parts[2] ?? 1);
                 self::sendOrdersList($pdo, $chatId, $user, $filter, $page, true, $messageId, true);
@@ -250,7 +251,8 @@ final class TelegramBotRouter
             case 'report_period':
                 telegramAnswerCallbackQuery($callbackId);
                 $period = $parts[1] ?? 'week';
-                self::sendCalculatedReport($pdo, $chatId, $user, $period, $messageId);
+                $forceAllScope = (($parts[2] ?? '') === 'all');
+                self::sendCalculatedReport($pdo, $chatId, $user, $period, $messageId, $forceAllScope);
                 break;
 
             case 'order_search_prompt':
@@ -560,14 +562,27 @@ final class TelegramBotRouter
         $keyboard = [];
 
         if (!empty($user['is_admin'])) {
-            $keyboard[] = [
-                ['text' => '🏢 Все заявки СЦ', 'callback_data' => 'orders_all:all:1'],
-                ['text' => '📂 Мои заявки', 'callback_data' => 'orders_my:all:1'],
-            ];
-            $keyboard[] = [
-                ['text' => '🔍 Поиск заявки', 'callback_data' => 'order_search_prompt'],
-                ['text' => '📈 Отчет СЦ', 'callback_data' => 'report_period:month'],
-            ];
+            if (!empty($user['technician_id'])) {
+                $keyboard[] = [
+                    ['text' => '🏢 Все заявки СЦ', 'callback_data' => 'orders_all:all:1'],
+                    ['text' => '📂 Мои заявки', 'callback_data' => 'orders_my:all:1'],
+                ];
+                $keyboard[] = [
+                    ['text' => '📈 Отчет СЦ', 'callback_data' => 'report_period:month:all'],
+                    ['text' => '📊 Мой отчет', 'callback_data' => 'report_menu'],
+                ];
+                $keyboard[] = [
+                    ['text' => '🔍 Поиск заявки', 'callback_data' => 'order_search_prompt'],
+                ];
+            } else {
+                $keyboard[] = [
+                    ['text' => '🏢 Все заявки СЦ', 'callback_data' => 'orders_all:all:1'],
+                    ['text' => '🔍 Поиск заявки', 'callback_data' => 'order_search_prompt'],
+                ];
+                $keyboard[] = [
+                    ['text' => '📈 Отчет СЦ', 'callback_data' => 'report_period:month:all'],
+                ];
+            }
         } else {
             $keyboard[] = [
                 ['text' => '📂 Мои заявки', 'callback_data' => 'orders_my:all:1'],
@@ -608,17 +623,19 @@ final class TelegramBotRouter
     ): void {
         $limit = 7;
         $page = max(1, $page);
-        $offset = ($page - 1) * $limit;
 
         $where = [];
         $params = [];
 
         if ($isGlobalAll && !empty($user['is_admin'])) {
             // Admin viewing all orders
-        } else {
+        } elseif (!empty($user['technician_id'])) {
             // Technician viewing only own orders
             $where[] = 'o.technician_id = ?';
-            $params[] = $user['technician_id'];
+            $params[] = (int)$user['technician_id'];
+        } else {
+            // User-table account without technician_id has no personal assigned queue
+            $where[] = '1 = 0';
         }
 
         switch ($filter) {
@@ -652,6 +669,7 @@ final class TelegramBotRouter
 
         $totalPages = max(1, (int)ceil($totalOrders / $limit));
         $page = min($page, $totalPages);
+        $offset = ($page - 1) * $limit;
 
         // Fetch page orders
         $stmt = $pdo->prepare(
@@ -809,7 +827,7 @@ final class TelegramBotRouter
                 ['text' => '🔄 Сменить статус', 'callback_data' => "change_status_menu:{$orderId}"],
             ],
             [
-                ['text' => '⬅️ К списку заявок', 'callback_data' => 'orders_my:all:1'],
+                ['text' => '⬅️ К списку заявок', 'callback_data' => (!empty($user['is_admin']) && empty($user['technician_id'])) ? 'orders_all:all:1' : 'orders_my:all:1'],
                 ['text' => '🏠 Меню', 'callback_data' => 'main_menu'],
             ]
         ];
@@ -1246,8 +1264,8 @@ final class TelegramBotRouter
             return;
         }
 
-        self::commitStatusChange($pdo, $chatId, $user, $orderId, $canonicalNew, null, null, $messageId);
-        telegramAnswerCallbackQuery($callbackId, "Статус обновлен!");
+        $ok = self::commitStatusChange($pdo, $chatId, $user, $orderId, $canonicalNew, null, null, $messageId);
+        telegramAnswerCallbackQuery($callbackId, $ok ? "Статус обновлен!" : "Не удалось обновить статус.", !$ok);
     }
 
     private static function commitStatusChange(
@@ -1259,7 +1277,7 @@ final class TelegramBotRouter
         ?float $finalCost = null,
         ?string $cancelReason = null,
         ?int $messageId = null
-    ): void {
+    ): bool {
         try {
             $pdo->beginTransaction();
 
@@ -1343,11 +1361,13 @@ final class TelegramBotRouter
 
             telegramSend($chatId, "✅ <b>Статус заявки #{$orderId} успешно изменен на «" . getStatusLabel($newStatus) . "»!</b>");
             self::sendOrderDetail($pdo, $chatId, $user, $orderId, false);
+            return true;
         } catch (Throwable $e) {
             unset($GLOBALS['crm_status_actor']);
             if ($pdo->inTransaction()) $pdo->rollBack();
             error_log("commitStatusChange error: " . $e->getMessage());
             telegramSend($chatId, "❌ Ошибка при смене статуса: " . telegramHtml(publicExceptionMessage($e)));
+            return false;
         }
     }
 
@@ -1381,7 +1401,7 @@ final class TelegramBotRouter
         telegramSend($chatId, $text, $replyMarkup);
     }
 
-    public static function sendCalculatedReport(PDO $pdo, $chatId, array $user, string $period, ?int $messageId = null): void
+    public static function sendCalculatedReport(PDO $pdo, $chatId, array $user, string $period, ?int $messageId = null, bool $forceAllScope = false): void
     {
         switch ($period) {
             case 'today':
@@ -1402,7 +1422,8 @@ final class TelegramBotRouter
                 break;
         }
 
-        if (!empty($user['is_admin']) && empty($user['technician_id'])) {
+        $isWorkshopScope = !empty($user['is_admin']) && ($forceAllScope || empty($user['technician_id']));
+        if ($isWorkshopScope) {
             // Admin overall workshop report. Keys come from crmEmptyDetailedStats().
             $all = getDetailedStatsBatch($pdo, $startDate, $endDate)['all'];
             $text = "📈 <b>Финансовый отчет СЦ {$periodTitle}</b>\n";
@@ -1433,11 +1454,12 @@ final class TelegramBotRouter
             $text .= "💵 <b>ВАШ ЗАРАБОТОК:</b> <b>" . formatMoney($stats['earnings']) . "</b>\n";
         }
 
+        $scopeSuffix = $isWorkshopScope ? ':all' : '';
         $keyboard = [
             [
-                ['text' => '📅 Сегодня', 'callback_data' => 'report_period:today'],
-                ['text' => '🗓 Неделя', 'callback_data' => 'report_period:week'],
-                ['text' => '📆 Месяц', 'callback_data' => 'report_period:month'],
+                ['text' => '📅 Сегодня', 'callback_data' => 'report_period:today' . $scopeSuffix],
+                ['text' => '🗓 Неделя', 'callback_data' => 'report_period:week' . $scopeSuffix],
+                ['text' => '📆 Месяц', 'callback_data' => 'report_period:month' . $scopeSuffix],
             ],
             [
                 ['text' => '🏠 Главное меню', 'callback_data' => 'main_menu'],

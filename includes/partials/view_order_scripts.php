@@ -231,21 +231,27 @@ $(document).ready(function() {
         const shippingMethod = $(this).find('select[name="shipping_method"]').val();
         const isSelfPickup = String(shippingMethod || '').trim().toLowerCase() === 'self pickup';
         $.post('api/update_shipping.php', $(this).serialize(), function(res) {
-            if(res.success) {
+            if(res && res.success) {
                 if (!isSelfPickup) {
-                    showAlert(<?php echo $crmJs(__('shipping_updated')); ?>);
+                    showAlert(<?php echo $crmJs(__('shipping_updated')); ?>, undefined, function() {
+                        location.reload();
+                    });
+                } else {
+                    location.reload();
                 }
-                location.reload();
             } else {
-                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + res.message);
+                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + ((res && res.message) || <?php echo $crmJs(__('error')); ?>));
             }
+        }).fail(function(xhr) {
+            const msg = (xhr && xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : <?php echo $crmJs(__('network_error')); ?>;
+            showAlert(msg);
         });
     });
 
     $('select[name="shipping_method"]').on('change', function() {
         const method = $(this).val();
         $('select[name="shipping_method"]').not(this).val(method);
-        if (['Zasilkovna', 'Ceska Posta', 'PPL', 'DPD', 'GLS'].includes(method)) {
+        if (['Zasilkovna', 'Ceska Posta', 'PPL', 'DPD', 'GLS', 'Courier'].includes(method)) {
             $('#shippingDetails').removeClass('d-none');
         } else {
             $('#shippingDetails').addClass('d-none');
@@ -356,8 +362,9 @@ $(document).ready(function() {
             success: function(res) {
                 $('#uploadProgress').addClass('d-none');
                 if (res && res.success) {
-                    showAlert(<?php echo $crmJs(__('files_uploaded')); ?> + res.count);
-                    location.reload();
+                    showAlert(<?php echo $crmJs(__('files_uploaded')); ?> + res.count, undefined, function() {
+                        location.reload();
+                    });
                 } else {
                     const message = (res && res.message) ? res.message : <?php echo $crmJs(__('upload_error')); ?>;
                     showAlert(<?php echo $crmJs(__('error') . ': '); ?> + message);
@@ -518,32 +525,18 @@ function deleteMedia(id) {
                     });
                 } else {
                     const message = (res && res.message) ? res.message : <?php echo $crmJs(__('error')); ?>;
-                    if (typeof showAlert === 'function') {
-                        showAlert(<?php echo $crmJs(__('error') . ': '); ?> + message);
-                    } else {
-                        alert('Error: ' + message);
-                    }
+                    showAlert(<?php echo $crmJs(__('error') . ': '); ?> + message);
                 }
             },
             error: function(xhr) {
                 const message = xhr.responseJSON && xhr.responseJSON.message
                     ? xhr.responseJSON.message
                     : <?php echo $crmJs(__('error')); ?>;
-                if (typeof showAlert === 'function') {
-                    showAlert(<?php echo $crmJs(__('error') . ': '); ?> + message);
-                } else {
-                    alert('Error: ' + message);
-                }
+                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + message);
             }
         });
     };
 
-    if (typeof showConfirm !== 'function') {
-        if (confirm(<?php echo $crmJs(__('confirm_delete_file')); ?>)) {
-            performDelete();
-        }
-        return;
-    }
     showConfirm(<?php echo $crmJs(__('confirm_delete_file')); ?>, function() {
         performDelete();
     }, undefined, 'danger');
@@ -666,12 +659,16 @@ function goToShipping() {
 function deleteOrder(id) {
     showConfirm(<?php echo $crmJs(__('confirm_delete_order_full')); ?>, function() {
         $.post('api/delete_order.php', {id: id, csrf_token: <?php echo $crmJs($_SESSION['csrf_token'] ?? ''); ?>}, function(res) {
-            if (res.success) {
-                showAlert(<?php echo $crmJs(__('order_deleted')); ?>);
-                window.location.href = 'orders.php';
+            if (res && res.success) {
+                showAlert(<?php echo $crmJs(__('order_deleted')); ?>, undefined, function() {
+                    window.location.href = 'orders.php';
+                });
             } else {
-                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + res.message);
+                showAlert(<?php echo $crmJs(__('error') . ': '); ?> + ((res && res.message) || <?php echo $crmJs(__('error')); ?>));
             }
+        }).fail(function(xhr) {
+            const msg = (xhr && xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : <?php echo $crmJs(__('network_error')); ?>;
+            showAlert(msg);
         });
     }, undefined, 'danger');
 }

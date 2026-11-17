@@ -40,7 +40,7 @@ function _l($key) {
 <html lang="<?php echo htmlspecialchars($target_lang, ENT_QUOTES, 'UTF-8'); ?>">
 <head>
     <meta charset="UTF-8">
-    <title>Potvrzení o zakázce #<?php echo $order['id']; ?></title>
+    <title><?php echo htmlspecialchars((string)_l('order_receipt_doc'), ENT_QUOTES, 'UTF-8'); ?> #<?php echo (int)$order['id']; ?></title>
     <style>
         body { font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #333; margin: 0; padding: 20px; }
         .receipt-box { max-width: 800px; margin: auto; border: 1px solid #eee; padding: 30px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.15); }
@@ -70,12 +70,12 @@ function _l($key) {
 <div class="receipt-box">
     <div class="header">
         <div>
-            <h1><?php echo htmlspecialchars(get_setting('company_name', 'Repair CRM')); ?></h1>
-            <p><?php echo nl2br(htmlspecialchars(get_setting('company_address'))); ?><br>
-               <?php echo _l('phone'); ?>: <?php echo htmlspecialchars(get_setting('company_phone')); ?></p>
+            <h1><?php echo htmlspecialchars((string)get_setting('company_name', 'Repair CRM'), ENT_QUOTES, 'UTF-8'); ?></h1>
+            <p><?php echo nl2br(htmlspecialchars((string)get_setting('company_address', ''), ENT_QUOTES, 'UTF-8')); ?><br>
+               <?php echo _l('phone'); ?>: <?php echo htmlspecialchars((string)get_setting('company_phone', ''), ENT_QUOTES, 'UTF-8'); ?></p>
         </div>
         <div style="text-align: right;">
-            <h2><?php echo mb_strtoupper(_l('order')); ?> č. <?php echo $order['id']; ?></h2>
+            <h2><?php echo mb_strtoupper(_l('order')); ?> <?php echo htmlspecialchars((string)_l('order_number_short'), ENT_QUOTES, 'UTF-8'); ?> <?php echo (int)$order['id']; ?></h2>
             <p><?php echo _l('created'); ?>: <?php echo date('d.m.Y', strtotime($order['created_at'])); ?></p>
         </div>
     </div>
@@ -83,27 +83,27 @@ function _l($key) {
     <div class="info-row">
         <div class="info-col">
             <strong><?php echo mb_strtoupper(_l('client')); ?>:</strong><br>
-            <?php echo htmlspecialchars($order['first_name'] . ' ' . $order['last_name']); ?><br>
-            <?php echo _l('phone'); ?>: <?php echo htmlspecialchars($order['phone']); ?><br>
-            <?php echo htmlspecialchars($order['address']); ?>
+            <?php echo htmlspecialchars(trim((string)($order['first_name'] ?? '') . ' ' . (string)($order['last_name'] ?? '')), ENT_QUOTES, 'UTF-8'); ?><br>
+            <?php echo _l('phone'); ?>: <?php echo htmlspecialchars((string)($order['phone'] ?? ''), ENT_QUOTES, 'UTF-8'); ?><br>
+            <?php echo htmlspecialchars((string)($order['address'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>
         </div>
         <div class="info-col" style="text-align: right;">
             <strong><?php echo mb_strtoupper(_l('device_model')); ?>:</strong><br>
-            <?php echo htmlspecialchars($order['device_brand'] . ' ' . $order['device_model']); ?><br>
-            <?php echo htmlspecialchars($order['device_type']); ?> | S/N: <?php echo htmlspecialchars($order['serial_number']); ?>
-            <?php if($order['serial_number_2']): ?><br><?php echo _l('serial_2'); ?>: <?php echo htmlspecialchars($order['serial_number_2']); ?><?php endif; ?>
+            <?php echo htmlspecialchars(trim((string)($order['device_brand'] ?? '') . ' ' . (string)($order['device_model'] ?? '')), ENT_QUOTES, 'UTF-8'); ?><br>
+            <?php echo htmlspecialchars((string)($order['device_type'] ?? ''), ENT_QUOTES, 'UTF-8'); ?> | S/N: <?php echo htmlspecialchars((string)($order['serial_number'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>
+            <?php if(!empty($order['serial_number_2'])): ?><br><?php echo _l('serial_2'); ?>: <?php echo htmlspecialchars((string)$order['serial_number_2'], ENT_QUOTES, 'UTF-8'); ?><?php endif; ?>
         </div>
     </div>
 
     <div style="margin-top: 20px;">
         <strong><?php echo _l('problem'); ?>:</strong><br>
-        <?php echo nl2br(htmlspecialchars($order['problem_description'])); ?>
+        <?php echo nl2br(htmlspecialchars((string)($order['problem_description'] ?? ''), ENT_QUOTES, 'UTF-8')); ?>
     </div>
 
-    <?php if($order['appearance']): ?>
+    <?php if(!empty($order['appearance'])): ?>
     <div style="margin-top: 10px;">
         <strong><?php echo _l('appearance'); ?>:</strong><br>
-        <?php echo htmlspecialchars($order['appearance']); ?>
+        <?php echo htmlspecialchars((string)$order['appearance'], ENT_QUOTES, 'UTF-8'); ?>
     </div>
     <?php endif; ?>
 
@@ -141,15 +141,15 @@ function _l($key) {
 
     <div class="signatures">
         <div>
-            <div class="sig-line">Podpis zákazníka</div>
+            <div class="sig-line"><?php echo htmlspecialchars((string)_l('customer_signature'), ENT_QUOTES, 'UTF-8'); ?></div>
         </div>
         <div>
-            <div class="sig-line">Převzal (razítko)</div>
+            <div class="sig-line"><?php echo htmlspecialchars((string)_l('received_signature'), ENT_QUOTES, 'UTF-8'); ?></div>
         </div>
     </div>
 
     <div class="footer">
-        <p>Záruka na provedené práce je 30 dní. Záruka se nevztahuje na poškození způsobená nesprávným používáním zařízení.</p>
+        <p><?php echo htmlspecialchars((string)_l('order_warranty_footer'), ENT_QUOTES, 'UTF-8'); ?></p>
     </div>
 </div>
 

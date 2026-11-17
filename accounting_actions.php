@@ -1,30 +1,34 @@
 <?php
-require_once 'includes/config.php';
-require_once 'includes/functions.php';
-header('Content-Type: application/json');
+require_once __DIR__ . '/includes/api_bootstrap.php';
 
-// Access Check
-if (!hasPermission('admin_access')) {
-    die(json_encode(['success' => false, 'error' => 'Access denied']));
-}
-
-// Handle CSRF dynamically for ALL POST requests
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !validateCsrfToken($_POST['csrf_token'] ?? '')) {
-    die(json_encode(['success' => false, 'error' => 'Security token invalid.']));
-}
-
-$action = $_POST['action'] ?? $_GET['action'] ?? '';
+$action = (string)($_POST['action'] ?? $_GET['action'] ?? '');
 $valid_actions = ['save_invoice', 'get_invoice', 'delete_invoice', 'update_status', 'create_credit_note', 'export_pohoda', 'export_s3money', 'get_order_data'];
-if (!in_array($action, $valid_actions, true)) {
-    die(json_encode(['success' => false, 'error' => 'Invalid action']));
+$read_actions = ['get_invoice', 'get_order_data'];
+$is_valid_action = in_array($action, $valid_actions, true);
+$expected_method = in_array($action, $read_actions, true) ? 'GET' : 'POST';
+
+api_bootstrap([
+    'auth' => true,
+    'post' => false,
+    'csrf' => false,
+    'permission' => 'admin_access',
+    'rate' => ['action' => 'accounting_' . ($is_valid_action ? $action : 'invalid'), 'max' => 60, 'window' => 60],
+    'fail' => static function (string $message, int $status): void {
+        api_json_exit(['success' => false, 'error' => $message, 'message' => $message], $status);
+    },
+]);
+
+if (!$is_valid_action) {
+    api_json_exit(['success' => false, 'error' => 'Invalid action', 'message' => 'Invalid action'], 400);
 }
 
-$read_actions = ['get_invoice', 'get_order_data'];
-$expected_method = in_array($action, $read_actions, true) ? 'GET' : 'POST';
 if ($_SERVER['REQUEST_METHOD'] !== $expected_method) {
-    http_response_code(405);
     header('Allow: ' . $expected_method);
-    die(json_encode(['success' => false, 'error' => 'Method not allowed']));
+    api_json_exit(['success' => false, 'error' => 'Method not allowed', 'message' => 'Method not allowed'], 405);
+}
+
+if ($expected_method === 'POST' && !validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    api_json_exit(['success' => false, 'error' => __('csrf_token_invalid'), 'message' => __('csrf_token_invalid')], 403);
 }
 
 switch ($action) {

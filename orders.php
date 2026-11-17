@@ -129,10 +129,6 @@ $order_templates = array_values(array_filter(array_map('trim', preg_split('/\r\n
 $order_note_templates_raw = trim((string)get_setting('order_note_templates', ''));
 $order_note_templates = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $order_note_templates_raw))));
 
-$sla_new_hours = (int)get_setting('sla_new_hours', 24);
-$sla_progress_hours = (int)get_setting('sla_progress_hours', 72);
-$now_ts = time();
-
 // Status tiles: one GROUP BY query for all groups.
 $s_new = $s_pending = $s_progress = $s_ready = 0;
 if (isset($pdo)) {
@@ -169,11 +165,14 @@ unset($_SESSION['order_form_old']);
             </p>
         </div>
         <form action="<?php echo e($search_action); ?>" method="GET" class="workspace-overview__search" role="search">
+            <?php if (!empty($_GET['filter'])): ?>
+                <input type="hidden" name="filter" value="<?php echo e((string)$_GET['filter']); ?>">
+            <?php endif; ?>
             <label for="ordersSearch" class="visually-hidden"><?php echo e(__('search_placeholder')); ?></label>
             <div class="search-shell">
                 <span class="search-shell__icon" aria-hidden="true"></span>
                 <input id="ordersSearch" type="text" name="search" class="form-control" placeholder="<?php echo e($search_placeholder); ?>" value="<?php echo e($_GET['search'] ?? ''); ?>">
-                <button class="btn btn-primary btn-sm px-3" type="submit">Go</button>
+                <button class="btn btn-primary btn-sm px-3" type="submit"><?php echo e(__('search_btn')); ?></button>
             </div>
         </form>
         <div class="page-actions">
@@ -350,7 +349,7 @@ unset($_SESSION['order_form_old']);
                             </td>
                             <td class="order-amount-cell" data-label="<?php echo e(__('amount')); ?>">
                                 <?php
-                                    $repair_total = (float)($order['final_cost'] ?: $order['estimated_cost'] ?: 0);
+                                    $repair_total = $order['final_cost'] !== null ? (float)$order['final_cost'] : (float)($order['estimated_cost'] ?? 0);
                                     $show_amount_breakdown = hasPermission('admin_access');
                                 ?>
                                 <div class="order-amount-cell__total financial-number fw-bold text-white" title="<?php echo e(__('amount')); ?>">
@@ -544,7 +543,7 @@ unset($_SESSION['order_form_old']);
 
 
 <!-- New Order Modal -->
-<div class="modal fade" id="newOrderModal" tabindex="-1" data-bs-focus="false" aria-labelledby="newOrderModalTitle">
+<div class="modal fade" id="newOrderModal" tabindex="-1" aria-labelledby="newOrderModalTitle">
     <div class="modal-dialog modal-lg">
         <div class="modal-content border-0 shadow">
             <form action="api/add_order.php" method="POST" enctype="multipart/form-data" data-crm-once>
@@ -869,14 +868,14 @@ unset($_SESSION['order_form_old']);
 
 
 <!-- Invoice Modal -->
-<div class="modal fade" id="invoiceModal" tabindex="-1">
+<div class="modal fade" id="invoiceModal" tabindex="-1" aria-labelledby="ordersInvoiceModalTitle">
     <div class="modal-dialog">
         <div class="modal-content">
             <form id="invoiceForm">
                 <?php echo csrfField(); ?>
                 <input type="hidden" name="order_id" id="invoiceOrderId">
                 <div class="modal-header">
-                    <h5 class="modal-title"><?php echo __('invoice'); ?></h5>
+                    <h5 class="modal-title" id="ordersInvoiceModalTitle"><?php echo __('invoice'); ?></h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
                 </div>
                 <div class="modal-body">
@@ -909,7 +908,7 @@ unset($_SESSION['order_form_old']);
                             </div>
                         </div>
 
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <label class="form-label"><?php echo __('date_issue'); ?></label>
                             <input type="date" name="date_issue" id="dateIssue" class="form-control" required>
                         </div>
@@ -940,11 +939,11 @@ unset($_SESSION['order_form_old']);
 </div>
 
 <!-- Language Selection for Reception Act Modal -->
-<div class="modal fade" id="receptionLangModal" tabindex="-1">
+<div class="modal fade" id="receptionLangModal" tabindex="-1" aria-labelledby="receptionLangModalTitle">
     <div class="modal-dialog modal-sm modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header bg-dark bg-opacity-25 border-secondary border-0">
-                <h6 class="modal-title fw-bold"><?php echo __('select_print_language'); ?></h6>
+                <h6 class="modal-title fw-bold" id="receptionLangModalTitle"><?php echo __('select_print_language'); ?></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo e(__('close')); ?>"></button>
             </div>
             <div class="modal-body p-4">

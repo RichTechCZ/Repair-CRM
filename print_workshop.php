@@ -24,6 +24,11 @@ if (!$order) die(__("print_not_found"));
 if (function_exists('crmDecryptDevicePinInRow')) {
     crmDecryptDevicePinInRow($order);
 }
+$pinDecryptFailed = function_exists('crmSensitiveDataIsEncrypted')
+    && crmSensitiveDataIsEncrypted((string)($order['pin_code'] ?? ''));
+if ($pinDecryptFailed) {
+    $order['pin_code'] = '';
+}
 
 // Fetch parts linked to this order
 $stmt = $pdo->prepare("SELECT oi.*, COALESCE(NULLIF(oi.part_name, ''), i.part_name) AS part_name FROM order_items oi LEFT JOIN inventory i ON oi.inventory_id = i.id WHERE oi.order_id = ? ORDER BY oi.id");
@@ -37,7 +42,7 @@ function _l($key) { global $target_lang; return __($key, $target_lang); }
 <html lang="<?php echo htmlspecialchars($target_lang, ENT_QUOTES, 'UTF-8'); ?>">
 <head>
     <meta charset="UTF-8">
-    <title>Pracovní příkaz #<?php echo $order['id']; ?></title>
+    <title><?php echo htmlspecialchars((string)_l('work_order'), ENT_QUOTES, 'UTF-8'); ?> #<?php echo (int)$order['id']; ?></title>
     <style>
         body { font-family: Arial, sans-serif; font-size: 14px; color: #333; margin: 0; padding: 20px; }
         .work-order { max-width: 800px; margin: auto; border: 2px solid #000; padding: 20px; }
@@ -61,13 +66,13 @@ function _l($key) { global $target_lang; return __($key, $target_lang); }
 <body>
 
 <div class="no-print" style="text-align: center; margin-bottom: 20px;">
-    <button data-print-action="print" style="padding: 10px 20px; cursor: pointer; background: #000; color: white; border: none; font-weight: bold;">Tisk pracovního příkazu</button>
+    <button data-print-action="print" style="padding: 10px 20px; cursor: pointer; background: #000; color: white; border: none; font-weight: bold;"><?php echo htmlspecialchars((string)_l('print_work_order_btn'), ENT_QUOTES, 'UTF-8'); ?></button>
 </div>
 
 <div class="work-order">
     <div class="header">
         <div>
-            <h1><?php echo mb_strtoupper(_l('work_order')); ?> č. <?php echo $order['id']; ?></h1>
+            <h1><?php echo mb_strtoupper(_l('work_order')); ?> <?php echo htmlspecialchars((string)_l('order_number_short'), ENT_QUOTES, 'UTF-8'); ?> <?php echo (int)$order['id']; ?></h1>
             <div><?php echo _l('created'); ?>: <?php echo date('d.m.Y H:i', strtotime($order['created_at'])); ?></div>
         </div>
         <div class="qr-section">
@@ -97,7 +102,7 @@ function _l($key) { global $target_lang; return __($key, $target_lang); }
             </div>
             <div>
                 <div class="label"><?php echo mb_strtoupper(_l('pin')); ?>:</div>
-                <div class="value" style="font-family: monospace; letter-spacing: 2px;"><?php echo htmlspecialchars($order['pin_code'] ?: _l('not_found')); ?></div>
+                <div class="value" style="font-family: monospace; letter-spacing: 2px;"><?php echo htmlspecialchars((string)($pinDecryptFailed ? _l('pin_decrypt_error') : ($order['pin_code'] ?: _l('not_found'))), ENT_QUOTES, 'UTF-8'); ?></div>
             </div>
             <div>
                 <div class="label"><?php echo mb_strtoupper(_l('priority')); ?>:</div>
@@ -130,14 +135,14 @@ function _l($key) { global $target_lang; return __($key, $target_lang); }
     <?php endif; ?>
 
     <div class="section">
-        <div class="section-title"><?php echo mb_strtoupper(_l('action')); ?> (doplní technik)</div>
+        <div class="section-title"><?php echo mb_strtoupper(_l('action')); ?> (<?php echo htmlspecialchars((string)_l('to_be_filled_by_tech'), ENT_QUOTES, 'UTF-8'); ?>)</div>
         <div style="border: 1px solid #000; height: 150px;"></div>
     </div>
 
     <div class="grid" style="margin-top: 20px;">
         <div>
             <div class="label"><?php echo mb_strtoupper(_l('technician')); ?>:</div>
-            <div class="value"><?php echo htmlspecialchars($order['tech_name'] ?: '____________________'); ?></div>
+            <div class="value"><?php echo htmlspecialchars((string)($order['tech_name'] ?: '____________________'), ENT_QUOTES, 'UTF-8'); ?></div>
         </div>
         <div style="text-align: right;">
             <div class="label"><?php echo mb_strtoupper(_l('save')); ?>:</div>
@@ -146,8 +151,8 @@ function _l($key) { global $target_lang; return __($key, $target_lang); }
     </div>
 
     <div class="footer">
-        * Pracovní příkaz je interní dokument servisního centra.
-        * QR kód vede na elektronickou kartu zakázky.
+        * <?php echo htmlspecialchars((string)_l('workshop_internal_note'), ENT_QUOTES, 'UTF-8'); ?>
+        * <?php echo htmlspecialchars((string)_l('workshop_qr_note'), ENT_QUOTES, 'UTF-8'); ?>
     </div>
 </div>
 
