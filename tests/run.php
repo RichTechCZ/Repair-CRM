@@ -1220,13 +1220,70 @@ assertTrue(
     'accounting_actions.php must enforce api_bootstrap rate limiting and guards'
 );
 
-foreach (['orders.php', 'reports.php', 'view_order.php'] as $strictModalFile) {
+foreach (['orders.php', 'reports.php', 'view_order.php', 'customers.php'] as $strictModalFile) {
     $strictModalSrc = (string)file_get_contents(__DIR__ . '/../' . $strictModalFile);
     assertTrue(
         strpos($strictModalSrc, 'data-bs-focus="false"') === false,
         "{$strictModalFile} must not disable Bootstrap modal focus trapping"
     );
 }
+
+// ── Regression: customer card directory & endpoints ─────────────────────────
+assertSameValue(
+    'ACME s.r.o.',
+    crmCustomerDisplayName(['customer_type' => 'company', 'company' => 'ACME s.r.o.', 'first_name' => 'Firma', 'last_name' => 'ACME']),
+    'crmCustomerDisplayName must prefer company name for company customers'
+);
+assertSameValue(
+    'Novak Jan',
+    crmCustomerDisplayName(['customer_type' => 'private', 'company' => '', 'first_name' => 'Jan', 'last_name' => 'Novak']),
+    'crmCustomerDisplayName must format private persons as Last First'
+);
+assertSameValue('fa-mobile-alt', crmDeviceIconClass('Phone'), 'crmDeviceIconClass must resolve Phone icon');
+assertSameValue('fa-tools', crmDeviceIconClass('Unknown'), 'crmDeviceIconClass must fall back cleanly');
+
+$customersPageSrc = (string)file_get_contents(__DIR__ . '/../customers.php');
+$customerOrdersApiSrc = (string)file_get_contents(__DIR__ . '/../api/get_customer_orders.php');
+$updateCustomerApiSrc = (string)file_get_contents(__DIR__ . '/../api/update_customer.php');
+$customersJsSrc = (string)file_get_contents(__DIR__ . '/../assets/js/customers.js');
+$ordersPageAfterPrefill = (string)file_get_contents(__DIR__ . '/../orders.php');
+
+assertTrue(
+    $customersPageSrc !== false
+        && strpos($customersPageSrc, 'isTechnicianScoped()') !== false
+        && strpos($customersPageSrc, 'phone-qr-trigger') !== false
+        && strpos($customersPageSrc, "title=\"<?php echo e(__('phone_show_qr')); ?>\"") === false
+        && strpos($customersPageSrc, 'assets/js/customers.js') !== false
+        && strpos($customersPageSrc, 'id="customerCardModal"') !== false,
+    'customers.php must preserve technician scoping, keep phone QR triggers tooltip-free, and load the customer card script'
+);
+assertTrue(
+    $customerOrdersApiSrc !== false
+        && strpos($customerOrdersApiSrc, 'currentUserCanViewCustomer($customer_id)') !== false
+        && strpos($customerOrdersApiSrc, 'o.technician_id = ?') !== false
+        && strpos($customerOrdersApiSrc, 'o.pin_code') === false
+        && strpos($customerOrdersApiSrc, 'if ($isAdmin)') !== false
+        && strpos($customerOrdersApiSrc, 'crmOrderAttachmentUrl(') !== false,
+    'api/get_customer_orders.php must enforce customer and technician scoping, omit pin_code, and restrict invoices to admin_access'
+);
+assertTrue(
+    $updateCustomerApiSrc !== false
+        && strpos($updateCustomerApiSrc, "'post' => true") !== false
+        && strpos($updateCustomerApiSrc, "'csrf' => true") !== false
+        && strpos($updateCustomerApiSrc, "'permission' => 'edit_customers'") !== false
+        && strpos($updateCustomerApiSrc, 'currentUserCanViewCustomer($customer_id)') !== false
+        && strpos($updateCustomerApiSrc, "tableColumnExists('customers', 'phone_search')") !== false,
+    'api/update_customer.php must enforce POST+CSRF+edit_customers+customer scope and support phone_search fallback'
+);
+assertTrue(
+    $ordersPageAfterPrefill !== false
+        && strpos($ordersPageAfterPrefill, 'currentUserCanCreateOrderForCustomer($prefill_customer_id)') !== false,
+    'orders.php customer prefill must enforce currentUserCanCreateOrderForCustomer'
+);
+assertTrue(
+    $customersJsSrc !== false && strpos($customersJsSrc, 'nonce') === false,
+    'assets/js/customers.js must remain a plain external script without embedded nonce attributes'
+);
 
 echo "OK: security and financial regression checks passed\n";
 

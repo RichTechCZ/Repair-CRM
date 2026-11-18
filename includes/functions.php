@@ -412,7 +412,7 @@ function crmDeviceTypeOptionsHtml($selected): string {
     return $html;
 }
 
-function getDeviceIcon($type) {
+function crmDeviceIconClass(string $type): string {
     $icons = [
         'Phone' => 'fa-mobile-alt',
         'Notebook' => 'fa-laptop',
@@ -422,8 +422,21 @@ function getDeviceIcon($type) {
         'HDD' => 'fa-hdd',
     ];
 
-    $icon = $icons[$type] ?? 'fa-tools';
+    return $icons[$type] ?? 'fa-tools';
+}
+
+function getDeviceIcon($type) {
+    $icon = crmDeviceIconClass((string)$type);
     return '<i class="fas ' . $icon . ' device-row-icon" aria-hidden="true"></i>';
+}
+
+function crmCustomerDisplayName(array $customer): string {
+    $company = trim((string)($customer['company'] ?? ''));
+    if (($customer['customer_type'] ?? '') === 'company' && $company !== '') {
+        return $company;
+    }
+    $full = trim((string)($customer['last_name'] ?? '') . ' ' . (string)($customer['first_name'] ?? ''));
+    return $full !== '' ? $full : $company;
 }
 
 function getStatusBadge($status) {

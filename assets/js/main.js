@@ -56,6 +56,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initDeclarativeActions();
     initFormGuards();
     enhanceMobileChrome();
+    initPhoneQrPopover();
 
     // Fix for aria-hidden on focusable elements inside modals (Accessibility)
     $(document).on('show.bs.modal shown.bs.modal', '.modal', function() {
@@ -244,7 +245,18 @@ function initDeclarativeActions() {
                 callPageAction('calcTotals');
                 break;
             case 'show-customer-orders':
-                if (id !== null) callPageAction('showCustomerOrders', id, element.dataset.customerName || '');
+                if (id !== null) {
+                    if (typeof window.openCustomerCard === 'function') {
+                        window.openCustomerCard(id, 'repairs', element.dataset.customerName || '');
+                    } else {
+                        callPageAction('showCustomerOrders', id, element.dataset.customerName || '');
+                    }
+                }
+                break;
+            case 'open-customer-card':
+                if (id !== null) {
+                    callPageAction('openCustomerCard', id, element.dataset.crmTab || 'repairs', element.dataset.customerName || '');
+                }
                 break;
             case 'delete-customer':
                 if (id !== null) callPageAction('deleteCustomer', id);
@@ -816,4 +828,219 @@ function triggerDownload(url) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+}
+
+/**
+ * Shared Phone QR popover controller (orders.php, customers.php, dynamic cards).
+ * Hover, click, and keyboard open the same local SVG QR; Escape restores focus.
+ */
+function initPhoneQrPopover() {
+    const popover = document.getElementById('phoneQrPopover');
+    const qrContainer = document.getElementById('qrContainer');
+    const phoneLabel = document.getElementById('qrPhoneLabel');
+    const callBtn = document.getElementById('qrCallBtn');
+    if (!popover || !qrContainer || !phoneLabel || !callBtn) return;
+    if (popover.dataset.crmQrInit === '1') return;
+    popover.dataset.crmQrInit = '1';
+
+    let hideTimeout;
+    let activePhone = '';
+    let activeTrigger = null;
+
+    function isPopoverOpen() {
+        return popover.style.display === 'block';
+    }
+
+    function setExpanded(trigger, expanded) {
+        if (!trigger) return;
+        trigger.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    }
+
+    function hidePopover(options) {
+        const restoreFocus = options && options.restoreFocus;
+        const trigger = activeTrigger;
+        clearTimeout(hideTimeout);
+        popover.style.display = 'none';
+        popover.setAttribute('aria-hidden', 'true');
+        setExpanded(trigger, false);
+        activeTrigger = null;
+        if (restoreFocus && trigger) {
+            trigger.focus({ preventScroll: true });
+        }
+    }
+
+    function positionPopover(trigger) {
+        const rect = trigger.getBoundingClientRect();
+        const gap = 12;
+        const pad = 8;
+        const pw = popover.offsetWidth || 160;
+        const ph = popover.offsetHeight || 200;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const isNarrow = vw < 768;
+
+        let left = isNarrow ? rect.left : (rect.right + gap);
+        let top = isNarrow ? (rect.bottom + gap) : rect.top;
+
+        if (left + pw > vw - pad) {
+            left = Math.max(pad, rect.right - pw);
+        }
+        if (top + ph > vh - pad) {
+            top = Math.max(pad, rect.top - gap - ph);
+        }
+
+        left = Math.min(Math.max(pad, left), Math.max(pad, vw - pw - pad));
+        top = Math.min(Math.max(pad, top), Math.max(pad, vh - ph - pad));
+
+        popover.style.left = left + 'px';
+        popover.style.top = top + 'px';
+    }
+
+    function renderQr(phone) {
+        if (activePhone === phone && qrContainer.querySelector('img')) return;
+
+        activePhone = phone;
+        const image = document.createElement('img');
+        image.src = 'api/qr.php?d=' + encodeURIComponent('tel:' + phone);
+        image.width = 120;
+        image.height = 120;
+        image.alt = 'QR: ' + phone;
+        image.decoding = 'async';
+        image.referrerPolicy = 'no-referrer';
+        image.addEventListener('error', function() {
+            if (activePhone !== phone) return;
+            qrContainer.replaceChildren();
+            const message = document.createElement('span');
+            message.className = 'small text-white-75';
+            message.textContent = window.LANG_NETWORK_ERROR || 'Error';
+            qrContainer.appendChild(message);
+        });
+        qrContainer.replaceChildren(image);
+    }
+
+    function focusIsInsidePopoverOrTrigger() {
+        const active = document.activeElement;
+        if (!active) return false;
+        if (popover.contains(active)) return true;
+        if (activeTrigger && (active === activeTrigger || activeTrigger.contains(active))) return true;
+        return false;
+    }
+
+    function scheduleHide() {
+        clearTimeout(hideTimeout);
+        hideTimeout = setTimeout(function() {
+            if (focusIsInsidePopoverOrTrigger()) return;
+            hidePopover();
+        }, 180);
+    }
+
+    function showPopover(trigger, options) {
+        clearTimeout(hideTimeout);
+        const phone = trigger.dataset.phone || '';
+        if (!phone) return;
+
+        if (activeTrigger && activeTrigger !== trigger) {
+            setExpanded(activeTrigger, false);
+        }
+
+        renderQr(phone);
+        phoneLabel.textContent = phone;
+        callBtn.href = 'tel:' + phone;
+        activeTrigger = trigger;
+        setExpanded(trigger, true);
+        popover.style.display = 'block';
+        popover.setAttribute('aria-hidden', 'false');
+        positionPopover(trigger);
+
+        if (options && options.focusCall) {
+            callBtn.focus({ preventScroll: true });
+        }
+    }
+
+    const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+    function bindTriggers(root) {
+        const scope = (root && typeof root.querySelectorAll === 'function') ? root : document;
+        scope.querySelectorAll('.phone-qr-trigger').forEach(function(el) {
+            if (el.dataset.crmQrBound === '1') return;
+            el.dataset.crmQrBound = '1';
+            el.setAttribute('aria-controls', 'phoneQrPopover');
+            el.setAttribute('aria-haspopup', 'dialog');
+            if (!el.hasAttribute('aria-expanded')) {
+                el.setAttribute('aria-expanded', 'false');
+            }
+
+            el.addEventListener('click', function(event) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (activeTrigger === this && isPopoverOpen()) {
+                    hidePopover();
+                    return;
+                }
+                showPopover(this);
+            });
+
+            if (canHover) {
+                el.addEventListener('mouseenter', function() {
+                    showPopover(this);
+                });
+                el.addEventListener('mouseleave', scheduleHide);
+            }
+
+            el.addEventListener('focusin', function() {
+                showPopover(this);
+            });
+            el.addEventListener('focusout', scheduleHide);
+            el.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    showPopover(this, { focusCall: true });
+                }
+            });
+        });
+    }
+
+    window.crmBindPhoneQrTriggers = bindTriggers;
+    window.crmHidePhoneQrPopover = hidePopover;
+    bindTriggers(document);
+
+    if (canHover) {
+        popover.addEventListener('mouseenter', function() {
+            clearTimeout(hideTimeout);
+        });
+        popover.addEventListener('mouseleave', scheduleHide);
+    }
+    popover.addEventListener('focusin', function() {
+        clearTimeout(hideTimeout);
+    });
+    popover.addEventListener('focusout', scheduleHide);
+    popover.addEventListener('click', function(event) {
+        event.stopPropagation();
+    });
+
+    document.addEventListener('click', function(event) {
+        if (!isPopoverOpen()) return;
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (popover.contains(target)) return;
+        if (activeTrigger && (activeTrigger === target || activeTrigger.contains(target))) return;
+        hidePopover();
+    });
+
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape' && isPopoverOpen()) {
+            event.preventDefault();
+            hidePopover({ restoreFocus: true });
+        }
+    });
+    window.addEventListener('resize', function() {
+        if (activeTrigger && isPopoverOpen()) {
+            positionPopover(activeTrigger);
+        }
+    });
+    window.addEventListener('scroll', function() {
+        if (activeTrigger && isPopoverOpen()) {
+            hidePopover();
+        }
+    }, { passive: true, capture: true });
 }

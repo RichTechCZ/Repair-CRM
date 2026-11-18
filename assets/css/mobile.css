@@ -258,6 +258,20 @@ body.modal-open {
     #newOrderModal .modal-header {
         padding-top: calc(0.6rem + var(--safe-top));
     }
+
+    .customer-card-modal .modal-content {
+        height: 100dvh;
+        max-height: 100dvh;
+        border-radius: 0 !important;
+    }
+
+    .customer-card-modal .customer-card__header {
+        padding-top: calc(0.75rem + var(--safe-top));
+    }
+
+    .customer-card-modal .customer-card__header::before {
+        display: none;
+    }
 }
 
 /* ── Cards from tables: larger, tappable, calmer ───────────────────── */
@@ -269,7 +283,8 @@ body.modal-open {
 
     .table-mobile-cards tbody td a,
     .table-mobile-cards tbody td .btn,
-    .table-mobile-cards tbody td .dropdown-toggle {
+    .table-mobile-cards tbody td .dropdown-toggle,
+    .table-mobile-cards tbody td .customer-name-trigger {
         min-height: var(--tap-min);
         display: inline-flex;
         align-items: center;

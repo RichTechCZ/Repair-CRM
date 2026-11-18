@@ -1,215 +1,7 @@
 <?php
 /** Orders page scripts (PHP-rendered i18n). Included from orders.php */
 ?>
-<script nonce="<?php echo e(crmCspNonce()); ?>">
-// Phone QR popover. Hover, click, and keyboard open the same QR; Call is
-// keyboard-reachable (Enter/Space focuses the call button; Escape restores focus).
-document.addEventListener('DOMContentLoaded', function() {
-    const popover = document.getElementById('phoneQrPopover');
-    const qrContainer = document.getElementById('qrContainer');
-    const phoneLabel = document.getElementById('qrPhoneLabel');
-    const callBtn = document.getElementById('qrCallBtn');
-    if (!popover || !qrContainer || !phoneLabel || !callBtn) return;
-
-    let hideTimeout;
-    let activePhone = '';
-    let activeTrigger = null;
-
-    function isPopoverOpen() {
-        return popover.style.display === 'block';
-    }
-
-    function setExpanded(trigger, expanded) {
-        if (!trigger) return;
-        trigger.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-    }
-
-    function hidePopover(options) {
-        const restoreFocus = options && options.restoreFocus;
-        const trigger = activeTrigger;
-        clearTimeout(hideTimeout);
-        popover.style.display = 'none';
-        popover.setAttribute('aria-hidden', 'true');
-        setExpanded(trigger, false);
-        activeTrigger = null;
-        if (restoreFocus && trigger) {
-            trigger.focus({ preventScroll: true });
-        }
-    }
-
-    function positionPopover(trigger) {
-        const rect = trigger.getBoundingClientRect();
-        const gap = 12;
-        const pad = 8;
-        const pw = popover.offsetWidth || 160;
-        const ph = popover.offsetHeight || 200;
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        const isNarrow = vw < 768;
-
-        // Desktop: to the right of the phone cell. Phone: below the trigger, clamped to viewport.
-        let left = isNarrow ? rect.left : (rect.right + gap);
-        let top = isNarrow ? (rect.bottom + gap) : rect.top;
-
-        if (left + pw > vw - pad) {
-            left = Math.max(pad, rect.right - pw);
-        }
-        if (top + ph > vh - pad) {
-            top = Math.max(pad, rect.top - gap - ph);
-        }
-
-        left = Math.min(Math.max(pad, left), Math.max(pad, vw - pw - pad));
-        top = Math.min(Math.max(pad, top), Math.max(pad, vh - ph - pad));
-
-        popover.style.left = left + 'px';
-        popover.style.top = top + 'px';
-    }
-
-    function renderQr(phone) {
-        if (activePhone === phone && qrContainer.querySelector('img')) return;
-
-        activePhone = phone;
-        const image = document.createElement('img');
-        // Same-origin generator: customer phone numbers are not sent to a third-party service.
-        image.src = 'api/qr.php?d=' + encodeURIComponent('tel:' + phone);
-        image.width = 120;
-        image.height = 120;
-        image.alt = 'QR: ' + phone;
-        image.decoding = 'async';
-        image.referrerPolicy = 'no-referrer';
-        image.addEventListener('error', function() {
-            if (activePhone !== phone) return;
-            qrContainer.replaceChildren();
-            const message = document.createElement('span');
-            message.className = 'small text-white-75';
-            message.textContent = '<?php echo e(__('error')); ?>';
-            qrContainer.appendChild(message);
-        });
-        qrContainer.replaceChildren(image);
-    }
-
-    function focusIsInsidePopoverOrTrigger() {
-        const active = document.activeElement;
-        if (!active) return false;
-        if (popover.contains(active)) return true;
-        if (activeTrigger && (active === activeTrigger || activeTrigger.contains(active))) return true;
-        return false;
-    }
-
-    function scheduleHide() {
-        clearTimeout(hideTimeout);
-        hideTimeout = setTimeout(function() {
-            if (focusIsInsidePopoverOrTrigger()) return;
-            hidePopover();
-        }, 180);
-    }
-
-    function showPopover(trigger, options) {
-        clearTimeout(hideTimeout);
-        const phone = trigger.dataset.phone || '';
-        if (!phone) return;
-
-        if (activeTrigger && activeTrigger !== trigger) {
-            setExpanded(activeTrigger, false);
-        }
-
-        renderQr(phone);
-        phoneLabel.textContent = phone;
-        callBtn.href = 'tel:' + phone;
-        activeTrigger = trigger;
-        setExpanded(trigger, true);
-        popover.style.display = 'block';
-        popover.setAttribute('aria-hidden', 'false');
-        positionPopover(trigger);
-
-        if (options && options.focusCall) {
-            callBtn.focus({ preventScroll: true });
-        }
-    }
-
-    const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-
-    document.querySelectorAll('.phone-qr-trigger').forEach(el => {
-        el.setAttribute('aria-controls', 'phoneQrPopover');
-        el.setAttribute('aria-haspopup', 'dialog');
-        if (!el.hasAttribute('aria-expanded')) {
-            el.setAttribute('aria-expanded', 'false');
-        }
-
-        // Tap toggles on touch devices; second tap closes. Outside-tap also closes (below).
-        el.addEventListener('click', function(event) {
-            event.preventDefault();
-            event.stopPropagation();
-            if (activeTrigger === this && isPopoverOpen()) {
-                hidePopover();
-                return;
-            }
-            showPopover(this);
-        });
-
-        // Hover-only open/close on real desktop pointers — avoids sticky open states on iOS/Android.
-        if (canHover) {
-            el.addEventListener('mouseenter', function() {
-                showPopover(this);
-            });
-            el.addEventListener('mouseleave', scheduleHide);
-        }
-
-        el.addEventListener('focusin', function() {
-            showPopover(this);
-        });
-        el.addEventListener('focusout', scheduleHide);
-        el.addEventListener('keydown', function(event) {
-            if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                showPopover(this, { focusCall: true });
-            }
-        });
-    });
-
-    if (canHover) {
-        popover.addEventListener('mouseenter', function() {
-            clearTimeout(hideTimeout);
-        });
-        popover.addEventListener('mouseleave', scheduleHide);
-    }
-    popover.addEventListener('focusin', function() {
-        clearTimeout(hideTimeout);
-    });
-    popover.addEventListener('focusout', scheduleHide);
-    // Keep clicks inside the popover from bubbling to the document closer.
-    popover.addEventListener('click', function(event) {
-        event.stopPropagation();
-    });
-
-    document.addEventListener('click', function(event) {
-        if (!isPopoverOpen()) return;
-        const target = event.target;
-        if (!(target instanceof Element)) return;
-        if (popover.contains(target)) return;
-        if (activeTrigger && (activeTrigger === target || activeTrigger.contains(target))) return;
-        hidePopover();
-    });
-
-    document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape' && isPopoverOpen()) {
-            event.preventDefault();
-            hidePopover({ restoreFocus: true });
-        }
-    });
-    window.addEventListener('resize', function() {
-        if (activeTrigger && isPopoverOpen()) {
-            positionPopover(activeTrigger);
-        }
-    });
-    window.addEventListener('scroll', function() {
-        if (activeTrigger && isPopoverOpen()) {
-            // Hide on scroll — avoids orphaned fixed popovers while the table moves under a finger.
-            hidePopover();
-        }
-    }, { passive: true, capture: true });
-});
-</script>
+<?php /* Phone QR popover is initialized by assets/js/main.js -> initPhoneQrPopover(). */ ?>
 
 <script nonce="<?php echo e(crmCspNonce()); ?>">
 // ── IMEI Duplicate Badge Handler ──────────────────────────────────────────
@@ -522,6 +314,21 @@ $(document).ready(function() {
     // A failed save returns the operator to the form with what they typed (PIN and files are never kept).
     fillNewOrderForm(<?php echo json_encode($order_form_old, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>);
     showBsModal('newOrderModal');
+<?php elseif (!empty($order_prefill_customer) || !empty($open_new_order_modal)): ?>
+    <?php if (!empty($order_prefill_customer)): ?>
+    fillNewOrderForm(<?php echo json_encode($order_prefill_customer, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>);
+    <?php endif; ?>
+    <?php if (!empty($open_new_order_modal)): ?>
+    showBsModal('newOrderModal');
+    <?php endif; ?>
+    if (window.history && typeof window.history.replaceState === 'function') {
+        try {
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('new_order');
+            cleanUrl.searchParams.delete('customer_id');
+            window.history.replaceState(null, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+        } catch (e) { /* ignore */ }
+    }
 <?php endif; ?>
 
     // ── Copy Order # ──

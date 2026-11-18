@@ -819,14 +819,16 @@ small,
 }
 
 .app-page--orders .topbar-shell,
-.app-page--index .topbar-shell {
+.app-page--index .topbar-shell,
+.app-page--customers .topbar-shell {
     margin-bottom: 0 !important;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     box-shadow: none;
 }
 
 .app-page--orders .workspace-overview,
-.app-page--index .workspace-overview {
+.app-page--index .workspace-overview,
+.app-page--customers .workspace-overview {
     border-top: 0;
     border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
@@ -2667,7 +2669,7 @@ small,
     border-radius: 1rem;
     padding: 0.9rem;
     box-shadow: var(--shadow-soft);
-    z-index: 1045 !important;
+    z-index: 1065 !important;
     display: none;
     text-align: center;
     color: var(--text-primary);
@@ -2799,6 +2801,10 @@ small,
 
 .fancybox__backdrop {
     background: rgba(6, 8, 11, 0.88) !important;
+}
+
+.fancybox__container {
+    z-index: 1085 !important;
 }
 
 .select2-container {
@@ -3739,4 +3745,835 @@ h1 { letter-spacing: -0.026em; }
 
 .orders-table-head {
     z-index: 10;
+}
+
+/* ── Customers Directory & Slide-over Customer Card ────────────────────── */
+.app-page--customers .card.glass-card {
+    overflow: visible;
+}
+
+.customer-directory-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
+    padding: 0.9rem 1.15rem !important;
+}
+
+.customer-directory-toolbar__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+}
+
+.customer-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.28rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid rgba(201, 154, 99, 0.3);
+    background: rgba(201, 154, 99, 0.12);
+    color: var(--text-primary);
+    font-size: 0.76rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.customer-filter-chip:hover {
+    border-color: rgba(201, 154, 99, 0.52);
+    background: rgba(201, 154, 99, 0.18);
+}
+
+.customer-sort-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+    padding: 0.2rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-panel-soft);
+}
+
+.customer-sort-group__link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2rem;
+    padding: 0.3rem 0.68rem;
+    border-radius: calc(var(--radius-md) - 0.15rem);
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.customer-sort-group__link:hover,
+.customer-sort-group__link:focus-visible {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.customer-sort-group__link.is-active {
+    background: var(--accent-strong);
+    color: #171512;
+}
+
+.customers-table-wrap {
+    max-height: min(70vh, 44rem);
+    overflow: auto;
+}
+
+.customer-directory-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+.customer-row {
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+}
+
+.customer-name-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+}
+
+.customer-name-trigger__text {
+    border-bottom: 1px solid rgba(201, 154, 99, 0.35);
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.customer-name-trigger:hover .customer-name-trigger__text,
+.customer-name-trigger:focus-visible .customer-name-trigger__text {
+    color: var(--accent-strong);
+    border-bottom-color: var(--accent-strong);
+}
+
+.customer-avatar-chip {
+    width: 2.15rem;
+    height: 2.15rem;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-panel-strong);
+    color: var(--accent-strong);
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+.customer-avatar-chip--company {
+    border-color: rgba(201, 154, 99, 0.36);
+    background: rgba(201, 154, 99, 0.12);
+}
+
+.customer-submeta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.55rem;
+    margin-top: 0.32rem;
+    padding-left: 2.8rem;
+    color: var(--text-tertiary);
+    font-size: 0.76rem;
+}
+
+.customer-type-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.12rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-subtle);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-secondary);
+    font-size: 0.69rem;
+    font-weight: 700;
+}
+
+.customer-type-tag--company {
+    border-color: rgba(201, 154, 99, 0.32);
+    background: rgba(201, 154, 99, 0.1);
+    color: #f2d1aa;
+}
+
+.customer-contact-line {
+    max-width: 19rem;
+}
+
+.customer-active-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--accent-strong);
+}
+
+.customer-active-indicator__dot {
+    width: 0.42rem;
+    height: 0.42rem;
+    border-radius: 50%;
+    background: var(--accent-strong);
+}
+
+.customer-row-actions .btn {
+    min-width: 2.25rem;
+}
+
+/* Slide-over Customer Card Sheet */
+@media (min-width: 992px) {
+    .customer-card-modal.fade .customer-card-modal__dialog {
+        transform: translateX(24px);
+        transition: transform 200ms ease-out;
+    }
+
+    .customer-card-modal.show .customer-card-modal__dialog {
+        transform: translateX(0);
+    }
+
+    .customer-card-modal__dialog {
+        width: min(64rem, 94vw);
+        max-width: none;
+        height: 100dvh;
+        margin: 0 0 0 auto;
+    }
+
+    .customer-card-modal__content {
+        height: 100%;
+        border-radius: var(--radius-xl) 0 0 var(--radius-xl) !important;
+        border-right: 0;
+        border-top: 0;
+        border-bottom: 0;
+        border-left: 1px solid var(--border-strong);
+        background: var(--bg-elevated);
+    }
+}
+
+.customer-card-modal__content {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-elevated);
+}
+
+.customer-card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.05rem 1.25rem;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--bg-panel-strong);
+    flex: 0 0 auto;
+}
+
+.customer-card__identity {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 0;
+}
+
+.customer-card__avatar {
+    width: 3rem;
+    height: 3rem;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-panel);
+    color: var(--accent-strong);
+    font-size: 1.02rem;
+    font-weight: 800;
+}
+
+.customer-card__avatar--company {
+    border-color: rgba(201, 154, 99, 0.42);
+    background: rgba(201, 154, 99, 0.14);
+}
+
+.customer-card__identity-copy {
+    min-width: 0;
+}
+
+.customer-card__identity-copy .modal-title {
+    margin: 0;
+    font-size: 1.18rem;
+    font-weight: 800;
+    line-height: 1.2;
+    word-break: break-word;
+}
+
+.customer-card__subtitle {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.65rem;
+    margin-top: 0.28rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+}
+
+.customer-card__header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.customer-card__header-actions .btn {
+    min-height: 2.45rem;
+    padding: 0.42rem 0.85rem;
+    font-size: 0.84rem;
+}
+
+.customer-card__body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 1.15rem 1.25rem 1.5rem;
+}
+
+.customer-card__overview {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: 0.9rem;
+    margin-bottom: 1.1rem;
+}
+
+.customer-card__profile {
+    padding: 1rem 1.05rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--bg-panel);
+}
+
+.customer-card__profile-title {
+    margin: 0 0 0.7rem;
+    color: var(--text-tertiary);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.customer-profile-list {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.customer-profile-row {
+    display: grid;
+    grid-template-columns: 7.2rem minmax(0, 1fr);
+    gap: 0.5rem 0.75rem;
+    align-items: center;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.customer-profile-row:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+
+.customer-profile-row__label {
+    color: var(--text-tertiary);
+    font-size: 0.76rem;
+    font-weight: 600;
+}
+
+.customer-profile-row__value {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.55rem;
+    min-width: 0;
+    color: var(--text-primary);
+    font-size: 0.88rem;
+    word-break: break-word;
+}
+
+.customer-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.85rem;
+    min-height: 1.85rem;
+    padding: 0.2rem 0.45rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.025);
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    cursor: pointer;
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.customer-copy-btn:hover,
+.customer-copy-btn:focus-visible {
+    border-color: rgba(201, 154, 99, 0.42);
+    background: rgba(201, 154, 99, 0.12);
+    color: var(--accent-strong);
+}
+
+.customer-card__kpis {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+}
+
+.customer-kpi {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 0.85rem 0.95rem;
+    border: 1px solid var(--border-subtle);
+    border-top: 2px solid rgba(176, 183, 194, 0.34);
+    border-radius: var(--radius-lg);
+    background: var(--bg-panel);
+}
+
+.customer-kpi--accent {
+    border-top-color: var(--accent-strong);
+}
+
+.customer-kpi--success {
+    border-top-color: var(--success);
+}
+
+.customer-kpi--info {
+    border-top-color: var(--info);
+}
+
+.customer-kpi__label {
+    color: var(--text-tertiary);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.customer-kpi__value {
+    margin: 0.38rem 0 0.18rem;
+    color: var(--text-primary);
+    font-size: 1.38rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.customer-kpi__note {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    line-height: 1.35;
+}
+
+.customer-card__tabs {
+    margin-bottom: 1rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+}
+
+.customer-card__tabs .nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.55rem 0.9rem;
+    min-height: 2.4rem;
+    font-size: 0.84rem;
+    border-radius: var(--radius-sm);
+}
+
+.customer-card__tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.45rem;
+    height: 1.3rem;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.customer-card__tabs .nav-link.active .customer-card__tab-count {
+    background: rgba(201, 154, 99, 0.25);
+    color: var(--text-primary);
+}
+
+.customer-repairs-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    margin-bottom: 0.9rem;
+}
+
+.customer-filter-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.customer-filter-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2.15rem;
+    padding: 0.35rem 0.72rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+    background: var(--bg-panel);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.customer-filter-pill:hover {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+}
+
+.customer-filter-pill.is-active {
+    border-color: rgba(201, 154, 99, 0.5);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+}
+
+.customer-repairs-search {
+    width: min(19rem, 100%);
+    min-height: 2.25rem !important;
+    padding: 0.35rem 0.75rem !important;
+    font-size: 0.84rem !important;
+}
+
+.customer-repairs-list {
+    display: grid;
+    gap: 0.85rem;
+}
+
+.customer-repair-item {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--bg-panel);
+    overflow: hidden;
+    transition: border-color var(--transition-fast);
+}
+
+.customer-repair-item:hover {
+    border-color: var(--border-strong);
+}
+
+.customer-repair-item--priority {
+    border-left: 3px solid var(--accent);
+}
+
+.customer-repair-item__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.8rem 1rem;
+    border-bottom: 1px solid var(--border-subtle);
+    background: rgba(255, 255, 255, 0.015);
+}
+
+.customer-repair-item__title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem 0.65rem;
+    min-width: 0;
+}
+
+.customer-repair-item__id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 800;
+    color: var(--accent-strong);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(201, 154, 99, 0.4);
+}
+
+.customer-repair-item__id:hover {
+    color: var(--text-primary);
+    border-bottom-color: var(--text-primary);
+}
+
+.customer-repair-item__device {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.customer-repair-item__date {
+    color: var(--text-tertiary);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.customer-repair-item__badges {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.38rem;
+}
+
+.customer-repair-item__body {
+    padding: 0.85rem 1rem;
+    display: grid;
+    gap: 0.65rem;
+}
+
+.customer-repair-item__problem {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    line-height: 1.48;
+    white-space: pre-line;
+}
+
+.customer-repair-item__note {
+    padding: 0.55rem 0.75rem;
+    border-left: 2px solid var(--info);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    background: rgba(134, 167, 199, 0.07);
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    line-height: 1.42;
+    white-space: pre-line;
+}
+
+.customer-repair-item__cancel {
+    padding: 0.55rem 0.75rem;
+    border-left: 2px solid var(--danger);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    background: rgba(216, 139, 133, 0.08);
+    color: #f0cfcb;
+    font-size: 0.82rem;
+    line-height: 1.42;
+}
+
+.customer-repair-item__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.95rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+}
+
+.customer-repair-item__meta-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.customer-repair-item__parts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.customer-part-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.24rem 0.58rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+    background: rgba(255, 255, 255, 0.028);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+.customer-repair-item__media {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.customer-media-thumb {
+    width: 3.25rem;
+    height: 3.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-field);
+    color: var(--text-secondary);
+    text-decoration: none;
+}
+
+.customer-media-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.customer-media-thumb:hover {
+    border-color: var(--accent-strong);
+}
+
+.customer-repair-item__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    padding: 0.7rem 1rem;
+    border-top: 1px solid var(--border-subtle);
+    background: rgba(255, 255, 255, 0.015);
+}
+
+.customer-repair-item__price {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.45rem 0.65rem;
+}
+
+.customer-repair-item__price-main {
+    font-size: 0.98rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.customer-repair-item__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.customer-repair-item__actions .btn {
+    min-height: 2.15rem;
+    padding: 0.32rem 0.72rem;
+    font-size: 0.8rem;
+}
+
+.customer-devices-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.customer-device-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.95rem 1rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--bg-panel);
+}
+
+.customer-device-card__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.6rem;
+}
+
+.customer-device-card__title {
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.3;
+}
+
+.customer-device-card__meta {
+    display: grid;
+    gap: 0.25rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+}
+
+.customer-device-card__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.customer-edit-panel {
+    padding: 1.05rem 1.15rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--bg-panel);
+}
+
+@media (max-width: 991.98px) {
+    .customer-card__overview {
+        grid-template-columns: 1fr;
+    }
+
+    .customer-card-modal__content {
+        max-height: 92dvh;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .customer-submeta {
+        padding-left: 0;
+    }
+
+    .customer-devices-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .customer-profile-row {
+        grid-template-columns: 1fr;
+        gap: 0.2rem;
+    }
+
+    .customer-card__header {
+        flex-wrap: wrap;
+        padding: 0.85rem 1rem;
+    }
+
+    .customer-card__header-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .customer-card__header-actions .btn-primary {
+        flex: 1 1 auto;
+    }
+
+    .customer-card__body {
+        padding: 0.9rem 0.9rem 1.25rem;
+    }
+
+    .customer-repair-item__actions .btn {
+        min-height: 2.6rem;
+    }
 }

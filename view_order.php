@@ -174,7 +174,16 @@ foreach ($status_log as $log_row) {
                 <div class="detail-grid mb-4">
                     <div class="detail-card">
                         <h6><?php echo __('client'); ?></h6>
-                        <p class="mb-1"><strong><?php echo e(trim((string)($order['first_name'] ?? '') . ' ' . (string)($order['last_name'] ?? ''))); ?></strong></p>
+                        <?php $viewCustomerFullName = trim((string)($order['first_name'] ?? '') . ' ' . (string)($order['last_name'] ?? '')); ?>
+                        <p class="mb-1">
+                            <?php if (hasPermission('edit_customers') && !empty($order['customer_id'])): ?>
+                                <a href="customers.php?customer_id=<?php echo (int)$order['customer_id']; ?>" class="accounting-invoice-link fw-bold">
+                                    <?php echo e($viewCustomerFullName); ?>
+                                </a>
+                            <?php else: ?>
+                                <strong><?php echo e($viewCustomerFullName); ?></strong>
+                            <?php endif; ?>
+                        </p>
                         <?php
                             $viewPhoneRaw = trim((string)($order['phone'] ?? ''));
                             $viewPhoneClean = preg_replace('/[^0-9+]/', '', $viewPhoneRaw);

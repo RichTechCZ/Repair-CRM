@@ -154,6 +154,32 @@ $order_form_error = trim((string)($_SESSION['order_form_error'] ?? ''));
 unset($_SESSION['order_form_error']);
 $order_form_old = (isset($_SESSION['order_form_old']) && is_array($_SESSION['order_form_old'])) ? $_SESSION['order_form_old'] : null;
 unset($_SESSION['order_form_old']);
+
+$open_new_order_modal = (($_GET['new_order'] ?? '') === '1');
+$order_prefill_customer = null;
+if ($order_form_old === null && isset($pdo)) {
+    $prefill_customer_id = filter_input(INPUT_GET, 'customer_id', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    if ($prefill_customer_id && currentUserCanCreateOrderForCustomer($prefill_customer_id)) {
+        try {
+            $pc_stmt = $pdo->prepare('SELECT id, first_name, last_name, company, phone FROM customers WHERE id = ? LIMIT 1');
+            $pc_stmt->execute([$prefill_customer_id]);
+            if ($pc_row = $pc_stmt->fetch(PDO::FETCH_ASSOC)) {
+                $pc_name = trim(($pc_row['last_name'] ?? '') . ' ' . ($pc_row['first_name'] ?? ''));
+                $pc_company = trim((string)($pc_row['company'] ?? ''));
+                if ($pc_company !== '') {
+                    $pc_name = $pc_company . ($pc_name !== '' ? ' (' . $pc_name . ')' : '');
+                }
+                $pc_phone = trim((string)($pc_row['phone'] ?? ''));
+                $order_prefill_customer = [
+                    'customer_id' => (int)$pc_row['id'],
+                    'customer_label' => $pc_name . ($pc_phone !== '' ? ' (' . $pc_phone . ')' : ''),
+                ];
+            }
+        } catch (PDOException $e) {
+            error_log('orders.php customer prefill: ' . $e->getMessage());
+        }
+    }
+}
 ?>
 
 <section class="workspace-overview workspace-overview--orders ui-ready" aria-labelledby="orders-overview-title">
