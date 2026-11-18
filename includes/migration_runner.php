@@ -45,7 +45,7 @@ function crmMigrationEnsureRegistry(PDO $pdo): array
         }
     }
 
-    return $pdo->query('SELECT migration_name FROM migrations')->fetchAll(PDO::FETCH_COLUMN);
+    return crmAppliedMigrationNames($pdo);
 }
 
 function crmMigrationMarkExecuted(PDO $pdo, string $migrationName): void
@@ -422,15 +422,29 @@ function crmApplyOrderItemCostSnapshotMigration(PDO $pdo): void
     );
 }
 
+function crmIsMigrationFilename(string $name): bool
+{
+    return (bool)preg_match('/^\d{3}_[A-Za-z0-9_]+\.sql$/D', $name);
+}
+
+/** @return list<string> */
+function crmMigrationFiles(string $projectDir): array
+{
+    $files = glob($projectDir . '/migrations/*.sql') ?: [];
+    $files = array_values(array_filter($files, static fn(string $file): bool => crmIsMigrationFilename(basename($file))));
+    sort($files, SORT_STRING);
+    return $files;
+}
+
+/** Read the current registry without importing legacy rows or altering the database. */
+function crmAppliedMigrationNames(PDO $pdo): array
+{
+    return $pdo->query('SELECT migration_name FROM migrations')->fetchAll(PDO::FETCH_COLUMN);
+}
+
 function crmRunMigrations(PDO $pdo, string $projectDir): array
 {
-    $migrationFiles = glob(rtrim($projectDir, '/\\') . '/migrations/*.sql') ?: [];
-    // Only numbered migrations (NNN_name.sql). Data dumps placed in migrations/ for
-    // one-off import tools must never be executed as schema migrations.
-    $migrationFiles = array_values(array_filter($migrationFiles, static function (string $file): bool {
-        return (bool)preg_match('/^\d{3}_[A-Za-z0-9_]+\.sql$/', basename($file));
-    }));
-    sort($migrationFiles);
+    $migrationFiles = crmMigrationFiles($projectDir);
     $results = [];
 
     try {

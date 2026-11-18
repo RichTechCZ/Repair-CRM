@@ -189,12 +189,12 @@ Repair-CRM/
 
 ## Aktualizace
 
-Při aktualizaci systému:
+V části **Nastavení → Aktualizace** otevřete **Nasazení v GitHubu** a spusťte
+workflow pro větev `main`, jakmile projdou kontroly Quality. GitHub Actions
+spustí migrace před přepnutím webu a ověří nasazený commit. Stav release a
+migrací uvidíte po obnovení stránky Aktualizace.
 
-```bash
-git pull origin main
-php run_migrations.php
-```
+První konfigurace serveru a prostředí `production` je popsána v [README](README.md#updates).
 
 ## Licence
 

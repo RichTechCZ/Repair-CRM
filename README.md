@@ -243,12 +243,42 @@ Repair-CRM/
 
 ## Updates
 
-The web process cannot update application files. Build and verify an immutable
-release outside the live directory, put the CRM into maintenance mode, run
-`php run_migrations.php`, activate the release atomically at the hosting layer,
-then run a health check. If the health check fails, switch back to the previous
-release; database migrations must be written to remain backward-compatible
-through that rollback window.
+From **Settings → Updates**, open **Deploy in GitHub**. Run the workflow on
+`main` after Quality passes. The tab shows the running commit, GitHub commit,
+last deployment and migration status. GitHub requires write access to run the
+workflow.
+
+The workflow packages the tested commit, stages it over SSH, runs
+`php run_migrations.php`, checks the candidate, and atomically switches
+`current`. It verifies the live health response and expected revision. If that
+verification fails, it restores the previous link. Migrations remain applied
+through a code rollback and must remain compatible with the previous release.
+
+### First-time hosting setup
+
+- Configure a Linux deploy account with SSH, PHP CLI with `pdo_mysql`, Bash,
+  GNU coreutils, tar, flock and curl. Point the site's document root at
+  `<deploy-root>/current` and seed that symlink with the currently running
+  release. The web server must follow the symlink and serve the new target
+  immediately after it changes.
+- Create private `releases`, `logs` and `shared` directories under
+  `<deploy-root>`. Put the production runtime configuration in `shared/.env`
+  and migration credentials (`DB_MIGRATION_USER` and `DB_MIGRATION_PASS`) in
+  `shared/migrations.env`, readable by the deploy account only. Keep persistent
+  uploads in `shared/uploads`. If used, persist `shared/temp` and
+  `shared/backup_db` too. The deploy account needs write access to the deployment
+  root and read access to runtime configuration. PHP must be able to read the
+  runtime config and write shared uploads. Preserve the existing data encryption
+  key, permissions, and web access rules when moving shared files.
+- In the GitHub `production` environment, restrict deployment to `main`. Set
+  `CRM_DEPLOY_HOST`, `CRM_DEPLOY_PORT` (optional), `CRM_DEPLOY_USER` and
+  `CRM_DEPLOY_ROOT` as variables. Set `CRM_DEPLOY_KEY` and
+  `CRM_DEPLOY_KNOWN_HOSTS` as secrets. Set the known-hosts line from a verified
+  host key. The workflow uses `https://app.servis.expert/health.php` to verify
+  activation.
+- Read migration diagnostics in `<deploy-root>/logs`. Keep the previous release
+  for rollback. Retire inactive releases according to the host's retention
+  policy.
 
 ## License
 

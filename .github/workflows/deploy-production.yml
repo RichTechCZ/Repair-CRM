@@ -1,0 +1,49 @@
+name: Deploy CRM production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: crm-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.repository == 'RichTechCZ/Repair-CRM' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require a successful Quality run for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [[ "$main_sha" != "$GITHUB_SHA" ]]; then
+            echo "::error::This run is for an older main commit. Start a new deployment."
+            exit 1
+          fi
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow quality.yml \
+            --commit "$GITHUB_SHA" --event push --status success --limit 1 \
+            --json databaseId --jq '.[0].databaseId // empty')
+          if [[ -z "$run_id" ]]; then
+            echo "::error::Wait for Quality to pass on this main commit, then run the deployment again."
+            exit 1
+          fi
+          echo "Verified Quality run $run_id for $GITHUB_SHA."
+      - name: Stage, migrate and activate the release
+        env:
+          CRM_DEPLOY_HOST: ${{ vars.CRM_DEPLOY_HOST }}
+          CRM_DEPLOY_PORT: ${{ vars.CRM_DEPLOY_PORT }}
+          CRM_DEPLOY_USER: ${{ vars.CRM_DEPLOY_USER }}
+          CRM_DEPLOY_ROOT: ${{ vars.CRM_DEPLOY_ROOT }}
+          CRM_DEPLOY_KEY: ${{ secrets.CRM_DEPLOY_KEY }}
+          CRM_DEPLOY_KNOWN_HOSTS: ${{ secrets.CRM_DEPLOY_KNOWN_HOSTS }}
+        run: bash .github/scripts/deploy-production.sh

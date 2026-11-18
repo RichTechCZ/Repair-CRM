@@ -27,7 +27,7 @@ Root AGENTS.md -> includes/AGENTS.md
 - `telegram_webhook_security.php` — pure Telegram webhook secret and URL validation helpers; webhook requests fail closed when the secret is missing or invalid.
 - `request_security.php` — pure HTTPS-request detection; proxy headers are considered only when `CRM_TRUST_PROXY_HTTPS=1` is explicitly configured.
 - `upload_security.php` — the only order-attachment storage policy. It detects MIME server-side, assigns the extension, enforces 10-file and per-media size limits, writes random names, and protects `uploads/` from script execution.
-- `migration_runner.php` — shared idempotent migration registry/runner used by CLI deployment migrations.
+- `migration_runner.php` owns numbered migration discovery, read-only registry queries and the CLI runner. `release_info.php` reads the installed commit marker and uses that registry for Settings and the health check.
 - `qr_code.php` — self-hosted QR encoder (byte mode, versions 1–10; verified bit-exact against a reference encoder). Use `crmQrDataUri()` in documents; `api/qr.php` serves the phone popover.
 - `upload_security.php` also owns `crmOrderAttachmentUrl()` (browser URL `api/media.php?id=`) and `crmResolveStoredUploadPath()`; never output raw `uploads/` paths.
 - `get_setting()` / `set_setting()` share a request cache loaded with one query (`crmSettingsCache()`); `set_setting()` updates it so a save is visible in the same request.

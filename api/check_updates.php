@@ -1,231 +1,126 @@
 <?php
-/**
- * API: Check for CRM Updates from GitHub
- * Compares local version.json with the one on GitHub (main branch)
- */
-require_once __DIR__ . '/../includes/config.php';
-require_once __DIR__ . '/../includes/functions.php';
-require_once __DIR__ . '/../includes/rate_limit.php';
+require_once __DIR__ . '/../includes/api_bootstrap.php';
+require_once __DIR__ . '/../includes/release_info.php';
 
-header('Content-Type: application/json; charset=utf-8');
+api_bootstrap(['post' => false, 'permission' => 'admin_access']);
+checkApiRateLimit('check_updates', 30, 60);
 
-function jsonExit(array $payload, int $statusCode = 200): void {
-    http_response_code($statusCode);
-    echo json_encode($payload);
-    exit;
-}
-
-function fetchRemoteUrl(string $url, array $headers = [], int $timeout = 15): array {
-    $options = [
-        CURLOPT_URL            => $url,
+function crmGitHubJson(string $url): ?array
+{
+    $handle = curl_init($url);
+    curl_setopt_array($handle, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => $timeout,
-        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_TIMEOUT => 6,
+        CURLOPT_USERAGENT => 'Repair-CRM-Updater',
         CURLOPT_SSL_VERIFYPEER => true,
-        CURLOPT_USERAGENT      => 'Repair-CRM-Updater/1.1',
-        CURLOPT_FOLLOWLOCATION => true,
-    ];
-
-    if (!empty($headers)) {
-        $options[CURLOPT_HTTPHEADER] = $headers;
+        CURLOPT_SSL_VERIFYHOST => 2,
+        CURLOPT_HTTPHEADER => ['Accept: application/vnd.github+json'],
+    ]);
+    $body = curl_exec($handle);
+    $status = (int)curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+    if ($status !== 200 || !is_string($body)) {
+        error_log('CRM update check: GitHub HTTP ' . $status . ' ' . curl_error($handle));
+        return null;
     }
 
-    if (defined('CURLOPT_IPRESOLVE') && defined('CURL_IPRESOLVE_V4')) {
-        $options[CURLOPT_IPRESOLVE] = CURL_IPRESOLVE_V4;
-    }
-
-    $ch = curl_init();
-    curl_setopt_array($ch, $options);
-    $response = curl_exec($ch);
-    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlError = curl_error($ch);
-    unset($ch);
-
-    return [$response, $httpCode, $curlError];
-}
-
-function getLocalGitHead(string $projectDir): string {
-    // Read the checked-out commit from .git files; the web process never runs shell commands.
-    $gitDir = $projectDir . '/.git';
-    $head = is_file($gitDir . '/HEAD') ? trim((string)file_get_contents($gitDir . '/HEAD')) : '';
-    if (preg_match('#^ref: (refs/[A-Za-z0-9._/-]+)$#', $head, $match)) {
-        $refFile = $gitDir . '/' . $match[1];
-        $head = is_file($refFile) ? trim((string)file_get_contents($refFile)) : '';
-        if ($head === '' && is_file($gitDir . '/packed-refs')) {
-            foreach (file($gitDir . '/packed-refs', FILE_IGNORE_NEW_LINES) ?: [] as $line) {
-                if (str_ends_with($line, ' ' . $match[1])) {
-                    $head = substr($line, 0, 40);
-                    break;
-                }
-            }
-        }
-    }
-    return preg_match('/^[a-f0-9]{40}$/i', $head) ? strtolower($head) : '';
+    $value = json_decode($body, true);
+    return is_array($value) ? $value : null;
 }
 
 try {
-    // Only admins can check for updates
-    if (($_SESSION['role'] ?? '') !== 'admin' && !hasPermission('admin_access')) {
-        jsonExit(['success' => false, 'message' => __('access_denied')], 403);
-    }
-    checkApiRateLimit('check_updates', 30, 60);
+    $projectDir = dirname(__DIR__);
+    $target = crmUpdateTarget($projectDir);
+    $branch = rawurlencode($target['branch']);
+    $cacheKey = 'github_release_check_v2';
+    $cache = json_decode((string)get_setting($cacheKey, ''), true);
+    $maxAge = isset($_GET['force']) ? 60 : 300;
+    $now = time();
+    $age = $now - (int)($cache['checked_at'] ?? 0);
+    $cached = $age >= 0 && $age < $maxAge
+        && ($cache['repo'] ?? null) === $target['repo']
+        && ($cache['branch'] ?? null) === $target['branch'];
 
-    // Read local version
-    $localVersionFile = __DIR__ . '/../version.json';
-    if (!file_exists($localVersionFile)) {
-        jsonExit(['success' => false, 'message' => 'version.json not found'], 500);
-    }
+    if (!$cached) {
+        $commits = crmGitHubJson($target['api'] . '/commits?sha=' . $branch . '&per_page=8');
+        $revision = crmReleaseRevision($commits[0]['sha'] ?? null);
+        $cache = [
+            'repo' => $target['repo'],
+            'branch' => $target['branch'],
+            'checked_at' => $now,
+            'remote_revision' => $revision,
+            'remote_version' => '',
+            'remote_build' => null,
+            'changelog' => [],
+            'deployment' => null,
+            'remote_migrations' => null,
+        ];
 
-    $localVersion = json_decode(file_get_contents($localVersionFile), true);
-    if (!$localVersion) {
-        jsonExit(['success' => false, 'message' => 'Invalid version.json'], 500);
-    }
-
-    $repo   = $localVersion['github_repo'] ?? 'RichTechCZ/Repair-CRM';
-    $branch = $localVersion['github_branch'] ?? 'main';
-    $projectDir = realpath(__DIR__ . '/..');
-
-    // Cache: don't check more than once per 30 minutes
-    $cacheKey = 'last_update_check';
-    $cacheData = get_setting($cacheKey, '');
-    if ($cacheData) {
-        $cached = json_decode($cacheData, true);
-        if ($cached && isset($cached['checked_at'])) {
-            $age = time() - $cached['checked_at'];
-            if ($age < 1800 && (!isset($_GET['force']) || $age < 60)) {
-                // Return cached result
-                $cached['from_cache'] = true;
-                $cached['cache_age'] = $age;
-                jsonExit($cached);
-            }
-        }
-    }
-
-    // Fetch version.json from GitHub (raw content)
-    $githubUrl = "https://raw.githubusercontent.com/{$repo}/{$branch}/version.json";
-    $contentsApiUrl = "https://api.github.com/repos/{$repo}/contents/version.json?ref={$branch}";
-    [$response, $httpCode, $curlError] = fetchRemoteUrl($githubUrl);
-
-    $remoteVersion = $response ? json_decode($response, true) : null;
-    $versionSource = 'raw';
-    $fallbackHttpCode = 0;
-    $fallbackCurlError = '';
-
-    if ($httpCode !== 200 || !$remoteVersion || !isset($remoteVersion['version'])) {
-        [$contentsResponse, $contentsCode, $contentsError] = fetchRemoteUrl(
-            $contentsApiUrl,
-            ['Accept: application/vnd.github.v3+json']
-        );
-        $fallbackHttpCode = $contentsCode;
-        $fallbackCurlError = $contentsError;
-
-        $contentsPayload = $contentsResponse ? json_decode($contentsResponse, true) : null;
-        if (
-            $contentsCode === 200 &&
-            is_array($contentsPayload) &&
-            !empty($contentsPayload['content'])
-        ) {
-            $decodedContent = base64_decode((string)$contentsPayload['content'], true);
-            $decodedVersion = $decodedContent ? json_decode($decodedContent, true) : null;
-            if ($decodedVersion && isset($decodedVersion['version'])) {
-                $remoteVersion = $decodedVersion;
-                $versionSource = 'contents_api';
-                $httpCode = $contentsCode;
-                $curlError = $contentsError;
-            }
-        }
-    }
-
-    if (!$remoteVersion || !isset($remoteVersion['version'])) {
-        error_log('check_updates: remote version.json unavailable: ' . $curlError . ' / ' . $fallbackCurlError);
-        jsonExit([
-            'success'      => false,
-            'message'      => 'Cannot load remote version.json from GitHub',
-            'local'        => $localVersion,
-            'github_url'   => $githubUrl,
-            'http_code'    => $httpCode,
-            'fallback_url' => $contentsApiUrl,
-            'fallback_http_code' => $fallbackHttpCode,
-        ]);
-    }
-
-    // Compare versions
-    $localVersionString = (string)($localVersion['version'] ?? '0.0.0');
-    $remoteVersionString = (string)$remoteVersion['version'];
-    $localBuild = (int)($localVersion['build'] ?? 0);
-    $remoteBuild = (int)($remoteVersion['build'] ?? 0);
-    $localHeadSha = getLocalGitHead($projectDir);
-    $remoteHeadSha = '';
-
-    $versionUpdate = version_compare($remoteVersionString, $localVersionString, '>');
-    $buildUpdate = !$versionUpdate
-        && version_compare($remoteVersionString, $localVersionString, '==')
-        && $remoteBuild > $localBuild;
-
-    // Fetch latest commits for changelog
-    $commitsUrl = "https://api.github.com/repos/{$repo}/commits?sha={$branch}&per_page=10";
-    [$commitsResponse, $commitsCode, $commitsError] = fetchRemoteUrl(
-        $commitsUrl,
-        ['Accept: application/vnd.github.v3+json'],
-        10
-    );
-
-    $changelog = [];
-    if ($commitsCode === 200 && $commitsResponse) {
-        $commits = json_decode($commitsResponse, true);
-        if (is_array($commits)) {
+        if ($revision !== '') {
+            $version = crmGitHubJson('https://raw.githubusercontent.com/' . $target['repo'] . '/' . $revision . '/version.json');
+            $cache['remote_version'] = (string)($version['version'] ?? '');
+            $cache['remote_build'] = isset($version['build']) ? (int)$version['build'] : null;
             foreach ($commits as $commit) {
-                if ($remoteHeadSha === '' && !empty($commit['sha'])) {
-                    $remoteHeadSha = strtolower((string)$commit['sha']);
+                $cache['changelog'][] = [
+                    'sha' => substr(crmReleaseRevision($commit['sha'] ?? null), 0, 7),
+                    'message' => substr((string)($commit['commit']['message'] ?? ''), 0, 350),
+                ];
+            }
+
+            $files = crmGitHubJson($target['api'] . '/contents/migrations?ref=' . $revision);
+            if ($files !== null && array_is_list($files)) {
+                $cache['remote_migrations'] = [];
+                foreach ($files as $file) {
+                    if (($file['type'] ?? '') === 'file' && crmIsMigrationFilename((string)($file['name'] ?? ''))) {
+                        $cache['remote_migrations'][] = $file['name'];
+                    }
                 }
-                $changelog[] = [
-                    'sha'     => substr($commit['sha'] ?? '', 0, 7),
-                    'message' => $commit['commit']['message'] ?? '',
-                    'date'    => $commit['commit']['committer']['date'] ?? '',
-                    'author'  => $commit['commit']['author']['name'] ?? '',
+                sort($cache['remote_migrations'], SORT_STRING);
+            }
+
+            $runs = crmGitHubJson($target['api'] . '/actions/workflows/deploy-production.yml/runs?branch=' . $branch . '&per_page=1');
+            $run = $runs['workflow_runs'][0] ?? null;
+            if (is_array($run) && (int)($run['id'] ?? 0) > 0) {
+                $cache['deployment'] = [
+                    'id' => (int)$run['id'],
+                    'revision' => crmReleaseRevision($run['head_sha'] ?? null),
+                    'status' => (string)($run['status'] ?? ''),
+                    'conclusion' => (string)($run['conclusion'] ?? ''),
                 ];
             }
         }
+
+        // Cache remote data only. A new release or migration is reflected immediately on reload.
+        set_setting($cacheKey, json_encode($cache, JSON_INVALID_UTF8_SUBSTITUTE));
     }
 
-    $commitUpdate = !$versionUpdate
-        && !$buildUpdate
-        && $localHeadSha !== ''
-        && $remoteHeadSha !== ''
-        && $localHeadSha !== $remoteHeadSha;
+    $installed = crmInstalledRevision($projectDir);
+    $revision = crmReleaseRevision($cache['remote_revision'] ?? null);
+    $deployment = $cache['deployment'];
+    if ($deployment !== null) {
+        $deployment['url'] = 'https://github.com/' . $target['repo'] . '/actions/runs/' . (int)$deployment['id'];
+    }
 
-    $hasUpdate = $versionUpdate || $buildUpdate || $commitUpdate;
-    $updateReason = $versionUpdate ? 'version' : ($buildUpdate ? 'build' : ($commitUpdate ? 'commit' : 'none'));
+    $pending = null;
+    try {
+        if (is_array($cache['remote_migrations'])) {
+            $pending = array_values(array_diff($cache['remote_migrations'], crmAppliedMigrationNames($pdo)));
+        }
+    } catch (Throwable $error) {
+        error_log('CRM update check: migration registry unavailable.');
+    }
 
-    $result = [
-        'success'        => true,
-        'has_update'     => $hasUpdate,
-        'update_reason'  => $updateReason,
-        'local_version'  => $localVersionString,
-        'remote_version' => $remoteVersionString,
-        'local_build'    => $localBuild,
-        'remote_build'   => $remoteBuild,
-        'local_commit'   => $localHeadSha ? substr($localHeadSha, 0, 7) : '',
-        'remote_commit'  => $remoteHeadSha ? substr($remoteHeadSha, 0, 7) : '',
-        'release_date'   => $remoteVersion['release_date'] ?? '',
-        'changelog'      => $changelog,
-        'checked_at'     => time(),
-        'from_cache'     => false,
-        'source'         => $versionSource,
-        'commits_status' => $commitsCode === 200 ? 'ok' : 'error',
-        'commits_error'  => $commitsCode === 200 ? '' : 'GitHub commits request failed',
-    ];
-
-    // Cache the result
-    set_setting($cacheKey, json_encode($result));
-
-    jsonExit($result);
-} catch (Throwable $e) {
-    error_log('check_updates failed: ' . $e->getMessage());
-    jsonExit([
-        'success' => false,
-        'message' => 'Update check failed unexpectedly.',
-        'step'    => 'internal_error',
-        'hint'    => 'Check PHP extensions, outbound HTTPS access, and database availability for the web server user.',
-    ], 500);
+    api_json_exit([
+        'success' => $revision !== '',
+        'comparison' => crmReleaseComparison($installed, $revision),
+        'remote_version' => $cache['remote_version'],
+        'remote_build' => $cache['remote_build'],
+        'remote_revision' => $revision,
+        'changelog' => $cache['changelog'],
+        'deployment' => $deployment,
+        'pending_migrations' => $pending,
+    ]);
+} catch (Throwable $error) {
+    error_log('CRM update check failed: ' . $error->getMessage());
+    api_json_exit(['success' => false, 'message' => __('update_error')], 502);
 }

@@ -17,7 +17,7 @@ Root AGENTS.md -> migrations/AGENTS.md
 - `009_waiting_for_parts.sql` appends the distinct waiting-for-parts status to the order enum while preserving existing assignments and status history.
 - The runner executes only files named `NNN_name.sql`; legacy data dumps in this folder are never run.
 - A migration is recorded only after its handler succeeds. Any error stops the CLI deployment run.
-- Production migrations are CLI-only and use `DB_MIGRATION_USER`; the web runtime account must not have DDL privileges.
+- Production migrations are CLI-only and use `DB_MIGRATION_USER`. GitHub Actions supplies the path to a private host-side migration environment file via `CRM_MIGRATION_ENV`. The web runtime account only reads the migration registry and must not have DDL privileges.
 
 ## Work Guidance
 - Add new migrations with the next unique numeric prefix and an idempotent handler when raw SQL cannot safely tolerate partially upgraded installations.

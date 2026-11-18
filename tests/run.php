@@ -378,6 +378,24 @@ assertTrue(
     'the web process must not be able to overwrite live application files'
 );
 
+require_once __DIR__ . '/../includes/release_info.php';
+$revision = str_repeat('a', 40);
+assertTrue(
+    crmReleaseRevision($revision) === $revision
+        && crmReleaseRevision("{$revision}\n") === ''
+        && crmReleaseComparison('', $revision) === 'unknown'
+        && crmReleaseComparison($revision, $revision) === 'current'
+        && crmReleaseComparison($revision, str_repeat('b', 40)) === 'different',
+    'release comparison must require an exact revision and never mark an unmanaged install as current'
+);
+assertTrue(
+    crmIsMigrationFilename('009_waiting_for_parts.sql')
+        && !crmIsMigrationFilename('database_backup.sql')
+        && !crmIsMigrationFilename('../009_waiting_for_parts.sql')
+        && in_array('009_waiting_for_parts.sql', array_map('basename', crmMigrationFiles(dirname(__DIR__))), true),
+    'release inventory and the migration runner must use the same numbered files'
+);
+
 $accountingSource = file_get_contents(__DIR__ . '/../accounting.php');
 assertTrue(
     $accountingSource !== false

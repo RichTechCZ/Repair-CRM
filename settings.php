@@ -346,7 +346,7 @@ require_once 'includes/header.php';
         </li>
         <?php endif; ?>
         <li class="nav-item">
-            <a class="nav-link <?php echo $active_tab == 'updates' ? 'active' : 'text-white-75'; ?>" href="?tab=updates" id="updatesNavLink"><i class="fas fa-cloud-download-alt me-2"></i><?php echo __('updates_tab'); ?> <span id="updateBadgeNav" class="status-pill status-pill--waiting ms-1" style="display:none;"><span aria-hidden="true">!</span><span class="visually-hidden"><?php echo e(__('update_available')); ?></span></span></a>
+            <a class="nav-link <?php echo $active_tab == 'updates' ? 'active' : 'text-white-75'; ?>" href="?tab=updates"><i class="fas fa-cloud-download-alt me-2"></i><?php echo __('updates_tab'); ?></a>
         </li>
         <?php endif; ?>
     </ul>
@@ -611,72 +611,76 @@ require_once 'includes/header.php';
         </div>
         <?php endif; ?>
 
-        <!-- UPDATES TAB -->
-        <?php if ($is_admin_user): ?>
-        <div class="tab-pane fade <?php echo $active_tab == 'updates' ? 'show active' : ''; ?>">
-            <div class="row g-4">
-                <!-- Left: Version & Update -->
-                <div class="col-md-6">
-                    <div class="glass-panel p-4 mb-4 border-secondary">
-                        <div class="d-flex align-items-center mb-3">
-                            <div class="rounded-circle bg-primary bg-opacity-25 p-3 me-3">
-                                <i class="fas fa-code-branch fa-lg text-primary"></i>
+        <?php if ($is_admin_user && $active_tab === 'updates'):
+            require_once __DIR__ . '/includes/release_info.php';
+            $installedRevision = crmInstalledRevision(__DIR__);
+            $releaseTarget = null;
+            $migrationInventory = null;
+            try {
+                $releaseTarget = crmUpdateTarget(__DIR__);
+                $migrationInventory = crmMigrationInventory($pdo, __DIR__);
+            } catch (Throwable $error) {
+                error_log('CRM updates tab: ' . $error->getMessage());
+            }
+        ?>
+        <div class="tab-pane show active">
+            <div class="row g-3 align-items-start">
+                <div class="col-lg-7">
+                    <section class="statistics-panel" aria-labelledby="release-title">
+                        <header class="statistics-panel__head align-items-center flex-wrap">
+                            <h2 id="release-title"><?= e(__('updates_title')) ?></h2>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCheckUpdates" data-crm-action="check-updates"><?= e(__('check_updates')) ?></button>
+                                <?php if ($releaseTarget): ?>
+                                    <a class="btn btn-primary btn-sm" href="<?= e($releaseTarget['workflow']) ?>"><?= e(__('open_github_deploy')) ?></a>
+                                <?php endif; ?>
                             </div>
-                            <div>
-                                <h5 class="mb-1 text-white"><?php echo __('updates_title'); ?></h5>
-                                <div class="text-white-75 small"><?php echo __('update_server_hint'); ?></div>
-                            </div>
-                        </div>
-
-                        <?php
-                        $versionFile = __DIR__ . '/version.json';
-                        $localVer = file_exists($versionFile) ? json_decode(file_get_contents($versionFile), true) : null;
-                        ?>
-
-                        <div class="row g-3 mb-4">
-                            <div class="col-6">
-                                <div class="glass-panel p-3 text-center border-secondary">
-                                    <div class="text-white-75 small mb-1"><?php echo __('current_version'); ?></div>
-                                    <div class="h4 text-white mb-0" id="localVersion"><?php echo htmlspecialchars($localVer['version'] ?? '?.?.?'); ?></div>
-                                    <div class="small text-muted"><?php echo __('build'); ?>: <?php echo (int)($localVer['build'] ?? 0); ?></div>
+                        </header>
+                        <div class="p-3">
+                            <div class="row g-3 mb-3">
+                                <div class="col-sm-6">
+                                    <div class="small text-white-75"><?= e(__('current_version')) ?></div>
+                                    <strong><?= e($releaseTarget['version'] ?? '—') ?></strong>
+                                    <code><?= e($installedRevision !== '' ? substr($installedRevision, 0, 7) : '—') ?></code>
+                                </div>
+                                <div class="col-sm-6">
+                                    <div class="small text-white-75"><?= e(__('github_target_version')) ?></div>
+                                    <strong id="remoteVersion">—</strong>
+                                    <code id="remoteRevision"></code>
                                 </div>
                             </div>
-                            <div class="col-6">
-                                <div class="glass-panel p-3 text-center border-secondary" id="remoteVersionPanel">
-                                    <div class="text-white-75 small mb-1"><?php echo __('latest_version'); ?></div>
-                                    <div class="h4 text-muted mb-0" id="remoteVersion">—</div>
-                                    <div class="small text-muted" id="remoteBuild"><?php echo __('build'); ?>: —</div>
-                                    <div class="small text-muted" id="remoteReleaseDate"></div>
-                                </div>
-                            </div>
+                            <p class="small text-white-75 mb-2" id="updateStatusArea" role="status"><?= e(__('checking_updates')) ?></p>
+                            <p class="small mb-2"><a id="deploymentRun" hidden></a><span id="deploymentDetails"></span></p>
+                            <p class="small text-white-75 mb-0"><?= e(__('github_release_instructions')) ?></p>
                         </div>
-
-                        <!-- Status area -->
-                        <div id="updateStatusArea" class="mb-4" style="display:none;"></div>
-
-                        <!-- Action buttons -->
-                        <div class="d-flex gap-2 flex-wrap">
-                            <button type="button" class="btn btn-primary" id="btnCheckUpdates" data-crm-action="check-updates">
-                                <i class="fas fa-sync-alt me-2"></i><?php echo __('check_updates'); ?>
-                            </button>
-                        </div>
-
-                        <div class="alert alert-warning border-0 bg-warning bg-opacity-10 mt-3 mb-0 small">
-                            <i class="fas fa-shield-alt me-2 text-warning"></i>
-                            <?php echo e(__('web_install_disabled_notice')); ?>
-                            <code>php run_migrations.php</code>.
-                        </div>
-                    </div>
+                    </section>
+                    <section class="statistics-panel mt-3" aria-labelledby="release-history">
+                        <header class="statistics-panel__head"><h2 id="release-history"><?= e(__('changelog_title')) ?></h2></header>
+                        <ul class="list-group list-group-flush" id="changelogArea"></ul>
+                    </section>
                 </div>
-
-                <!-- Right: Changelog -->
-                <div class="col-md-6">
-                    <div class="glass-panel p-4 border-secondary">
-                        <h5 class="mb-3 text-white"><i class="fas fa-list-ul me-2 text-info"></i><?php echo __('changelog_title'); ?></h5>
-                        <div id="changelogArea" class="overflow-auto" style="max-height: 480px;">
-                            <div class="text-muted small"><?php echo __('no_changelog'); ?></div>
+                <div class="col-lg-5">
+                    <section class="statistics-panel" aria-labelledby="migration-title">
+                        <header class="statistics-panel__head"><h2 id="migration-title"><?= e(__('release_migrations')) ?></h2></header>
+                        <?php if ($migrationInventory === null): ?>
+                            <p class="p-3 mb-0"><?= e(__('release_registry_unavailable')) ?></p>
+                        <?php else: ?>
+                            <ul class="list-group list-group-flush">
+                                <?php foreach ($migrationInventory['files'] as $name):
+                                    $applied = in_array($name, $migrationInventory['applied'], true);
+                                ?>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                        <code><?= e($name) ?></code>
+                                        <span class="status-pill <?= $applied ? 'status-pill--ready' : 'status-pill--waiting' ?>"><?= e(__($applied ? 'release_migration_applied' : 'release_migration_pending')) ?></span>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
+                        <?php endif; ?>
+                        <div class="p-3 border-top">
+                            <p class="small text-white-75 mb-1" id="remoteMigrationsStatus"></p>
+                            <ul id="remoteMigrations" class="small mb-0 ps-3"></ul>
                         </div>
-                    </div>
+                    </section>
                 </div>
             </div>
         </div>
@@ -906,169 +910,84 @@ function runBackup() {
 }
 </script>
 
-<?php if ($is_admin_user): ?>
-<script nonce="<?php echo e(crmCspNonce()); ?>">
-const UPDATE_TRANSLATIONS = {
-    check_updates:     <?php echo json_encode(__('check_updates'), $crmJsFlags); ?>,
-    checking_updates:  <?php echo json_encode(__('checking_updates'), $crmJsFlags); ?>,
-    install_update:    <?php echo json_encode(__('install_update'), $crmJsFlags); ?>,
-    installing_update: <?php echo json_encode(__('installing_update'), $crmJsFlags); ?>,
-    update_available:  <?php echo json_encode(__('update_available'), $crmJsFlags); ?>,
-    update_available_desc: <?php echo json_encode(__('update_available_desc'), $crmJsFlags); ?>,
-    up_to_date:        <?php echo json_encode(__('up_to_date'), $crmJsFlags); ?>,
-    up_to_date_desc:   <?php echo json_encode(__('up_to_date_desc'), $crmJsFlags); ?>,
-    update_success:    <?php echo json_encode(__('update_success'), $crmJsFlags); ?>,
-    update_error:      <?php echo json_encode(__('update_error'), $crmJsFlags); ?>,
-    no_changelog:      <?php echo json_encode(__('no_changelog'), $crmJsFlags); ?>,
-    last_check:        <?php echo json_encode(__('last_check'), $crmJsFlags); ?>,
-    minutes_ago:       <?php echo json_encode(__('minutes_ago'), $crmJsFlags); ?>,
-    migrations_ran:    <?php echo json_encode(__('migrations_ran'), $crmJsFlags); ?>,
-    release_date:      <?php echo json_encode(__('release_date'), $crmJsFlags); ?>,
-    build:             <?php echo json_encode(__('build'), $crmJsFlags); ?>
-};
+<?php if ($is_admin_user && $active_tab === 'updates'): ?>
+<script nonce="<?= e(crmCspNonce()) ?>">
+const releaseMessages = <?= json_encode([
+    'checking' => __('checking_updates'),
+    'error' => __('update_error'),
+    'unknown' => __('release_compare_unknown'),
+    'current' => __('release_compare_current'),
+    'different' => __('release_compare_different'),
+    'run' => __('release_run'),
+    'running' => __('release_run_in_progress'),
+    'success' => __('release_run_success'),
+    'failure' => __('release_run_failure'),
+    'noRun' => __('release_run_none'),
+    'pending' => __('release_remote_pending'),
+    'clear' => __('release_remote_clear'),
+    'migrationsUnavailable' => __('release_remote_unavailable'),
+    'noChangelog' => __('no_changelog'),
+], $crmJsFlags) ?>;
 
-function checkForUpdates(force = false) {
-    const btn = document.getElementById('btnCheckUpdates');
-    const statusArea = document.getElementById('updateStatusArea');
-    
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>' + UPDATE_TRANSLATIONS.checking_updates;
-    statusArea.style.display = 'none';
+async function checkForUpdates(force = false) {
+    const button = document.getElementById('btnCheckUpdates');
+    const status = document.getElementById('updateStatusArea');
+    button.disabled = true;
+    status.textContent = releaseMessages.checking;
 
-    const url = 'api/check_updates.php' + (force ? '?force=1' : '');
-    
-    fetch(url)
-        .then(async r => {
-            const text = await r.text();
-            let data = null;
-            try {
-                data = text ? JSON.parse(text) : null;
-            } catch (e) {
-                throw new Error(text || `HTTP ${r.status}`);
-            }
+    try {
+        const response = await fetch('api/check_updates.php' + (force ? '?force=1' : ''));
+        const info = await response.json();
+        if (!response.ok || !info.success) throw new Error('GitHub update status unavailable');
 
-            if (!r.ok && data && data.message) {
-                throw new Error(data.message);
-            }
+        document.getElementById('remoteVersion').textContent = info.remote_version || '—';
+        document.getElementById('remoteRevision').textContent = info.remote_revision.slice(0, 7);
+        status.textContent = releaseMessages[info.comparison] || releaseMessages.unknown;
+        const runLink = document.getElementById('deploymentRun');
+        const run = info.deployment;
+        runLink.hidden = !run;
+        const runState = !run ? 'noRun' : run.status !== 'completed' ? 'running'
+            : run.conclusion === 'success' ? 'success' : 'failure';
+        if (run) {
+            runLink.href = run.url;
+            runLink.textContent = releaseMessages.run;
+        }
+        document.getElementById('deploymentDetails').textContent = run
+            ? ' · ' + releaseMessages[runState] + ' · ' + run.revision.slice(0, 7)
+            : releaseMessages.noRun;
 
-            if (!r.ok) {
-                throw new Error(`HTTP ${r.status}`);
-            }
+        const log = document.getElementById('changelogArea');
+        log.replaceChildren();
+        const entries = info.changelog.length ? info.changelog : [{sha: '', message: releaseMessages.noChangelog}];
+        for (const commit of entries) {
+            const line = document.createElement('li');
+            line.className = 'list-group-item small';
+            const sha = document.createElement('code');
+            sha.textContent = commit.sha;
+            line.append(sha, ' ' + commit.message.split('\n')[0]);
+            log.append(line);
+        }
 
-            return data;
-        })
-        .then(data => {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>' + UPDATE_TRANSLATIONS.check_updates;
-            
-            if (!data.success) {
-                statusArea.style.display = 'block';
-                statusArea.innerHTML = `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 small mb-0">
-                    <i class="fas fa-exclamation-circle me-2"></i>${escapeHtml(data.message || UPDATE_TRANSLATIONS.update_error)}
-                </div>`;
-                return;
-            }
-
-            // Update remote version display
-            const rv = document.getElementById('remoteVersion');
-            rv.textContent = data.remote_version;
-            rv.className = data.has_update ? 'h4 text-success mb-0' : 'h4 text-white mb-0';
-
-            const rb = document.getElementById('remoteBuild');
-            if (rb) {
-                const remoteBuild = (typeof data.remote_build !== 'undefined' && data.remote_build !== null && data.remote_build !== '')
-                    ? data.remote_build
-                    : '—';
-                rb.textContent = UPDATE_TRANSLATIONS.build + ': ' + remoteBuild;
-            }
-            
-            const rd = document.getElementById('remoteReleaseDate');
-            if (data.release_date) {
-                rd.textContent = UPDATE_TRANSLATIONS.release_date + ': ' + data.release_date;
-            } else {
-                rd.textContent = '';
-            }
-
-            const localLabel = formatUpdateLabel(data.local_version, data.local_build, data.local_commit);
-            const remoteLabel = formatUpdateLabel(data.remote_version, data.remote_build, data.remote_commit);
-
-            // Status message
-            statusArea.style.display = 'block';
-            if (data.has_update) {
-                statusArea.innerHTML = `<div class="alert alert-info border-0 bg-info bg-opacity-10 small mb-0">
-                    <i class="fas fa-arrow-circle-up me-2 text-info"></i>
-                    <strong>${UPDATE_TRANSLATIONS.update_available}</strong> ${escapeHtml(localLabel)} → ${escapeHtml(remoteLabel)}
-                    <div class="mt-1 text-white-75">${escapeHtml(<?php echo json_encode(__('deploy_release_notice'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>)}</div>
-                </div>`;
-                // Show badge
-                const badge = document.getElementById('updateBadgeNav');
-                if (badge) badge.style.display = 'inline';
-            } else {
-                statusArea.innerHTML = `<div class="alert alert-success border-0 bg-success bg-opacity-10 small mb-0">
-                    <i class="fas fa-check-circle me-2 text-success"></i>
-                    <strong>${UPDATE_TRANSLATIONS.up_to_date}</strong> (${escapeHtml(localLabel)})
-                    <div class="mt-1 text-white-75">${UPDATE_TRANSLATIONS.up_to_date_desc}</div>
-                </div>`;
-            }
-
-            // Cache info
-            if (data.from_cache && data.cache_age) {
-                const mins = Math.round(data.cache_age / 60);
-                statusArea.innerHTML += `<div class="text-muted small mt-2"><i class="fas fa-clock me-1"></i>${UPDATE_TRANSLATIONS.last_check}: ${mins} ${UPDATE_TRANSLATIONS.minutes_ago}</div>`;
-            }
-
-            // Changelog
-            renderChangelog(data.changelog || []);
-        })
-        .catch(err => {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>' + UPDATE_TRANSLATIONS.check_updates;
-            statusArea.style.display = 'block';
-            statusArea.innerHTML = `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 small mb-0">
-                <i class="fas fa-exclamation-circle me-2"></i>${escapeHtml(err.message || UPDATE_TRANSLATIONS.update_error)}
-            </div>`;
-        });
-}
-
-function formatUpdateLabel(version, build, commit) {
-    const parts = [];
-    if (version) parts.push(`v${version}`);
-    if (build !== undefined && build !== null && build !== '') parts.push(`build ${build}`);
-    if (commit) parts.push(`#${commit}`);
-    return parts.join(' · ');
-}
-
-function renderChangelog(commits) {
-    const area = document.getElementById('changelogArea');
-    if (!commits || commits.length === 0) {
-        area.innerHTML = `<div class="text-muted small">${UPDATE_TRANSLATIONS.no_changelog}</div>`;
-        return;
+        const pending = info.pending_migrations;
+        const list = document.getElementById('remoteMigrations');
+        list.replaceChildren();
+        document.getElementById('remoteMigrationsStatus').textContent = pending === null
+            ? releaseMessages.migrationsUnavailable : pending.length ? releaseMessages.pending : releaseMessages.clear;
+        for (const migration of pending || []) {
+            const line = document.createElement('li');
+            const name = document.createElement('code');
+            name.textContent = migration;
+            line.append(name);
+            list.append(line);
+        }
+    } catch {
+        status.textContent = releaseMessages.error;
+    } finally {
+        button.disabled = false;
     }
-    let html = '';
-    commits.forEach(c => {
-        const date = c.date ? new Date(c.date).toLocaleString() : '';
-        const msg = (c.message || '').split('\n')[0]; // first line only
-        html += `<div class="d-flex align-items-start mb-2 pb-2 border-bottom border-secondary">
-            <code class="text-info me-2 flex-shrink-0" style="font-size:0.75rem;">${escapeHtml(c.sha || '')}</code>
-            <div class="flex-grow-1">
-                <div class="text-white small">${escapeHtml(msg)}</div>
-                <div class="text-muted" style="font-size:0.7rem;">${escapeHtml(date)} · ${escapeHtml(c.author || '')}</div>
-            </div>
-        </div>`;
-    });
-    area.innerHTML = html;
 }
 
-function escapeHtml(s) {
-    const div = document.createElement('div');
-    div.textContent = s;
-    return div.innerHTML;
-}
-
-<?php if ($active_tab === 'updates'): ?>
-// Auto-check on updates tab load (use cache, no force)
-document.addEventListener('DOMContentLoaded', () => checkForUpdates(false));
-<?php endif; ?>
+document.addEventListener('DOMContentLoaded', () => checkForUpdates());
 </script>
 <?php endif; ?>
 

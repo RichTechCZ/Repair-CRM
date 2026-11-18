@@ -37,10 +37,8 @@ Root AGENTS.md -> api/AGENTS.md
 - The express invoice form edits only the order's regular invoice (never a credit note; active preferred over cancelled) and keeps it single-line.
 - Absolute links in notifications, QR codes and prints use `crmPublicBaseUrl()` (`CRM_PUBLIC_BASE_URL`), never `$_SERVER['HTTP_HOST']`.
 - `get_customer_orders.php` returns the customer profile, repair summary, grouped devices, technician-scoped enriched orders (parts, `api/media.php` attachments, `status_label` and `status_variant` for `.status-pill` rendering, never `pin_code`), and admin-only invoices (`hasPermission('admin_access')`).
-- `check_updates.php` is informational only: admin-only, no shell commands (the commit hash is read from `.git` files), forced refreshes at most once a minute, and transport errors are logged — never returned to the browser.
-- `add_order.php` encrypts non-empty device PINs and restricts scoped technicians to shared customers or a valid newly-created-customer grant.
-- `run_update.php` is a deliberate `410 Gone` tombstone. Web code installation must not be reintroduced.
-- Backup creation streams a repeatable-read snapshot to a mode-0600 file under `app/backup_db/` via `crmBackupDirectory()` (override with `CRM_BACKUP_DIR`); creation and download require `admin_access`. The directory is web-denied by root `.htaccess` and a local guard file.
+- `check_updates.php` reports GitHub commit, deployment and pending migration metadata to admins. The remote cache refreshes at most once a minute on demand. Installed revision and registry status are live reads.
+- `run_update.php` returns HTTP 410. The release action in Settings opens the GitHub Actions workflow.
 - Invoice mutations are POST + CSRF, invoice/order ownership is checked under lock, and linked order cost updates commit atomically with the invoice.
 - `public_order_status.php` is unauthenticated JSON for the public status UI: rate-limited, accepts only the 8-char `public_status_token`, and returns non-sensitive fields only (no PIN, phone, notes, costs, or customer name). The customer-facing page is root `status.php` on app.servis.expert.
 - `copy_order.php` / `get_order.php` are authenticated GET helpers for the new-order form. They must not return device PIN (encrypted or decrypted). Prefer `api_bootstrap()`.

@@ -3,7 +3,7 @@
  * Web-based code updates are intentionally disabled.
  *
  * Production releases must be deployed as immutable artifacts outside the web
- * process. After activating a release, run `php run_migrations.php` with the
+ * process. Before activating a release, run `php run_migrations.php` with the
  * same environment configuration and fail the deployment if it returns nonzero.
  */
 require_once __DIR__ . '/../includes/api_bootstrap.php';
@@ -17,5 +17,5 @@ api_bootstrap([
 
 api_json_exit([
     'success' => false,
-    'message' => 'Web updates are disabled. Deploy a verified immutable release outside the CRM and then run php run_migrations.php.',
+    'message' => 'Web updates are disabled. Use the production workflow in GitHub Actions to run migrations and deploy CRM.',
 ], 410);
