@@ -433,9 +433,10 @@ if ($order_form_old === null && isset($pdo)) {
                                         <ul class="dropdown-menu dropdown-menu-end shadow">
                                             <?php if ($canonical_status === 'Accepted'): ?>
                                                 <li><a class="dropdown-item quick-status-btn" href="#" data-id="<?php echo (int)$order['id']; ?>" data-status="Diagnostics"><i class="fas fa-stethoscope me-2 text-primary"></i><?php echo getStatusLabel('Diagnostics'); ?></a></li>
-                                            <?php elseif (in_array($canonical_status, ['Diagnostics', 'Approval'], true)): ?>
+                                            <?php elseif (in_array($canonical_status, ['Diagnostics', 'Approval', 'Waiting for Parts'], true)): ?>
                                                 <li><a class="dropdown-item quick-status-btn" href="#" data-id="<?php echo (int)$order['id']; ?>" data-status="In Repair"><i class="fas fa-tools me-2 text-warning"></i><?php echo getStatusLabel('In Repair'); ?></a></li>
                                             <?php elseif ($canonical_status === 'In Repair'): ?>
+                                                <li><a class="dropdown-item quick-status-btn" href="#" data-id="<?php echo (int)$order['id']; ?>" data-status="Waiting for Parts"><?php echo getStatusLabel('Waiting for Parts'); ?></a></li>
                                                 <li><a class="dropdown-item quick-status-btn" href="#" data-id="<?php echo (int)$order['id']; ?>" data-status="Ready"><i class="fas fa-check me-2 text-success"></i><?php echo getStatusLabel('Ready'); ?></a></li>
                                             <?php endif; ?>
                                             <?php if ($can_cancel): ?>

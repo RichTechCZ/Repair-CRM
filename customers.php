@@ -62,7 +62,7 @@ if (isset($pdo)) {
             $page = 1;
         }
 
-        $activeStatusValues = getOrderStatusQueryValues(['Accepted', 'Diagnostics', 'Approval', 'In Repair', 'Ready']);
+        $activeStatusValues = getOrderStatusQueryValues(['Accepted', 'Diagnostics', 'Approval', 'In Repair', 'Waiting for Parts', 'Ready']);
         $activePh = implode(',', array_fill(0, count($activeStatusValues), '?'));
         $issuedStatusValues = getOrderStatusQueryValues(['Issued']);
         $issuedPh = implode(',', array_fill(0, count($issuedStatusValues), '?'));

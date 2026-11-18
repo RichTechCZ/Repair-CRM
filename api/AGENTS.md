@@ -8,6 +8,7 @@ Root AGENTS.md -> api/AGENTS.md
 
 ## Local Contracts
 
+- Customer active-repair lists and counts include the distinct waiting-for-parts stage.
 - Customer card overview includes full-history KPIs and the first 20 repairs. Scoped repairs support search and paging. Detail, devices and admin-only invoice pages load separately. Unavailable financial totals are null.
 - Endpoint logic is contained in independent PHP files.
 - **Bootstrap:** mutating endpoints start with `require_once __DIR__ . '/../includes/api_bootstrap.php'` + `api_bootstrap([...])` (auth, POST, CSRF, optional permission/role, rate limit, JSON).

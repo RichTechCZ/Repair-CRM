@@ -79,6 +79,7 @@ Default section order:
 - After completing changes, ask whether to push them to GitHub and deploy them to the production server. Publish to each destination only when the user has authorized it for that change.
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
+- Dashboard opens the scoped workshop queue with overdue orders first, followed by other high-priority open orders. Approval, waiting for parts, and ready for handover each have their own list. Only administrators and staff with `admin_access` see workshop workload and month-to-date SC income.
 - Shared CRM UI should avoid generic AI styling (glassmorphism, neon gradients, stock-looking iconography, excessive motion) and instead use a restrained premium interface with deliberate typography, limited accents, and subtle microinteractions.
 - Order workflow states use localized, centralized tonal status pills (`getStatusBadge()` / `.status-pill`) rather than raw Bootstrap `badge bg-*` colours. Closed handover states (`Issued`, `Collected`) are calm neutral labels; they must remain clearly legible in dense tables.
 - After an order is created, the operator must receive an explicit confirmation with a direct path to the new order or to creating the next one; form failures must return to the CRM with a safe, actionable message.

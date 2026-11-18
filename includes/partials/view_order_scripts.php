@@ -559,19 +559,7 @@ function showShippingRequiredModal() {
 // Show status confirmation modal with animation
 function showStatusConfirmModal(form) {
     const modal = $('#statusConfirmModal');
-    const status = form.find('select[name="status"]').val();
-    const statusLabels = {
-        'Accepted': <?php echo $crmJs(getStatusLabel('Accepted')); ?>,
-        'Diagnostics': <?php echo $crmJs(getStatusLabel('Diagnostics')); ?>,
-        'Approval': <?php echo $crmJs(getStatusLabel('Approval')); ?>,
-        'In Repair': <?php echo $crmJs(getStatusLabel('In Repair')); ?>,
-        'Ready': <?php echo $crmJs(getStatusLabel('Ready')); ?>,
-        'Issued': <?php echo $crmJs(getStatusLabel('Issued')); ?>,
-        'Issued Without Repair': <?php echo $crmJs(getStatusLabel('Issued Without Repair')); ?>,
-        'Repair Cancelled': <?php echo $crmJs(getStatusLabel('Repair Cancelled')); ?>
-    };
-    
-    $('#confirmStatusText').text(statusLabels[status] || status);
+    $('#confirmStatusText').text(form.find('select[name="status"] option:selected').text().trim());
     bootstrap.Modal.getOrCreateInstance(modal[0]).show();
     
     // Add pulse animation

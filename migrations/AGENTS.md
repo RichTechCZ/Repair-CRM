@@ -14,6 +14,7 @@ Root AGENTS.md -> migrations/AGENTS.md
 - `006_telegram_bot_state.sql` adds `telegram_bot_states` table for Telegram bot dialog FSM states and adds optional `users.telegram_id`.
 - `007_query_indexes.sql` adds read-path indexes (serial numbers, customer/technician, customer name, part name, invoice date, status log by order, rate-limit and login-throttle windows) through the idempotent `crmApplyQueryIndexesMigration()`.
 - `008_order_item_cost_snapshot.sql` adds `order_items.cost_price` and backfills it from today's inventory cost (historical reports unchanged) through `crmApplyOrderItemCostSnapshotMigration()`.
+- `009_waiting_for_parts.sql` appends the distinct waiting-for-parts status to the order enum while preserving existing assignments and status history.
 - The runner executes only files named `NNN_name.sql`; legacy data dumps in this folder are never run.
 - A migration is recorded only after its handler succeeds. Any error stops the CLI deployment run.
 - Production migrations are CLI-only and use `DB_MIGRATION_USER`; the web runtime account must not have DDL privileges.

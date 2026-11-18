@@ -198,6 +198,45 @@ check(currentUserCanViewOrder(101) && currentUserCanViewOrder(103), 'administrat
 $counts = countOrdersByStatusGroups(getDashboardStatusGroups(), null);
 check($counts['ready'] >= 4 && $counts['progress'] >= 1, 'dashboard tiles are counted with one grouped query');
 
+// Workshop queue. Tech B already has one issued order, which must stay out of every queue.
+require_once __DIR__ . '/../includes/work_queue.php';
+set_setting('sla_new_hours', '24');
+set_setting('sla_progress_hours', '72');
+$insertOrder->execute([401, 1, 2, 'Diagnostics', null, 400, 0, null]);
+$insertOrder->execute([402, 2, 2, 'Approval', null, 250, 0, null]);
+$insertOrder->execute([403, 1, 2, 'Waiting for Parts', null, 300, 0, null]);
+$insertOrder->execute([404, 2, 2, 'Ready', 500, 400, 0, null]);
+$pdo->exec("UPDATE orders SET priority = 'High' WHERE id IN (103,401,402)");
+$pdo->exec("INSERT INTO order_status_log (order_id, old_status, new_status, changed_at)
+            VALUES (401, '', 'Accepted', NOW() - INTERVAL 1 HOUR),
+                   (401, 'Accepted', 'Diagnostics', NOW() - INTERVAL 100 HOUR),
+                   (403, 'In Repair', 'Waiting for Parts', NOW() - INTERVAL 80 HOUR)");
+$pdo->exec("UPDATE orders SET shipping_method = 'Self Pickup' WHERE id = 404");
+$_SESSION = ['user_id' => 't2', 'role' => 'technician', 'tech_id' => 2, '_perms' => [], '_perms_at' => time()];
+$expectedQueues = [
+    'attention' => [401, 403, 402], 'overdue' => [401, 403],
+    'approval' => [402], 'parts' => [403], 'ready' => [404],
+];
+foreach ($expectedQueues as $key => $expectedIds) {
+    $queue = crmWorkQueue($pdo, $key, 1);
+    check(array_map('intval', array_column($queue['rows'], 'id')) === $expectedIds, "scoped {$key} queue membership and sort");
+    check($queue['counts'][$key] === count($expectedIds), "{$key} counter matches its list");
+}
+$load = $queue['byTechnician'][2];
+check(count($queue['byTechnician']) === 1 && (int)$load['in_work'] === 1 && (int)$load['parts'] === 1
+    && (int)$load['overdue'] === 2, 'technician workload uses the same scoped queues');
+$range = crmStatisticsPeriodOptions()['month'];
+$statistics = crmGetDashboardStatistics($pdo, $range['start'], $range['end']);
+check($statistics['summary']['overdue'] === $queue['counts']['overdue'], 'statistics and queue agree on SLA');
+for ($id = 410; $id <= 425; $id++) {
+    $insertOrder->execute([$id, 2, 2, 'Ready', 500, 400, 0, null]);
+}
+$first = crmWorkQueue($pdo, 'ready', 1);
+$last = crmWorkQueue($pdo, 'ready', PHP_INT_MAX);
+check($last['counts']['ready'] === 17 && $last['page'] === 2 && count($last['rows']) === 2
+    && count(array_unique(array_merge(array_column($first['rows'], 'id'), array_column($last['rows'], 'id')))) === 17,
+    'every queued order is reachable once across bounded pages');
+
 if ($failures > 0) {
     fwrite(STDERR, "{$failures} integration check(s) failed\n");
     exit(1);

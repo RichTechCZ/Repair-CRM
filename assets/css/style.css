@@ -1788,6 +1788,45 @@ small,
     padding: 0;
 }
 
+.work-queue-table small {
+    display: block;
+    margin-top: 0.2rem;
+    color: var(--text-secondary);
+    line-height: 1.35;
+}
+
+.work-queue-table .queue-late {
+    color: var(--warning);
+}
+
+.queue-workload-table thead th,
+.queue-workload-table tbody :is(th, td) {
+    white-space: normal;
+    padding-inline: 0.45rem;
+    letter-spacing: normal;
+}
+
+.table.queue-workload-table tbody th {
+    text-transform: none;
+    font-size: inherit;
+    color: var(--text-primary);
+}
+
+.queue-workload-table :is(th, td):not(:first-child) {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+}
+
+.queue-income {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 1rem;
+    border-top: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+}
+
 .dashboard-orders-table-wrap {
     max-height: 700px;
     overflow-y: auto;

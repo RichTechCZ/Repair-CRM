@@ -144,7 +144,7 @@ function crmStatisticsScopeCondition(?int $technicianId, array &$params): string
 
 /**
  * Status values stay explicit here so legacy rows can still be reported while
- * the current 8-status schema remains the source of truth.
+ * the current schema remains the source of truth.
  *
  * @return array<int,array{key:string,label:string,values:array<int,string>}>
  */
@@ -191,8 +191,6 @@ function crmStatisticsInClause(array $values, array &$params): string
 
 /**
  * One row per order with the latest relevant lifecycle transition dates.
- * The current-status timestamp is the latest status-log event, which is also
- * the row updated by the existing manual Status date editor.
  */
 function crmStatisticsStatusDatesSql(): string
 {
@@ -206,8 +204,7 @@ function crmStatisticsStatusDatesSql(): string
             MAX(CASE WHEN new_status IN ('Waiting for Parts') THEN changed_at END) AS waiting_parts_at,
             MAX(CASE WHEN new_status IN ('Ready','Completed') THEN changed_at END) AS completed_at,
             MAX(CASE WHEN new_status IN ('Issued','Collected') THEN changed_at END) AS issued_at,
-            MAX(CASE WHEN new_status IN ('Issued Without Repair','Repair Cancelled','Cancelled') THEN changed_at END) AS cancelled_at,
-            MAX(changed_at) AS status_since
+            MAX(CASE WHEN new_status IN ('Issued Without Repair','Repair Cancelled','Cancelled') THEN changed_at END) AS cancelled_at
         FROM order_status_log
         GROUP BY order_id
     ";
@@ -249,6 +246,22 @@ function crmStatisticsRate($numerator, $denominator): ?float
     }
 
     return round(((float)$numerator / $denominator) * 100, 1);
+}
+
+/** Use event order so a manually backdated current transition still starts the stage clock. */
+function crmCurrentStageStartSql(): string
+{
+    return "COALESCE((SELECT l.changed_at FROM order_status_log l
+                      WHERE l.order_id = o.id ORDER BY l.id DESC LIMIT 1), o.created_at)";
+}
+
+/** Maximum time in the current stage, in seconds. NULL means the stage has no SLA. */
+function crmStageTimeLimitSql(int $newHours, int $progressHours): string
+{
+    $newSeconds = max(0, $newHours) * 3600;
+    $progressSeconds = max(0, $progressHours) * 3600;
+    return "CASE WHEN o.status IN ('Accepted','New') THEN {$newSeconds}
+                 WHEN o.status IN ('Diagnostics','In Repair','In Progress','Waiting for Parts') THEN {$progressSeconds} END";
 }
 
 /**
@@ -504,26 +517,21 @@ function crmGetDashboardStatistics(
     }
 
     // SLA is an existing CRM setting. There is no separate due-date column.
-    $slaNewSeconds = max(0, $slaNewHours) * 3600;
-    $slaProgressSeconds = max(0, $slaProgressHours) * 3600;
-    $openStatuses = ['Accepted', 'New', 'Diagnostics', 'In Repair', 'In Progress', 'Waiting for Parts'];
-    $overdueByTechParams = [];
-    $overdueStatusClause = crmStatisticsInClause($openStatuses, $overdueByTechParams);
-    $overdueScope = crmStatisticsScopeCondition($technicianId, $overdueByTechParams);
-    $ageExpression = 'TIMESTAMPDIFF(SECOND, COALESCE(status_dates.status_since, o.created_at), NOW())';
-    $thresholdExpression = "CASE WHEN o.status IN ('Accepted','New') THEN {$slaNewSeconds} ELSE {$slaProgressSeconds} END";
-    $overdueWhere = "o.status IN ({$overdueStatusClause}) AND {$ageExpression} > {$thresholdExpression}"
+    $overdueScopeParams = [];
+    $overdueScope = crmStatisticsScopeCondition($technicianId, $overdueScopeParams);
+    $stageStart = crmCurrentStageStartSql();
+    $ageExpression = "TIMESTAMPDIFF(SECOND, {$stageStart}, NOW())";
+    $thresholdExpression = crmStageTimeLimitSql($slaNewHours, $slaProgressHours);
+    $overdueWhere = "{$ageExpression} > {$thresholdExpression}"
         . ($overdueScope !== '' ? ' AND ' . $overdueScope : '');
     $overdueCountSql = "
         SELECT o.technician_id, COUNT(*) AS count
         FROM orders o
-        LEFT JOIN (" . crmStatisticsStatusDatesSql() . ") status_dates
-            ON status_dates.order_id = o.id
         WHERE {$overdueWhere}
         GROUP BY o.technician_id
     ";
     $overdueCountStmt = $pdo->prepare($overdueCountSql);
-    $overdueCountStmt->execute($overdueByTechParams);
+    $overdueCountStmt->execute($overdueScopeParams);
     $overdueByTechnician = [];
     $overdueTotal = 0;
     foreach ($overdueCountStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
@@ -533,24 +541,17 @@ function crmGetDashboardStatistics(
         $overdueTotal += $count;
     }
 
-    $overdueListParams = [];
-    $overdueListStatusClause = crmStatisticsInClause($openStatuses, $overdueListParams);
-    $overdueListScope = crmStatisticsScopeCondition($technicianId, $overdueListParams);
-    $overdueListWhere = "o.status IN ({$overdueListStatusClause}) AND {$ageExpression} > {$thresholdExpression}"
-        . ($overdueListScope !== '' ? ' AND ' . $overdueListScope : '');
     $overdueListSql = "
         SELECT o.id, o.device_type, o.status, o.technician_id, o.created_at,
-               COALESCE(status_dates.status_since, o.created_at) AS status_since,
+               {$stageStart} AS status_since,
                {$ageExpression} - {$thresholdExpression} AS overdue_seconds
         FROM orders o
-        LEFT JOIN (" . crmStatisticsStatusDatesSql() . ") status_dates
-            ON status_dates.order_id = o.id
-        WHERE {$overdueListWhere}
+        WHERE {$overdueWhere}
         ORDER BY status_since ASC, o.id ASC
         LIMIT 20
     ";
     $overdueListStmt = $pdo->prepare($overdueListSql);
-    $overdueListStmt->execute($overdueListParams);
+    $overdueListStmt->execute($overdueScopeParams);
     $overdueOrders = [];
     foreach ($overdueListStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $overdueOrders[] = [

@@ -99,7 +99,7 @@ try {
         $orderParams[] = (int)filter_input(INPUT_GET, 'order_id', FILTER_VALIDATE_INT);
     }
     if ($mode === 'repairs') {
-        $categories = ['active' => ['Accepted','Diagnostics','Approval','In Repair','Ready'],
+        $categories = ['active' => ['Accepted','Diagnostics','Approval','In Repair','Waiting for Parts','Ready'],
             'completed' => ['Ready','Issued'], 'cancelled' => ['Issued Without Repair','Repair Cancelled']];
         $category = (string)($_GET['category'] ?? '');
         if (isset($categories[$category])) {
@@ -304,7 +304,7 @@ try {
         $more = count($invoicesPayload) > $pageSize;
         api_json_exit(['success' => true, 'invoices' => array_slice($invoicesPayload, 0, $pageSize), 'has_more' => $more]);
     }
-    $activeStatuses = ['Accepted', 'Diagnostics', 'Approval', 'In Repair', 'Ready'];
+    $activeStatuses = ['Accepted', 'Diagnostics', 'Approval', 'In Repair', 'Waiting for Parts', 'Ready'];
     $cancelledStatuses = ['Issued Without Repair', 'Repair Cancelled'];
 
     $summary = [

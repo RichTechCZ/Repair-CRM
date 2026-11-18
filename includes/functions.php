@@ -492,6 +492,7 @@ function getAllStatuses(): array {
         'Diagnostics',
         'Approval',
         'In Repair',
+        'Waiting for Parts',
         'Ready',
         'Issued',
         'Issued Without Repair',
@@ -504,7 +505,6 @@ function getLegacyStatusMap(): array {
         'New' => 'Accepted',
         'Pending Approval' => 'Approval',
         'In Progress' => 'In Repair',
-        'Waiting for Parts' => 'In Repair',
         'Completed' => 'Ready',
         'Collected' => 'Issued',
         'Cancelled' => 'Repair Cancelled',
@@ -615,7 +615,7 @@ function getDashboardStatusGroups(): array {
     return [
         'new' => ['Accepted'],
         'pending' => ['Approval'],
-        'progress' => ['Diagnostics', 'In Repair'],
+        'progress' => ['Diagnostics', 'In Repair', 'Waiting for Parts'],
         'ready' => ['Ready', 'Issued'],
     ];
 }
@@ -679,6 +679,7 @@ function getStatusLabel($status): string {
         'Diagnostics' => __('status_diagnostics'),
         'Approval' => __('status_approval'),
         'In Repair' => __('status_in_repair'),
+        'Waiting for Parts' => __('waiting_parts'),
         'Ready' => __('status_ready'),
         'Issued' => __('status_issued'),
         'Issued Without Repair' => __('status_issued_without_repair'),
@@ -687,7 +688,6 @@ function getStatusLabel($status): string {
         'New' => __('new'),
         'Pending Approval' => __('pending_approval'),
         'In Progress' => __('in_progress'),
-        'Waiting for Parts' => __('waiting_parts'),
         'Completed' => __('completed'),
         'Collected' => __('collected'),
         'Cancelled' => __('cancelled'),

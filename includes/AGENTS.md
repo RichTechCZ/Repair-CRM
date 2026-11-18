@@ -31,7 +31,8 @@ Root AGENTS.md -> includes/AGENTS.md
 - `qr_code.php` — self-hosted QR encoder (byte mode, versions 1–10; verified bit-exact against a reference encoder). Use `crmQrDataUri()` in documents; `api/qr.php` serves the phone popover.
 - `upload_security.php` also owns `crmOrderAttachmentUrl()` (browser URL `api/media.php?id=`) and `crmResolveStoredUploadPath()`; never output raw `uploads/` paths.
 - `get_setting()` / `set_setting()` share a request cache loaded with one query (`crmSettingsCache()`); `set_setting()` updates it so a save is visible in the same request.
-- `countOrdersByStatusGroups()` counts all dashboard tiles with one `GROUP BY` query; `getActiveTechnicians()` is the request-cached technician list for selects.
+- `work_queue.php` loads the paged Dashboard queue and per-technician counts from the same session-scoped set. Dashboard and Statistics share the stage clock and SLA rules. Issued devices leave the handover queue.
+- `countOrdersByStatusGroups()` counts the Orders directory tiles with one `GROUP BY` query; `getActiveTechnicians()` is the request-cached technician list for selects.
 - `config.php` supports optional `DB_PORT`, and `CRM_STATELESS` (defined before inclusion) skips the session for machine endpoints (`health.php`, `tg_webhook.php`). Public links/QR/notification links use `crmPublicBaseUrl()` (`CRM_PUBLIC_BASE_URL`), never the Host header.
 - `footer.php` defines the preview/notice `window.LANG_*` globals in a nonce'd script and renders the global confirm dialog (default primary button; `showConfirm(..., 'danger')` for destructive actions).
 - `config.php` — sends HSTS on HTTPS, forces `display_errors=0` in production, and when `CRM_TIMEZONE` is set pins PHP and the MySQL session to that zone (report periods compare PHP dates with MySQL `NOW()`).

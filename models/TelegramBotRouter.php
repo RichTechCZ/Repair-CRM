@@ -646,7 +646,7 @@ final class TelegramBotRouter
                 $where[] = "o.status IN ('Accepted', 'Diagnostics')";
                 break;
             case 'repair':
-                $where[] = "o.status IN ('In Repair', 'Approval')";
+                $where[] = "o.status IN ('In Repair', 'Waiting for Parts', 'Approval')";
                 break;
             case 'ready':
                 $where[] = "o.status IN ('Ready')";
@@ -1183,6 +1183,7 @@ final class TelegramBotRouter
             'Diagnostics' => '🔍 Диагностика',
             'Approval' => '⏳ Согласование',
             'In Repair' => '🛠 В ремонте',
+            'Waiting for Parts' => 'Ожидание запчастей',
             'Ready' => '✅ Готов',
             'Issued' => '📦 Выдан',
             'Repair Cancelled' => '❌ Отказ / Без ремонта',
@@ -1597,6 +1598,7 @@ final class TelegramBotRouter
             case 'Diagnostics': return '🔍';
             case 'Approval': return '⏳';
             case 'In Repair': return '🛠';
+            case 'Waiting for Parts': return '⏳';
             case 'Ready': return '✅';
             case 'Issued': return '📦';
             case 'Issued Without Repair': return '⚠️';
