@@ -7,6 +7,8 @@ Contains class definitions and object-oriented models for business logic (invoic
 Root AGENTS.md -> models/AGENTS.md
 
 ## Local Contracts
+
+- Persist the MyInvoice creation claim before dispatch, persist the draft ID before issue, and reconcile an unknown creation result before another create. For a stuck creating claim, match the supplier, customer, variable symbol and total with the accountant. If confirmed present, record the verified external ID and its state (pending_issue for a draft awaiting issue). Clear the claim only after confirming absence.
 - `InvoiceManager.php` / `InvoiceAutomation.php` / `MyInvoiceApiClient.php` — accounting and MyInvoice sync.
 - `resolveInvoiceTotal()` in `InvoiceAutomation.php` derives the customer charge from `final_cost` (or `estimated_cost` only when final cost is absent); never add order-item selling prices to an invoice total.
 - `OrderStatusService.php` — shared order status transition rules: terminal lock, Issued validation, inventory consume/return, auto-invoice, admin TG notify, technician reassignment TG. Issued requires a handover method. `Self Pickup` and order type `Warranty` / «Рекламация» skip the final-cost gate. Paid carrier handover still needs a positive final cost. `syncStatusHistoryDate()` applies a manual Status date to the current history row only. `applyInTransaction()` stamps `shipping_date` (if empty) on every transition into Issued, so every path (quick edit, full edit, Telegram, sync) lands in a finance period. `assertClosedOrderEditable()` is the closed-order lock for money/parts/dates/handover.

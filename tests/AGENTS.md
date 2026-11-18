@@ -21,6 +21,8 @@ Root AGENTS.md -> tests/AGENTS.md
 - Add regression coverage whenever a security, authorization, or financial rule changes.
 - Prefer direct behavior assertions; use source-level checks only when an endpoint cannot be bootstrapped without infrastructure.
 
+- MyInvoice integration checks use a local stub for failed issue retries and uncertain creation outcomes.
+
 ## Verification
 
 - Run `php tests/run.php`.

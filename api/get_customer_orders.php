@@ -88,19 +88,69 @@ try {
         $orderSql .= ' AND o.technician_id = ?';
         $orderParams[] = $techId;
     }
-    $orderSql .= ' ORDER BY o.created_at DESC, o.id DESC';
-
-    $stmt = $pdo->prepare($orderSql);
-    $stmt->execute($orderParams);
-    $orderRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $orderIds = array_values(array_map(static fn(array $r): int => (int)$r['id'], $orderRows));
+    $mode = $_GET['section'] ?? 'overview';
+    if (!in_array($mode, ['overview', 'repairs', 'detail', 'invoices', 'devices'], true)) {
+        api_json_exit(['success' => false], 400);
+    }
+    $offset = max(0, (int)filter_input(INPUT_GET, 'offset', FILTER_VALIDATE_INT));
+    $pageSize = 20;
+    if ($mode === 'detail') {
+        $orderSql .= ' AND o.id = ?';
+        $orderParams[] = (int)filter_input(INPUT_GET, 'order_id', FILTER_VALIDATE_INT);
+    }
+    if ($mode === 'repairs') {
+        $categories = ['active' => ['Accepted','Diagnostics','Approval','In Repair','Ready'],
+            'completed' => ['Ready','Issued'], 'cancelled' => ['Issued Without Repair','Repair Cancelled']];
+        $category = (string)($_GET['category'] ?? '');
+        if (isset($categories[$category])) {
+            $orderSql .= ' AND ' . buildStatusInCondition('o.status', $categories[$category], $orderParams);
+        }
+        $q = trim((string)($_GET['q'] ?? ''));
+        if ($q !== '') {
+            $orderSql .= " AND (LOCATE(?, CONCAT_WS(' ', CONCAT('#',o.id),o.device_brand,o.device_model,o.device_type,o.serial_number,o.serial_number_2,o.problem_description,o.technician_notes,t.name,o.status)) > 0 OR EXISTS
+                (SELECT 1 FROM order_items oi LEFT JOIN inventory i ON i.id=oi.inventory_id WHERE oi.order_id=o.id AND LOCATE(?,COALESCE(NULLIF(oi.part_name,''),i.part_name,''))>0)";
+            array_push($orderParams, $q, $q);
+            foreach (getAllStatuses() as $status) {
+                if (mb_stripos(getStatusLabel($status), $q) !== false) {
+                    $orderSql .= ' OR ' . buildStatusInCondition('o.status', [$status], $orderParams);
+                }
+            }
+            foreach (crmDeviceTypes() as $deviceType) {
+                if (mb_stripos(__($deviceType), $q) !== false) {
+                    $orderSql .= ' OR o.device_type = ?';
+                    $orderParams[] = $deviceType;
+                }
+            }
+            $orderSql .= ')';
+        }
+    }
+    $orderSql .= ' ORDER BY o.created_at DESC, o.id DESC LIMIT ' . ($pageSize + 1) . ' OFFSET ' . $offset;
+    $pageRows = [];
+    if (in_array($mode, ['overview', 'repairs', 'detail'], true)) {
+        $stmt = $pdo->prepare($orderSql);
+        $stmt->execute($orderParams);
+        $pageRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+    $hasMore = count($pageRows) > $pageSize;
+    if ($hasMore) {
+        array_pop($pageRows);
+    }
+    $orderIds = array_column($pageRows, 'id');
+    $orderRows = $pageRows;
+    if ($mode === 'devices') {
+        // Group devices across the full scoped history only when this tab is requested.
+        $summaryStmt = $pdo->prepare('SELECT id, status, order_type, device_type, device_brand, device_model,
+            serial_number, serial_number_2, created_at, final_cost, estimated_cost FROM orders
+            WHERE customer_id = ?' . ($techScoped ? ' AND technician_id = ?' : '') . ' ORDER BY created_at DESC,id DESC');
+        $summaryStmt->execute($orderParams);
+        $orderRows = $summaryStmt;
+    }
 
     $itemsByOrder = [];
     $attachmentsByOrder = [];
     $statusDateByOrder = [];
 
-    if (!empty($orderIds)) {
+    if ($mode === 'detail' && !empty($orderIds)) {
         $ph = implode(',', array_fill(0, count($orderIds), '?'));
 
         try {
@@ -187,15 +237,31 @@ try {
     // Invoices belong to admin_access users only (same contract as print_invoice.php / accounting.php).
     $invoicesPayload = [];
     $latestOrderInvoiceMap = [];
+    $financeAvailable = true;
     if ($isAdmin) {
         try {
-            $invStmt = $pdo->prepare(
-                'SELECT id, invoice_number, order_id, invoice_type, status, date_issue, date_due, payment_date, total_amount, currency, created_at
-                 FROM invoices
-                 WHERE customer_id = ?
-                 ORDER BY COALESCE(payment_date, date_issue, created_at) DESC, id DESC'
-            );
-            $invStmt->execute([$customer_id]);
+            $invoiceCount = null;
+            if ($mode === 'overview') {
+                $countStmt = $pdo->prepare('SELECT COUNT(*) FROM invoices WHERE customer_id = ?');
+                $countStmt->execute([$customer_id]);
+                $invoiceCount = (int)$countStmt->fetchColumn();
+            }
+            $sql = 'SELECT id, invoice_number, order_id, invoice_type, status, date_issue, date_due, payment_date, total_amount, currency, created_at FROM invoices WHERE customer_id = ?';
+            $params = [$customer_id];
+            if ($mode !== 'invoices') {
+                $sql .= " AND order_id IS NOT NULL AND status <> 'cancelled' AND COALESCE(invoice_type,'invoice') <> 'credit_note'";
+                $sql .= ' AND order_id IN (' . implode(',', array_fill(0, max(1, count($orderIds)), '?')) . ')';
+                array_push($params, ...($orderIds ?: [0]));
+                $sql .= " AND id = (SELECT i.id FROM invoices i WHERE i.customer_id = invoices.customer_id AND i.order_id = invoices.order_id
+                     AND i.status <> 'cancelled' AND COALESCE(i.invoice_type,'invoice') <> 'credit_note'
+                     ORDER BY COALESCE(i.payment_date,i.date_issue,i.created_at) DESC,i.id DESC LIMIT 1)";
+            }
+            $sql .= ' ORDER BY COALESCE(payment_date,date_issue,created_at) DESC,id DESC';
+            if ($mode === 'invoices') {
+                $sql .= ' LIMIT ' . ($pageSize + 1) . ' OFFSET ' . $offset;
+            }
+            $invStmt = $pdo->prepare($sql);
+            $invStmt->execute($params);
             foreach ($invStmt->fetchAll(PDO::FETCH_ASSOC) as $inv) {
                 $invStatus = (string)($inv['status'] ?? 'issued');
                 $invType = (string)($inv['invoice_type'] ?? 'invoice');
@@ -216,18 +282,28 @@ try {
                     'total_amount' => (float)$inv['total_amount'],
                     'currency' => (string)($inv['currency'] ?: $currency),
                 ];
-                $invoicesPayload[] = $invPayload;
+                if ($mode === 'invoices') {
+                    $invoicesPayload[] = $invPayload;
+                }
 
                 if ($invOid !== null && $invType !== 'credit_note' && $invStatus !== 'cancelled' && !isset($latestOrderInvoiceMap[$invOid])) {
                     $latestOrderInvoiceMap[$invOid] = $invPayload;
                 }
             }
         } catch (PDOException $e) {
+            error_log("Customer invoice lookup failed: " . $e->getMessage());
+            $financeAvailable = false;
             $invoicesPayload = [];
             $latestOrderInvoiceMap = [];
         }
     }
 
+    if ($mode === 'invoices') {
+        if (!$isAdmin) api_json_exit(['success' => false], 403);
+        if (!$financeAvailable) api_json_exit(['success' => false, 'message' => __('invoice_data_unavailable')], 503);
+        $more = count($invoicesPayload) > $pageSize;
+        api_json_exit(['success' => true, 'invoices' => array_slice($invoicesPayload, 0, $pageSize), 'has_more' => $more]);
+    }
     $activeStatuses = ['Accepted', 'Diagnostics', 'Approval', 'In Repair', 'Ready'];
     $cancelledStatuses = ['Issued Without Repair', 'Repair Cancelled'];
 
@@ -269,7 +345,9 @@ try {
         $estimatedCost = $row['estimated_cost'] !== null ? (float)$row['estimated_cost'] : null;
         $linkedInvoice = $latestOrderInvoiceMap[$oid] ?? null;
 
-        if ($linkedInvoice !== null) {
+        if (!$financeAvailable) {
+            $customerTotal = null;
+        } elseif ($linkedInvoice !== null) {
             $customerTotal = (float)$linkedInvoice['total_amount'];
         } elseif ($finalCost !== null) {
             $customerTotal = $finalCost;
@@ -279,60 +357,35 @@ try {
             $customerTotal = null;
         }
 
-        $summary['total_orders']++;
-        if (in_array($canonicalStatus, $activeStatuses, true)) {
-            $summary['active_orders']++;
-            $summary['active_estimate_total'] += (float)($customerTotal ?? 0.0);
-        }
-        if ($canonicalStatus === 'Ready') {
-            $summary['ready_orders']++;
-        }
-        if ($canonicalStatus === 'Issued') {
-            $summary['issued_orders']++;
-            $summary['total_spent'] += (float)($customerTotal ?? 0.0);
-        }
-        if (in_array($canonicalStatus, $cancelledStatuses, true)) {
-            $summary['cancelled_orders']++;
-        }
-        if ($isWarranty) {
-            $summary['warranty_orders']++;
-        }
-
         $createdAt = (string)($row['created_at'] ?? '');
-        if ($summary['last_visit_at'] === null && $createdAt !== '') {
-            $summary['last_visit_at'] = $createdAt;
-        }
-        if ($createdAt !== '') {
-            $summary['first_visit_at'] = $createdAt;
-        }
+        if ($mode === 'devices') {
+            // Device grouping (newest order arrives first because of ORDER BY created_at DESC)
+            $snNorm = strtoupper($serial1);
+            $bmNorm = mb_strtolower(trim($deviceType . '|' . $deviceBrand . '|' . $deviceModel));
+            $deviceKey = $snNorm !== '' ? ('sn:' . $snNorm) : ('bm:' . $bmNorm);
 
-        // Device grouping (newest order arrives first because of ORDER BY created_at DESC)
-        $snNorm = strtoupper($serial1);
-        $bmNorm = mb_strtolower(trim($deviceType . '|' . $deviceBrand . '|' . $deviceModel));
-        $deviceKey = $snNorm !== '' ? ('sn:' . $snNorm) : ('bm:' . $bmNorm);
-
-        if (!isset($devicesMap[$deviceKey])) {
-            $devicesMap[$deviceKey] = [
-                'device_type' => $deviceType,
-                'device_type_label' => __($deviceType),
-                'device_icon_class' => crmDeviceIconClass($deviceType),
-                'device_brand' => $deviceBrand,
-                'device_model' => $deviceModel,
-                'serial_number' => $serial1,
-                'serial_number_2' => $serial2,
-                'visits_count' => 0,
-                'last_order_id' => $oid,
-                'last_visit_at' => $createdAt,
-                'last_status' => $canonicalStatus,
-                'last_status_label' => $statusLabel,
-                'last_status_variant' => $statusVariant,
-                'order_ids' => [],
-            ];
-        } elseif ($devicesMap[$deviceKey]['serial_number_2'] === '' && $serial2 !== '') {
-            $devicesMap[$deviceKey]['serial_number_2'] = $serial2;
+            if (!isset($devicesMap[$deviceKey])) {
+                $devicesMap[$deviceKey] = [
+                    'device_type' => $deviceType,
+                    'device_type_label' => __($deviceType),
+                    'device_icon_class' => crmDeviceIconClass($deviceType),
+                    'device_brand' => $deviceBrand,
+                    'device_model' => $deviceModel,
+                    'serial_number' => $serial1,
+                    'serial_number_2' => $serial2,
+                    'visits_count' => 0,
+                    'last_order_id' => $oid,
+                    'last_visit_at' => $createdAt,
+                    'last_status' => $canonicalStatus,
+                    'last_status_label' => $statusLabel,
+                    'last_status_variant' => $statusVariant,
+                ];
+            } elseif ($devicesMap[$deviceKey]['serial_number_2'] === '' && $serial2 !== '') {
+                $devicesMap[$deviceKey]['serial_number_2'] = $serial2;
+            }
+            $devicesMap[$deviceKey]['visits_count']++;
+            continue;
         }
-        $devicesMap[$deviceKey]['visits_count']++;
-        $devicesMap[$deviceKey]['order_ids'][] = $oid;
 
         $shippingMethod = trim((string)($row['shipping_method'] ?? ''));
         $shippingLabel = $shippingMethod;
@@ -381,13 +434,62 @@ try {
         ];
     }
 
-    $summary['unique_devices'] = count($devicesMap);
+    if ($mode === 'overview') {
+        $scope = ' FROM orders o WHERE o.customer_id = ?' . ($techScoped ? ' AND o.technician_id = ?' : '');
+        $deviceSql = "CASE WHEN TRIM(COALESCE(serial_number,'')) <> ''
+            THEN CONCAT('sn:', UPPER(TRIM(serial_number)))
+            ELSE LOWER(CONCAT('bm:',TRIM(COALESCE(device_type,'Other')),'|',TRIM(COALESCE(device_brand,'')),'|',TRIM(COALESCE(device_model,'')))) END";
+        $devicesStmt = $pdo->prepare("SELECT COUNT(DISTINCT BINARY ($deviceSql))" . $scope);
+        $devicesStmt->execute($orderParams);
+        $summary['unique_devices'] = (int)$devicesStmt->fetchColumn();
+
+        $invoiceAmount = $isAdmin && $financeAvailable
+            ? "(SELECT i.total_amount FROM invoices i WHERE i.order_id=o.id AND i.customer_id=o.customer_id
+                AND i.status <> 'cancelled' AND COALESCE(i.invoice_type,'invoice') <> 'credit_note'
+                ORDER BY COALESCE(i.payment_date,i.date_issue,i.created_at) DESC,i.id DESC LIMIT 1),"
+            : '';
+        $totalsSql = "SELECT o.status,o.order_type,COUNT(*) AS qty,MIN(o.created_at) AS first_visit,
+            MAX(o.created_at) AS last_visit,SUM(COALESCE({$invoiceAmount}o.final_cost,o.estimated_cost,0)) AS amount";
+        try {
+            $totalsStmt = $pdo->prepare($totalsSql . $scope . ' GROUP BY o.status,o.order_type');
+            $totalsStmt->execute($orderParams);
+        } catch (PDOException $e) {
+            if ($invoiceAmount === '') throw $e;
+            error_log('Customer invoice totals failed: ' . $e->getMessage());
+            $financeAvailable = false;
+            $totalsStmt = $pdo->prepare(str_replace($invoiceAmount, '', $totalsSql) . $scope . ' GROUP BY o.status,o.order_type');
+            $totalsStmt->execute($orderParams);
+        }
+        foreach ($totalsStmt as $group) {
+            $qty = (int)$group['qty'];
+            $status = canonicalOrderStatus($group['status']);
+            $summary['total_orders'] += $qty;
+            if (in_array($status, $activeStatuses, true)) {
+                $summary['active_orders'] += $qty;
+                $summary['active_estimate_total'] += (float)$group['amount'];
+            }
+            if ($status === 'Ready') $summary['ready_orders'] += $qty;
+            if ($status === 'Issued') {
+                $summary['issued_orders'] += $qty;
+                $summary['total_spent'] += (float)$group['amount'];
+            }
+            if (in_array($status, $cancelledStatuses, true)) $summary['cancelled_orders'] += $qty;
+            if (OrderStatusService::isReclamationOrderType($group['order_type'])) $summary['warranty_orders'] += $qty;
+            $summary['first_visit_at'] = min($summary['first_visit_at'] ?? $group['first_visit'], $group['first_visit']);
+            $summary['last_visit_at'] = max($summary['last_visit_at'] ?? $group['last_visit'], $group['last_visit']);
+        }
+    }
     $summary['average_check'] = $summary['issued_orders'] > 0
         ? round($summary['total_spent'] / $summary['issued_orders'], 2)
         : 0.0;
     $summary['total_spent'] = round($summary['total_spent'], 2);
     $summary['active_estimate_total'] = round($summary['active_estimate_total'], 2);
 
+    if (!$financeAvailable) {
+        $summary['total_spent'] = $summary['average_check'] = $summary['active_estimate_total'] = null;
+    }
+    if ($mode === 'devices') api_json_exit(['success' => true, 'devices' => array_values($devicesMap)]);
+    if ($mode !== 'overview') api_json_exit(['success' => true, 'orders' => $orders, 'has_more' => $hasMore]);
     $phoneRaw = trim((string)($customerRow['phone'] ?? ''));
     $phoneClean = preg_replace('/[^0-9+]/', '', $phoneRaw);
     $contactName = trim((string)($customerRow['first_name'] ?? '') . ' ' . (string)($customerRow['last_name'] ?? ''));
@@ -417,7 +519,10 @@ try {
         'success' => true,
         'customer' => $customerPayload,
         'summary' => $summary,
-        'devices' => array_values($devicesMap),
+        'devices' => [],
+        'has_more' => $hasMore,
+        'invoice_count' => $invoiceCount ?? null,
+        'finance_available' => $financeAvailable,
         'orders' => $orders,
         'invoices' => $invoicesPayload,
     ]);

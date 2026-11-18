@@ -7,6 +7,8 @@ Contains shared configuration, language, common functions, header, and footer fo
 Root AGENTS.md -> includes/AGENTS.md
 
 ## Local Contracts
+
+- Customer card loading controls and financial error states use Russian and Czech translations.
 - Reusable components and configuration.
 - `api_bootstrap.php` — shared API guards (`api_bootstrap`, `api_json_exit`, `api_exception_exit`).
 - `reports_stats.php` — batched `getDetailedStatsBatch()` / compatible `getDetailedStats()` financial/ops reporting, plus `crmGetTechnicianPayroll()` for per-employee 80 mm payroll lines. One request performs a constant number of queries; operational dates come from status transitions, not `orders.updated_at`.

@@ -588,7 +588,7 @@ $hasActiveFilters = ($search !== '' || $filter_type !== '' || $filter_activity !
 
 <!-- Pagination -->
 <?php if (isset($total_pages) && $total_pages > 1): ?>
-<nav class="mt-4" aria-label="Pagination">
+<nav class="mt-4" aria-label="<?php echo e(__('customer_pages')); ?>">
     <ul class="pagination justify-content-center">
         <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
             <a class="page-link border-0 shadow-sm rounded-circle mx-1" href="<?php echo e($buildCustomersUrl(['cp' => max(1, $page - 1)])); ?>" aria-label="<?php echo e(__('back')); ?>">
@@ -614,7 +614,7 @@ $hasActiveFilters = ($search !== '' || $filter_type !== '' || $filter_activity !
         }
         ?>
         <li class="page-item <?php echo $page >= $total_pages ? 'disabled' : ''; ?>">
-            <a class="page-link border-0 shadow-sm rounded-circle mx-1" href="<?php echo e($buildCustomersUrl(['cp' => min($total_pages, $page + 1)])); ?>" aria-label="Next">
+            <a class="page-link border-0 shadow-sm rounded-circle mx-1" href="<?php echo e($buildCustomersUrl(['cp' => min($total_pages, $page + 1)])); ?>" aria-label="<?php echo e(__('customer_next')); ?>">
                 <i class="fas fa-chevron-right" aria-hidden="true"></i>
             </a>
         </li>
@@ -635,7 +635,7 @@ $hasActiveFilters = ($search !== '' || $filter_type !== '' || $filter_activity !
                     </div>
                 </div>
                 <div class="customer-card__header-actions">
-                    <a href="#" id="customerCardNewOrderBtn" class="btn btn-primary btn-sm">
+                    <a id="customerCardNewOrderBtn" class="d-none btn btn-primary btn-sm">
                         <i class="fas fa-plus" aria-hidden="true"></i>
                         <span><?php echo e(__('new_order')); ?></span>
                     </a>
@@ -865,7 +865,7 @@ $hasActiveFilters = ($search !== '' || $filter_type !== '' || $filter_activity !
 
                     <div id="company_fields" class="d-none border p-3 rounded bg-dark bg-opacity-25 border-secondary mb-3">
                         <div class="mb-3">
-                            <label class="form-label"><?php echo e(__('ico')); ?></label>
+                            <label class="form-label" for="ico_input"><?php echo e(__('ico')); ?></label>
                             <div class="input-group">
                                 <input type="text" name="ico" id="ico_input" class="form-control" placeholder="12345678" maxlength="20">
                                 <button class="btn btn-outline-secondary" type="button" id="btn_fetch_ares">
@@ -874,34 +874,34 @@ $hasActiveFilters = ($search !== '' || $filter_type !== '' || $filter_activity !
                             </div>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label"><?php echo e(__('company_name')); ?></label>
+                            <label class="form-label" for="ares_name"><?php echo e(__('company_name')); ?></label>
                             <input type="text" name="company_name" id="ares_name" class="form-control" maxlength="100">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label"><?php echo e(__('dic')); ?></label>
+                            <label class="form-label" for="ares_dic"><?php echo e(__('dic')); ?></label>
                             <input type="text" name="dic" id="ares_dic" class="form-control" placeholder="CZ12345678" maxlength="20">
                         </div>
                     </div>
 
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label"><?php echo e(__('client')); ?> (<?php echo e(__('name_col')); ?>)</label>
+                            <label class="form-label" for="ares_first_name"><?php echo e(__('client')); ?> (<?php echo e(__('name_col')); ?>)</label>
                             <input type="text" name="first_name" id="ares_first_name" class="form-control" maxlength="50" required>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label"><?php echo e(__('client')); ?> (<?php echo e(__('last_name_label')); ?>)</label>
+                            <label class="form-label" for="ares_last_name"><?php echo e(__('client')); ?> (<?php echo e(__('last_name_label')); ?>)</label>
                             <input type="text" name="last_name" id="ares_last_name" class="form-control" maxlength="50" required>
                         </div>
                         <div class="col-12">
-                            <label class="form-label"><?php echo e(__('phone')); ?></label>
-                            <input type="tel" name="phone" class="form-control" maxlength="20" required>
+                            <label class="form-label" for="newCustomerPhone"><?php echo e(__('phone')); ?></label>
+                            <input type="tel" name="phone" id="newCustomerPhone" class="form-control" maxlength="20" required>
                         </div>
                         <div class="col-12">
-                            <label class="form-label">Email</label>
-                            <input type="email" name="email" class="form-control" maxlength="100">
+                            <label class="form-label" for="newCustomerEmail">Email</label>
+                            <input type="email" name="email" id="newCustomerEmail" class="form-control" maxlength="100">
                         </div>
                         <div class="col-12">
-                            <label class="form-label"><?php echo e(__('address')); ?></label>
+                            <label class="form-label" for="ares_address"><?php echo e(__('address')); ?></label>
                             <textarea name="address" id="ares_address" class="form-control" rows="2" maxlength="1000"></textarea>
                         </div>
                     </div>
@@ -942,6 +942,9 @@ $customersConfig = [
     'initialCustomerId' => $initial_customer_id,
     'initialTab' => in_array($_GET['tab'] ?? '', ['repairs', 'devices', 'invoices', 'edit'], true) ? (string)$_GET['tab'] : 'repairs',
     'i18n' => [
+        'load_more' => __('load_more'),
+        'repair_details' => __('repair_details'),
+        'invoice_data_unavailable' => __('invoice_data_unavailable'),
         'customer_card' => __('customer_card'),
         'customer_contacts' => __('customer_contacts'),
         'repairs_history' => __('repairs_history'),

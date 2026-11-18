@@ -117,7 +117,7 @@ function cancelAutoInvoicesForOrder(PDO $pdo, int $orderId): int {
     // An invoice already sent to MyInvoice is a legal document there: cancelling only the
     // local copy would make the two systems disagree. Keep it and leave it to the accountant
     // (credit note), and say so in the log.
-    $synced = $pdo->prepare("SELECT 1 FROM invoices WHERE id = ? AND myinvoice_invoice_id IS NOT NULL");
+    $synced = $pdo->prepare("SELECT 1 FROM invoices WHERE id = ? AND (myinvoice_invoice_id IS NOT NULL OR myinvoice_status = 'creating')");
     $ids = array_values(array_filter($ids, static function ($invoiceId) use ($synced, $orderId) {
         $synced->execute([(int)$invoiceId]);
         if ($synced->fetchColumn()) {
@@ -139,46 +139,76 @@ function cancelAutoInvoicesForOrder(PDO $pdo, int $orderId): int {
     return count($ids);
 }
 
-function syncInvoiceToMyInvoice(PDO $pdo, int $invoiceId): array {
+function syncInvoiceToMyInvoice(PDO $pdo, int $invoiceId, ?MyInvoiceApiClient $client = null): array {
     if (myInvoiceConfig('MYINVOICE_ENABLED', 'myinvoice_enabled', '1') !== '1') {
         return ['success' => true, 'skipped' => true, 'message' => 'MyInvoice sync disabled'];
     }
 
-    $client = new MyInvoiceApiClient();
+    $client ??= new MyInvoiceApiClient();
     if (!$client->isConfigured()) {
         // Visible in the invoice's sync status and the server log: a missing env value must not fail silently.
         error_log('MyInvoice sync skipped: MYINVOICE_API_TOKEN and MYINVOICE_API_BASE_URL must both be set in the environment.');
         return markMyInvoiceSyncFailure($pdo, $invoiceId, 'MyInvoice is not configured: set MYINVOICE_API_TOKEN and MYINVOICE_API_BASE_URL in .env.');
     }
 
-    $invoice = loadLocalInvoiceForMyInvoice($pdo, $invoiceId);
-    if (!$invoice) {
-        return ['success' => false, 'error' => 'Invoice not found'];
-    }
-
-    if (!empty($invoice['myinvoice_invoice_id'])) {
-        return ['success' => true, 'id' => (int)$invoice['myinvoice_invoice_id'], 'created' => false];
+    // A session lock covers the remote calls without holding a row transaction open.
+    $lock = 'crm:myinvoice:' . $invoiceId;
+    $acquire = $pdo->prepare('SELECT GET_LOCK(?, 0)');
+    $acquire->execute([$lock]);
+    if ((int)$acquire->fetchColumn() !== 1) {
+        return ['success' => false, 'error' => 'Invoice synchronization is in progress.'];
     }
 
     try {
-        $myInvoiceClientId = ensureMyInvoiceClient($pdo, $client, $invoice);
-        $payload = buildMyInvoicePayload($client, $invoice, $myInvoiceClientId);
-        $created = $client->createInvoice($payload);
-        $external = (myInvoiceConfig('MYINVOICE_AUTO_ISSUE', 'myinvoice_auto_issue', '1') === '1')
-            ? $client->issueInvoice((int)$created['id'])
-            : $created;
-
-        $status = $external['status'] ?? $created['status'] ?? 'draft';
-        $update = $pdo->prepare("
-            UPDATE invoices
-            SET myinvoice_invoice_id = ?, myinvoice_status = ?, myinvoice_synced_at = NOW(), myinvoice_sync_error = NULL
-            WHERE id = ?
-        ");
-        $update->execute([(int)$external['id'], $status, $invoiceId]);
-
-        return ['success' => true, 'id' => (int)$external['id'], 'status' => $status, 'created' => true];
+        $invoice = loadLocalInvoiceForMyInvoice($pdo, $invoiceId);
+        if (!$invoice || $invoice['status'] === 'cancelled') {
+            return ['success' => false, 'error' => 'Invoice missing or cancelled.'];
+        }
+        $externalId = (int)$invoice['myinvoice_invoice_id'];
+        $autoIssue = myInvoiceConfig('MYINVOICE_AUTO_ISSUE', 'myinvoice_auto_issue', '1') === '1';
+        $createdNow = false;
+        if (!$externalId) {
+            if ($invoice['myinvoice_status'] === 'creating') {
+                throw new RuntimeException('Creation outcome unknown. Reconcile the invoice in MyInvoice before retrying.');
+            }
+            $clientId = ensureMyInvoiceClient($pdo, $client, $invoice);
+            $payload = buildMyInvoicePayload($client, $invoice, $clientId);
+            $claim = $pdo->prepare("UPDATE invoices SET myinvoice_status = 'creating' WHERE id = ? AND status <> 'cancelled' AND myinvoice_invoice_id IS NULL");
+            $claim->execute([$invoiceId]);
+            if (!$claim->rowCount()) {
+                throw new RuntimeException('Invoice changed during synchronization.');
+            }
+            try {
+                $created = $client->createInvoice($payload);
+            } catch (MyInvoiceApiException $e) {
+                // A validation rejection is definitive. Transport errors need reconciliation.
+                if (in_array($e->getStatusCode(), [400, 401, 403, 422], true)) {
+                    $pdo->prepare('UPDATE invoices SET myinvoice_status = NULL WHERE id = ?')->execute([$invoiceId]);
+                }
+                throw $e;
+            }
+            $externalId = (int)($created['id'] ?? 0);
+            if ($externalId <= 0) {
+                throw new RuntimeException('Missing MyInvoice ID. Reconcile the invoice before retrying.');
+            }
+            $state = $autoIssue ? 'pending_issue' : ($created['status'] ?? 'draft');
+            $pdo->prepare('UPDATE invoices SET myinvoice_invoice_id = ?, myinvoice_status = ?, myinvoice_synced_at = NOW(), myinvoice_sync_error = NULL WHERE id = ?')
+                ->execute([$externalId, $state, $invoiceId]);
+            $createdNow = true;
+        } else {
+            $state = $invoice['myinvoice_status'];
+        }
+        if ($state === 'pending_issue') {
+            $issued = $client->issueInvoice($externalId);
+            $state = $issued['status'] ?? 'issued';
+            $pdo->prepare('UPDATE invoices SET myinvoice_status = ?, myinvoice_synced_at = NOW(), myinvoice_sync_error = NULL WHERE id = ?')
+                ->execute([$state, $invoiceId]);
+        }
+        return ['success' => true, 'id' => $externalId, 'status' => $state, 'created' => $createdNow];
     } catch (Throwable $e) {
         return markMyInvoiceSyncFailure($pdo, $invoiceId, $e->getMessage());
+    } finally {
+        $pdo->prepare('SELECT RELEASE_LOCK(?)')->execute([$lock]);
     }
 }
 

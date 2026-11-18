@@ -152,6 +152,34 @@ $pdo->commit();
 $autoRow = $pdo->query('SELECT total_amount, vat_amount, is_vat_payer FROM invoices WHERE id = ' . (int)($auto['id'] ?? 0))->fetch();
 check($autoRow && near(1200.0, (float)$autoRow['total_amount']) && near(0.0, (float)$autoRow['vat_amount']), 'auto invoice total equals the final cost (no VAT added on top)');
 
+// The remote draft survives an issue failure. A retry must address the same remote ID.
+putenv('MYINVOICE_ENABLED=1');
+putenv('MYINVOICE_AUTO_ISSUE=1');
+$stub = new class('http://localhost', 'fixture') extends MyInvoiceApiClient {
+    public int $creates = 0;
+    public int $issues = 0;
+    public function getClient(int $id): array { return ['id' => $id]; }
+    public function getVatRates(): array { return [['id' => 1, 'rate' => 0]]; }
+    public function createInvoice(array $payload): array {
+        $this->creates++;
+        return ['id' => 777, 'status' => 'draft'];
+    }
+    public function issueInvoice(int $id): array {
+        if (++$this->issues === 1) throw new RuntimeException('Test issue failure');
+        return ['id' => $id, 'status' => 'issued'];
+    }
+};
+$pdo->exec('UPDATE customers SET myinvoice_client_id = 123 WHERE id = 2');
+$autoId = (int)$auto['id'];
+$firstSync = syncInvoiceToMyInvoice($pdo, $autoId, $stub);
+$retrySync = syncInvoiceToMyInvoice($pdo, $autoId, $stub);
+check(!$firstSync['success'] && $retrySync['success'] && $retrySync['id'] === 777 && $stub->creates === 1 && $stub->issues === 2,
+    'retry issues the saved remote draft without creating another');
+$pdo->prepare("UPDATE invoices SET myinvoice_status='creating', myinvoice_invoice_id=NULL WHERE id=?")->execute([$autoId]);
+$uncertain = syncInvoiceToMyInvoice($pdo, $autoId, $stub);
+check(!$uncertain['success'] && $stub->creates === 1, 'unknown create result blocks automatic duplicate creation');
+putenv('MYINVOICE_ENABLED=0');
+
 $pdo->exec("UPDATE invoices SET myinvoice_invoice_id = 777 WHERE id = " . (int)($auto['id'] ?? 0));
 $pdo->beginTransaction();
 cancelAutoInvoicesForOrder($pdo, 301);

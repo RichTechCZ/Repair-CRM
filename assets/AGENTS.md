@@ -7,6 +7,8 @@ Static assets such as CSS and JavaScript files for the front-end.
 Root AGENTS.md -> assets/AGENTS.md
 
 ## Local Contracts
+
+- Reset customer actions on card changes. Load repair details and tab data on demand and discard responses from previous selections.
 - `css/` — global theme (`style.css`, `login.css`).
 - `js/print.js` — CSP-safe print/close and opt-in auto-print behavior for standalone documents.
 - `js/main.js` — shared UI (sidebar, global modals, Select2/Fancybox init, shared `#phoneQrPopover` binding via `initPhoneQrPopover()` / `crmBindPhoneQrTriggers()`) and the explicit `data-crm-action` delegation allowlist used instead of inline event attributes (`open-customer-card`, `show-customer-orders`, …). `setSidebarOpen()` synchronizes `aria-expanded` on both `#sidebarCollapse` and `.ios-tabbar [data-tab-action="more"]`. `showAlert(message, title, onHidden)` supports a one-time `onHidden` callback before redirects/reloads. `initFormGuards()` implements `data-confirm` (on the submit button or form, via `showConfirm`) and `data-crm-once` (disables submit after a valid submit; both New Order forms use it). `crmFetchJson()` is the JSON fetch wrapper: it rejects on HTTP errors, non-JSON bodies and `success:false` with a user-safe message. Accounting row actions (`edit-invoice`, `create-credit-note`, `export-pohoda`, `export-s3`, `delete-invoice`, `open-preview`, …) require this allowlist on the server; page scripts must expose handlers on `window.*`. Universal document preview accepts same-origin HTTP(S) URLs only and never interpolates a URL into HTML.

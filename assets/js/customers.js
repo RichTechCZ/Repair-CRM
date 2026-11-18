@@ -470,8 +470,8 @@
             },
             {
                 label: t('total_spent', 'Total spent'),
-                value: formatMoney(summary.total_spent || 0, currency),
-                note: spendNote,
+                value: summary.total_spent === null ? '—' : formatMoney(summary.total_spent, currency),
+                note: summary.total_spent === null ? t('invoice_data_unavailable') : spendNote,
                 tone: 'success'
             }
         ];
@@ -485,41 +485,64 @@
         });
     }
 
-    function matchesFilterCategory(order, category) {
-        const s = order.canonical_status;
-        if (category === 'active') {
-            return ['Accepted', 'Diagnostics', 'Approval', 'In Repair', 'Ready'].indexOf(s) !== -1;
-        }
-        if (category === 'completed') {
-            return s === 'Ready' || s === 'Issued';
-        }
-        if (category === 'cancelled') {
-            return s === 'Issued Without Repair' || s === 'Repair Cancelled';
-        }
-        return true;
+    let repairsSequence = 0;
+    let searchTimer;
+    function cardRequest(card, section, params = {}) {
+        const query = new URLSearchParams({ customer_id: card.customer.id, section, ...params });
+        return window.crmFetchJson('api/get_customer_orders.php?' + query);
     }
 
-    function matchesSearchText(order, query) {
-        const q = String(query || '').trim().toLowerCase();
-        if (!q) return true;
-        const partsText = Array.isArray(order.items)
-            ? order.items.map(function (it) { return it.name || ''; }).join(' ')
-            : '';
-        const haystack = [
-            '#' + order.id,
-            String(order.id),
-            order.device_brand,
-            order.device_model,
-            order.device_type_label,
-            order.serial_number,
-            order.serial_number_2,
-            order.problem_description,
-            order.technician_notes,
-            order.tech_name,
-            order.status_label,
-            partsText
-        ].join(' ').toLowerCase();
-        return haystack.indexOf(q) !== -1;
+    async function loadRepairs(append = false) {
+        const card = activeCardData;
+        if (!card) return;
+        const seq = ++repairsSequence;
+        const wrap = document.getElementById('ccRepairsList');
+        wrap.textContent = t('loading_text');
+        try {
+            const result = await cardRequest(card, 'repairs', {
+                q: activeSearchQuery, category: activeFilter, offset: append ? card.orders.length : 0
+            });
+            if (card !== activeCardData || seq !== repairsSequence) return;
+            card.orders = append ? card.orders.concat(result.orders) : result.orders;
+            card.has_more = result.has_more;
+            renderRepairsList();
+        } catch (err) {
+            if (card === activeCardData && seq === repairsSequence) {
+                wrap.textContent = err.message;
+                addLoadButton(wrap, () => loadRepairs(append));
+            }
+        }
+    }
+
+    function addLoadButton(wrap, action) {
+        const btn = el('button', 'btn btn-sm btn-outline-secondary', t('load_more'));
+        btn.type = 'button';
+        btn.addEventListener('click', action);
+        wrap.appendChild(btn);
+    }
+
+    async function loadTab(section, append = false) {
+        const card = activeCardData;
+        if (!card || card[section + 'Busy'] || (card[section + 'Loaded'] && !append)) return;
+        const wrap = document.getElementById(section === 'devices' ? 'ccDevicesList' : 'ccInvoicesList');
+        card[section + 'Busy'] = true;
+        wrap.textContent = t('loading_text');
+        try {
+            const result = await cardRequest(card, section, { offset: append ? card[section].length : 0 });
+            if (card !== activeCardData) return;
+            card[section] = append ? card[section].concat(result[section]) : result[section];
+            card[section + 'Loaded'] = true;
+            if (section === 'invoices') card.moreInvoices = result.has_more;
+            if (section === 'devices') renderDevicesList();
+            else renderInvoicesList();
+        } catch (err) {
+            if (card === activeCardData) {
+                wrap.textContent = err.message;
+                addLoadButton(wrap, () => loadTab(section, append));
+            }
+        } finally {
+            card[section + 'Busy'] = false;
+        }
     }
 
     function createPrintMenuForOrder(orderId) {
@@ -589,12 +612,9 @@
         const currency = customer.currency || cfg.currency || 'Kč';
 
         // Update filter pill counts
-        const counts = { all: orders.length, active: 0, completed: 0, cancelled: 0 };
-        orders.forEach(function (o) {
-            if (matchesFilterCategory(o, 'active')) counts.active++;
-            if (matchesFilterCategory(o, 'completed')) counts.completed++;
-            if (matchesFilterCategory(o, 'cancelled')) counts.cancelled++;
-        });
+        const summary = activeCardData.summary;
+        const counts = {all: summary.total_orders, active: summary.active_orders,
+            completed: summary.ready_orders + summary.issued_orders, cancelled: summary.cancelled_orders};
         document.querySelectorAll('#ccRepairFilters .customer-filter-pill').forEach(function (pill) {
             const key = pill.dataset.filter || 'all';
             pill.classList.toggle('is-active', key === activeFilter);
@@ -604,7 +624,7 @@
             }
         });
 
-        if (orders.length === 0) {
+        if (!summary.total_orders) {
             const empty = el('div', 'empty-state');
             empty.appendChild(el('div', 'empty-state__mark'));
             empty.appendChild(el('p', 'mb-3', t('customer_no_repairs_hint', 'No repairs yet')));
@@ -619,10 +639,7 @@
             return;
         }
 
-        const filtered = orders.filter(function (o) {
-            return matchesFilterCategory(o, activeFilter) && matchesSearchText(o, activeSearchQuery);
-        });
-
+        const filtered = orders;
         if (filtered.length === 0) {
             const emptyFiltered = el('div', 'empty-state');
             emptyFiltered.appendChild(el('div', 'empty-state__mark'));
@@ -634,7 +651,7 @@
                 activeSearchQuery = '';
                 const input = document.getElementById('ccRepairSearchInput');
                 if (input) input.value = '';
-                renderRepairsList();
+                loadRepairs();
             });
             emptyFiltered.appendChild(resetBtn);
             listWrap.appendChild(emptyFiltered);
@@ -739,6 +756,25 @@
                 body.appendChild(meta);
             }
 
+            if (!order.detailLoaded) {
+                const btn = el('button', 'btn btn-sm btn-outline-secondary', t('repair_details'));
+                btn.type = 'button';
+                btn.addEventListener('click', async () => {
+                    const card = activeCardData;
+                    btn.disabled = true;
+                    try {
+                        const result = await cardRequest(card, 'detail', { order_id: orderId });
+                        if (card !== activeCardData) return;
+                        if (!result.orders.length) throw new Error(t('error_loading_data'));
+                        Object.assign(order, result.orders[0], { detailLoaded: true });
+                        renderRepairsList();
+                    } catch (err) {
+                        btn.disabled = false;
+                        if (card === activeCardData) showCustomersToast(err.message, 'danger');
+                    }
+                });
+                body.appendChild(btn);
+            }
             // Parts used
             if (Array.isArray(order.items) && order.items.length > 0) {
                 const partsRow = el('div', 'customer-repair-item__parts');
@@ -823,6 +859,7 @@
 
             listWrap.appendChild(item);
         });
+        if (activeCardData.has_more) addLoadButton(listWrap, () => loadRepairs(true));
     }
 
     function renderDevicesList() {
@@ -882,7 +919,7 @@
                 activeSearchQuery = dev.serial_number || devName;
                 const input = document.getElementById('ccRepairSearchInput');
                 if (input) input.value = activeSearchQuery;
-                renderRepairsList();
+                loadRepairs();
                 switchCardTab('repairs');
             });
             btns.appendChild(filterBtn);
@@ -995,6 +1032,7 @@
         table.appendChild(tbody);
         tableWrap.appendChild(table);
         wrap.appendChild(tableWrap);
+        if (activeCardData.moreInvoices) addLoadButton(wrap, () => loadTab('invoices', true));
     }
 
     function syncEditCompanyFields(isCompany) {
@@ -1047,6 +1085,7 @@
 
     function renderCustomerCard(data, initialTab) {
         activeCardData = data;
+        document.getElementById('customerCardEditToggleBtn').disabled = !data.customer.can_edit_customer;
         const customer = data.customer || {};
         const summary = data.summary || {};
 
@@ -1090,17 +1129,18 @@
             invoicesTabItem.classList.toggle('d-none', !customer.is_admin);
         }
         if (invoicesCountBadge) {
-            invoicesCountBadge.textContent = String(Array.isArray(data.invoices) ? data.invoices.length : 0);
+            invoicesCountBadge.textContent = String(data.invoice_count ?? '—');
         }
 
         renderCardProfile(customer);
         renderCardKpis(summary, customer.currency);
         renderRepairsList();
-        renderDevicesList();
-        renderInvoicesList();
+        if (data.devicesLoaded) renderDevicesList();
+        if (data.invoicesLoaded) renderInvoicesList();
         populateEditForm(customer, summary);
 
         switchCardTab(initialTab || 'repairs');
+        if (initialTab === 'devices' || (initialTab === 'invoices' && customer.is_admin)) loadTab(initialTab);
     }
 
     function updateDirectoryRowFromCustomer(customer) {
@@ -1180,6 +1220,12 @@
         const modal = getCardModal();
         if (!modal) return;
 
+        clearTimeout(searchTimer);
+        activeCardData = null;
+        const action = document.getElementById('customerCardNewOrderBtn');
+        action.removeAttribute('href');
+        action.classList.add('d-none');
+        document.getElementById('customerCardEditToggleBtn').disabled = true;
         activeCustomerId = id;
         activeFilter = 'all';
         activeSearchQuery = '';
@@ -1244,6 +1290,9 @@
             }
         });
 
+        for (const [id, section] of [['ccTabDevices','devices'], ['ccTabInvoices','invoices']]) {
+            document.getElementById(id)?.addEventListener('shown.bs.tab', () => loadTab(section));
+        }
         // Customer card modal lifecycle
         const cardModalEl = document.getElementById('customerCardModal');
         if (cardModalEl) {
@@ -1252,6 +1301,8 @@
                     window.crmHidePhoneQrPopover();
                 }
                 if (!reopenCustomerAfterPreview) {
+                    requestCounter++;
+                    activeCardData = null;
                     activeCustomerId = null;
                     updateUrlCustomerId(null);
                 }
@@ -1310,7 +1361,7 @@
                 const pill = event.target instanceof Element ? event.target.closest('.customer-filter-pill') : null;
                 if (!pill) return;
                 activeFilter = pill.dataset.filter || 'all';
-                renderRepairsList();
+                loadRepairs();
             });
         }
 
@@ -1318,7 +1369,9 @@
         if (repairSearchInput) {
             repairSearchInput.addEventListener('input', function () {
                 activeSearchQuery = repairSearchInput.value || '';
-                renderRepairsList();
+                repairsSequence++;
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(loadRepairs, 220);
             });
         }
 
@@ -1398,7 +1451,7 @@
                     body: formData
                 })
                     .then(function (res) {
-                        if (res && res.customer && activeCardData) {
+                        if (res && res.customer && activeCardData && Number(res.customer.id) === activeCustomerId) {
                             activeCardData.customer = Object.assign({}, activeCardData.customer, res.customer);
                             renderCustomerCard(activeCardData, 'repairs');
                             updateDirectoryRowFromCustomer(activeCardData.customer);

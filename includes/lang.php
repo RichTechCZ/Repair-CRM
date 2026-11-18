@@ -5,6 +5,11 @@
 
 $lang_data = [
     'ru' => [
+        'load_more' => 'Показать ещё',
+        'repair_details' => 'Запчасти и вложения',
+        'invoice_data_unavailable' => 'Данные по счетам временно недоступны',
+        'customer_pages' => 'Страницы',
+        'customer_next' => 'Далее',
         'dashboard' => 'Дашборд',
         'orders' => 'Заказы',
         'customers' => 'Клиенты',
@@ -818,6 +823,11 @@ $lang_data = [
         'repairs_col' => 'Ремонты',
     ],
     'cs' => [
+        'load_more' => 'Zobrazit další',
+        'repair_details' => 'Díly a přílohy',
+        'invoice_data_unavailable' => 'Údaje o fakturách jsou dočasně nedostupné',
+        'customer_pages' => 'Stránky',
+        'customer_next' => 'Další',
         'dashboard' => 'Nástěnka',
         'orders' => 'Zakázky',
         'customers' => 'Klienti',
