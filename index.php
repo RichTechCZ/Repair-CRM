@@ -97,8 +97,6 @@ try {
                         <tbody>
                         <?php foreach ($rows as $row):
                             $device = trim(($row['device_brand'] ?? '') . ' ' . ($row['device_model'] ?? ''));
-                            $phone = trim($row['phone'] ?? '');
-                            $dial = preg_replace('/[^0-9+]/', '', $phone);
                             $overdue = (int)($row['overdue_seconds'] ?? 0);
                         ?>
                             <tr>
@@ -108,7 +106,7 @@ try {
                                 </div></td>
                                 <td data-label="<?= e(__('client')) ?>"><div>
                                     <?= e(crmCustomerDisplayName($row)) ?>
-                                    <?php if ($dial !== ''): ?><small><a href="tel:<?= e($dial) ?>"><?= e($phone) ?></a></small><?php endif; ?>
+                                    <div><?= crmPhoneQrTrigger($row['phone'] ?? null, 'small text-white-75') ?></div>
                                 </div></td>
                                 <td data-label="<?= e(__('status')) ?>"><div>
                                     <?= getStatusBadge($row['status']) ?>

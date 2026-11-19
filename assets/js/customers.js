@@ -329,6 +329,21 @@
         return el('span', 'status-pill status-pill--' + safeVariant, label || '');
     }
 
+    function buildCustomerPhone(phone, classes) {
+        const digits = phone.replace(/[^0-9]/g, '');
+        if (!digits) return el('span', classes, phone);
+
+        const trigger = el('span', ('phone-qr-trigger ' + classes).trim());
+        trigger.dataset.phone = (phone.trim().startsWith('+') ? '+' : '') + digits;
+        trigger.setAttribute('role', 'button');
+        trigger.tabIndex = 0;
+        trigger.setAttribute('aria-label', phone + ' — ' + t('phone_show_qr', 'QR'));
+        trigger.appendChild(iconEl('fas fa-phone text-success'));
+        trigger.appendChild(el('span', '', phone));
+        trigger.appendChild(iconEl('fas fa-qrcode phone-qr-trigger__hint'));
+        return trigger;
+    }
+
     function renderCardProfile(customer) {
         const profileWrap = document.getElementById('ccProfilePanel');
         if (!profileWrap) return;
@@ -342,22 +357,7 @@
         phoneRow.appendChild(el('div', 'customer-profile-row__label', t('phone', 'Phone')));
         const phoneVal = el('div', 'customer-profile-row__value');
         if (customer.phone) {
-            if (customer.phone_clean) {
-                const qrTrigger = el('span', 'phone-qr-trigger');
-                qrTrigger.dataset.phone = customer.phone_clean;
-                qrTrigger.setAttribute('role', 'button');
-                qrTrigger.setAttribute('tabindex', '0');
-                qrTrigger.setAttribute('aria-expanded', 'false');
-                qrTrigger.setAttribute('aria-controls', 'phoneQrPopover');
-                qrTrigger.setAttribute('aria-haspopup', 'dialog');
-                qrTrigger.setAttribute('aria-label', customer.phone + ' — ' + t('phone_show_qr', 'QR'));
-                qrTrigger.appendChild(iconEl('fas fa-phone text-success'));
-                qrTrigger.appendChild(el('span', 'fw-semibold', customer.phone));
-                qrTrigger.appendChild(iconEl('fas fa-qrcode phone-qr-trigger__hint'));
-                phoneVal.appendChild(qrTrigger);
-            } else {
-                phoneVal.appendChild(el('span', 'fw-semibold', customer.phone));
-            }
+            phoneVal.appendChild(buildCustomerPhone(customer.phone, 'fw-semibold'));
             phoneVal.appendChild(makeCopyButton(customer.phone));
         } else {
             phoneVal.appendChild(el('span', 'text-tertiary', t('not_specified', '—')));
@@ -1177,22 +1177,7 @@
         if (contactsCell) {
             contactsCell.replaceChildren();
             if (customer.phone) {
-                if (customer.phone_clean) {
-                    const qrTrigger = el('div', 'phone-qr-trigger small');
-                    qrTrigger.dataset.phone = customer.phone_clean;
-                    qrTrigger.setAttribute('role', 'button');
-                    qrTrigger.setAttribute('tabindex', '0');
-                    qrTrigger.setAttribute('aria-expanded', 'false');
-                    qrTrigger.setAttribute('aria-controls', 'phoneQrPopover');
-                    qrTrigger.setAttribute('aria-haspopup', 'dialog');
-                    qrTrigger.setAttribute('aria-label', customer.phone + ' — ' + t('phone_show_qr', 'QR'));
-                    qrTrigger.appendChild(iconEl('fas fa-phone text-success'));
-                    qrTrigger.appendChild(el('span', '', customer.phone));
-                    qrTrigger.appendChild(iconEl('fas fa-qrcode phone-qr-trigger__hint'));
-                    contactsCell.appendChild(qrTrigger);
-                } else {
-                    contactsCell.appendChild(el('div', 'small', customer.phone));
-                }
+                contactsCell.appendChild(buildCustomerPhone(customer.phone, 'small'));
             }
             if (customer.email) {
                 const emailDiv = el('div', 'small text-white-75 text-truncate customer-contact-line');

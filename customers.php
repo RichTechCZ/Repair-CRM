@@ -438,7 +438,6 @@ $hasActiveFilters = ($search !== '' || $filter_type !== '' || $filter_activity !
                             }
 
                             $phoneRaw = trim((string)($customer['phone'] ?? ''));
-                            $phoneClean = preg_replace('/[^0-9+]/', '', $phoneRaw);
                             $emailRaw = trim((string)($customer['email'] ?? ''));
                             $addressRaw = trim((string)($customer['address'] ?? ''));
 
@@ -473,24 +472,7 @@ $hasActiveFilters = ($search !== '' || $filter_type !== '' || $filter_activity !
                             </td>
 
                             <td data-label="<?php echo e(__('phone')); ?>" data-crm-col="contacts">
-                                <?php if ($phoneRaw !== ''): ?>
-                                    <?php if ($phoneClean !== ''): ?>
-                                    <div class="phone-qr-trigger small"
-                                         data-phone="<?php echo e($phoneClean); ?>"
-                                         role="button"
-                                         tabindex="0"
-                                         aria-expanded="false"
-                                         aria-controls="phoneQrPopover"
-                                         aria-haspopup="dialog"
-                                         aria-label="<?php echo e($phoneRaw . ' — ' . __('phone_show_qr')); ?>">
-                                        <i class="fas fa-phone text-success" aria-hidden="true"></i>
-                                        <span><?php echo e($phoneRaw); ?></span>
-                                        <i class="fas fa-qrcode phone-qr-trigger__hint" aria-hidden="true"></i>
-                                    </div>
-                                    <?php else: ?>
-                                    <div class="small"><?php echo e($phoneRaw); ?></div>
-                                    <?php endif; ?>
-                                <?php endif; ?>
+                                <?= crmPhoneQrTrigger($phoneRaw, 'small') ?>
                                 <?php if ($emailRaw !== ''): ?>
                                     <div class="small text-white-75 text-truncate customer-contact-line">
                                         <i class="far fa-envelope me-1" aria-hidden="true"></i><?php echo e($emailRaw); ?>
@@ -913,15 +895,6 @@ $hasActiveFilters = ($search !== '' || $filter_type !== '' || $filter_activity !
             </form>
         </div>
     </div>
-</div>
-
-<!-- Phone QR Popover Container -->
-<div class="qr-popover" id="phoneQrPopover" role="dialog" aria-modal="false" aria-hidden="true" aria-label="<?php echo e(__('phone_show_qr')); ?>">
-    <div class="qr-phone-label" id="qrPhoneLabel"></div>
-    <div id="qrContainer"></div>
-    <a href="#" class="btn btn-success qr-call-btn" id="qrCallBtn">
-        <i class="fas fa-phone" aria-hidden="true"></i><?php echo e(__('call')); ?>
-    </a>
 </div>
 
 <!-- Non-blocking Feedback Toast -->

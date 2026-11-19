@@ -831,7 +831,7 @@ function triggerDownload(url) {
 }
 
 /**
- * Shared Phone QR popover controller (orders.php, customers.php, dynamic cards).
+ * Shared phone QR popover controller for links in the CRM shell and customer cards.
  * Hover, click, and keyboard open the same local SVG QR; Escape restores focus.
  */
 function initPhoneQrPopover() {
@@ -843,9 +843,12 @@ function initPhoneQrPopover() {
     if (popover.dataset.crmQrInit === '1') return;
     popover.dataset.crmQrInit = '1';
 
+    const popoverHome = popover.parentElement;
     let hideTimeout;
     let activePhone = '';
     let activeTrigger = null;
+    let activated = false;
+    let restoringFocus = false;
 
     function isPopoverOpen() {
         return popover.style.display === 'block';
@@ -864,8 +867,12 @@ function initPhoneQrPopover() {
         popover.setAttribute('aria-hidden', 'true');
         setExpanded(trigger, false);
         activeTrigger = null;
+        activated = false;
+        if (popover.parentElement !== popoverHome) popoverHome.appendChild(popover);
         if (restoreFocus && trigger) {
+            restoringFocus = true;
             trigger.focus({ preventScroll: true });
+            restoringFocus = false;
         }
     }
 
@@ -934,14 +941,20 @@ function initPhoneQrPopover() {
         }, 180);
     }
 
-    function showPopover(trigger, options) {
+    function showPopover(trigger, { activate = false, focusCall = false } = {}) {
         clearTimeout(hideTimeout);
         const phone = trigger.dataset.phone || '';
         if (!phone) return;
 
-        if (activeTrigger && activeTrigger !== trigger) {
+        if (activeTrigger !== trigger) {
             setExpanded(activeTrigger, false);
+            activated = false;
         }
+        activated = activated || activate;
+
+        // Keep the Call link inside Bootstrap's focus trap for a phone in a modal.
+        const container = trigger.closest('.modal.show') || popoverHome;
+        if (popover.parentElement !== container) container.appendChild(popover);
 
         renderQr(phone);
         phoneLabel.textContent = phone;
@@ -952,7 +965,7 @@ function initPhoneQrPopover() {
         popover.setAttribute('aria-hidden', 'false');
         positionPopover(trigger);
 
-        if (options && options.focusCall) {
+        if (focusCall) {
             callBtn.focus({ preventScroll: true });
         }
     }
@@ -973,11 +986,11 @@ function initPhoneQrPopover() {
             el.addEventListener('click', function(event) {
                 event.preventDefault();
                 event.stopPropagation();
-                if (activeTrigger === this && isPopoverOpen()) {
+                if (activeTrigger === this && activated && isPopoverOpen()) {
                     hidePopover();
                     return;
                 }
-                showPopover(this);
+                showPopover(this, { activate: true });
             });
 
             if (canHover) {
@@ -988,13 +1001,13 @@ function initPhoneQrPopover() {
             }
 
             el.addEventListener('focusin', function() {
-                showPopover(this);
+                if (!restoringFocus) showPopover(this);
             });
             el.addEventListener('focusout', scheduleHide);
             el.addEventListener('keydown', function(event) {
                 if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
-                    showPopover(this, { focusCall: true });
+                    showPopover(this, { activate: true, focusCall: true });
                 }
             });
         });
@@ -1030,7 +1043,13 @@ function initPhoneQrPopover() {
     document.addEventListener('keydown', function(event) {
         if (event.key === 'Escape' && isPopoverOpen()) {
             event.preventDefault();
+            event.stopPropagation();
             hidePopover({ restoreFocus: true });
+        }
+    }, true);
+    document.addEventListener('hide.bs.modal', function(event) {
+        if (activeTrigger && event.target instanceof Element && event.target.contains(activeTrigger)) {
+            hidePopover();
         }
     });
     window.addEventListener('resize', function() {

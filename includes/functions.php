@@ -747,6 +747,30 @@ function saveDeviceModelUsage(?string $brand, ?string $model): void {
     }
 }
 
+/** A displayed phone shares the CRM-wide popover and keeps its original formatting. */
+function crmPhoneQrTrigger(?string $phone, string $classes = ''): string
+{
+    $phone = trim($phone ?? '');
+    if ($phone === '') {
+        return '';
+    }
+
+    $display = htmlspecialchars($phone, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $class = htmlspecialchars(trim($classes), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $digits = preg_replace('/[^0-9]/', '', $phone);
+    if ($digits === '') {
+        return '<span class="' . $class . '">' . $display . '</span>';
+    }
+
+    $dial = (str_starts_with($phone, '+') ? '+' : '') . $digits;
+    $label = htmlspecialchars($phone . ' — ' . __('phone_show_qr'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    return '<span class="phone-qr-trigger ' . $class . '" data-phone="' . $dial . '"'
+        . ' role="button" tabindex="0" aria-controls="phoneQrPopover" aria-haspopup="dialog" aria-expanded="false"'
+        . ' aria-label="' . $label . '">'
+        . '<i class="fas fa-phone text-success" aria-hidden="true"></i><span>' . $display . '</span>'
+        . '<i class="fas fa-qrcode phone-qr-trigger__hint" aria-hidden="true"></i></span>';
+}
+
 function formatMoney($amount) {
     global $pdo;
     $currency = get_setting('currency', 'Kč');

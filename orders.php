@@ -300,8 +300,6 @@ if ($order_form_old === null && isset($pdo)) {
                             // FIX #4: use pre-loaded array instead of per-row query
                             $has_media   = isset($has_media_ids[$order['id']]);
                             $device_icon = getDeviceIcon($order['device_type']);
-                            $client_phone = $order['phone'] ?? '';
-                            $phone_clean  = preg_replace('/[^0-9+]/', '', $client_phone);
                         ?>
                         <tr <?php echo (($order['priority'] ?? '') === 'High') ? 'class="priority-high-row"' : ''; ?>>
                             <td class="ps-4" data-label="ID">
@@ -319,20 +317,7 @@ if ($order_form_old === null && isset($pdo)) {
                             </td>
                             <td data-label="<?php echo e(__('client')); ?>">
                                 <div><?php echo e($order['first_name'] . ' ' . $order['last_name']); ?></div>
-                                <?php if($client_phone): ?>
-                                <div class="phone-qr-trigger small text-white-75"
-                                     data-phone="<?php echo e($phone_clean); ?>"
-                                     role="button"
-                                     tabindex="0"
-                                     aria-expanded="false"
-                                     aria-controls="phoneQrPopover"
-                                     aria-haspopup="dialog"
-                                     aria-label="<?php echo e($client_phone . ' — ' . __('phone_show_qr')); ?>">
-                                    <i class="fas fa-phone text-success" aria-hidden="true"></i>
-                                    <span><?php echo e($client_phone); ?></span>
-                                    <i class="fas fa-qrcode phone-qr-trigger__hint" aria-hidden="true"></i>
-                                </div>
-                                <?php endif; ?>
+                                <?= crmPhoneQrTrigger($order['phone'] ?? null, 'small text-white-75') ?>
                             </td>
                             <td data-label="<?php echo e(__('device_model')); ?>">
                                 <div class="fw-medium text-primary"><?php echo $device_icon; ?> <?php echo htmlspecialchars($order['device_brand']); ?></div>
@@ -524,15 +509,6 @@ if ($order_form_old === null && isset($pdo)) {
 <?php endif; ?>
 
 
-
-<!-- QR Popover Container -->
-<div class="qr-popover" id="phoneQrPopover" role="dialog" aria-modal="false" aria-hidden="true" aria-label="<?php echo e(__('phone_show_qr')); ?>">
-    <div class="qr-phone-label" id="qrPhoneLabel"></div>
-    <div id="qrContainer"></div>
-    <a href="#" class="btn btn-success qr-call-btn" id="qrCallBtn">
-        <i class="fas fa-phone" aria-hidden="true"></i><?php echo __('call'); ?>
-    </a>
-</div>
 
 <div class="toast-container crm-toast-container position-fixed bottom-0 end-0 p-3">
     <div id="quickStatusToast" class="toast crm-toast crm-toast--success align-items-center" role="status" aria-live="polite" aria-atomic="true">

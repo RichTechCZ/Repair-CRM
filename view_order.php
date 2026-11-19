@@ -184,24 +184,7 @@ foreach ($status_log as $log_row) {
                                 <strong><?php echo e($viewCustomerFullName); ?></strong>
                             <?php endif; ?>
                         </p>
-                        <?php
-                            $viewPhoneRaw = trim((string)($order['phone'] ?? ''));
-                            $viewPhoneClean = preg_replace('/[^0-9+]/', '', $viewPhoneRaw);
-                        ?>
-                        <?php if ($viewPhoneRaw !== ''): ?>
-                        <div class="phone-qr-trigger text-white-75 d-inline-flex align-items-center gap-2"
-                             data-phone="<?php echo e($viewPhoneClean); ?>"
-                             role="button"
-                             tabindex="0"
-                             aria-expanded="false"
-                             aria-controls="phoneQrPopover"
-                             aria-haspopup="dialog"
-                             aria-label="<?php echo e($viewPhoneRaw . ' — ' . __('phone_show_qr')); ?>">
-                            <i class="fas fa-phone text-success" aria-hidden="true"></i>
-                            <span><?php echo e($viewPhoneRaw); ?></span>
-                            <i class="fas fa-qrcode phone-qr-trigger__hint" aria-hidden="true"></i>
-                        </div>
-                        <?php endif; ?>
+                        <?= crmPhoneQrTrigger($order['phone'] ?? null, 'text-white-75') ?>
                     </div>
                     <div class="detail-card">
                         <h6><?php echo __('device_model'); ?></h6>

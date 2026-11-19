@@ -15,6 +15,14 @@
     window.LANG_OPEN_NEW_TAB = <?php echo json_encode(__('open_in_new_tab'), $crmFooterJsFlags); ?>;
 </script>
 
+<div class="qr-popover" id="phoneQrPopover" role="dialog" aria-modal="false" aria-hidden="true" aria-label="<?php echo e(__('phone_show_qr')); ?>">
+    <div class="qr-phone-label" id="qrPhoneLabel"></div>
+    <div id="qrContainer"></div>
+    <a href="#" class="btn btn-success qr-call-btn" id="qrCallBtn">
+        <i class="fas fa-phone" aria-hidden="true"></i><?php echo __('call'); ?>
+    </a>
+</div>
+
 <!-- Universal Preview Modal -->
 <div class="modal fade" id="universalPreviewModal" tabindex="-1" aria-labelledby="universalPreviewTitle">
     <div class="modal-dialog modal-xl modal-dialog-centered">

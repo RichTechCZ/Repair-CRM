@@ -716,12 +716,29 @@ assertTrue(
         && strpos($ordersSource, 'buildOrderSearchQueryParts(') === false,
     'Dashboard and Orders must share searchOrdersList and the same order-search placeholder contract'
 );
+$phoneMarkup = crmPhoneQrTrigger('+420 (777) 000-111', 'small');
 assertTrue(
-    strpos($ordersSource, 'phone-qr-trigger') !== false
-        && strpos($ordersSource, "title=\"<?php echo e(__('phone_show_qr')); ?>\"") === false
-        && strpos($ordersSource, "title=\"<?php echo __('phone_show_qr'); ?>\"") === false,
-    'phone number QR trigger must not show a hover tooltip'
+    str_contains($phoneMarkup, 'data-phone="+420777000111"')
+        && str_contains($phoneMarkup, '+420 (777) 000-111')
+        && str_contains($phoneMarkup, 'aria-controls="phoneQrPopover"')
+        && str_contains($phoneMarkup, 'aria-label="')
+        && !str_contains($phoneMarkup, 'title='),
+    'phone QR trigger shares the popover, preserves presentation and has an accessible label without a tooltip'
 );
+assertSameValue('', crmPhoneQrTrigger(null), 'missing phones should not render a QR trigger');
+assertTrue(!str_contains(crmPhoneQrTrigger('—'), 'data-phone='), 'non-dialable text should not open a QR');
+assertTrue(!str_contains(crmPhoneQrTrigger('42"><b>'), '<b>'), 'displayed phone data must be escaped');
+$phoneFooter = file_get_contents(__DIR__ . '/../includes/footer.php');
+foreach (['index.php', 'orders.php', 'customers.php', 'view_order.php'] as $phonePage) {
+    $phonePageSource = file_get_contents(__DIR__ . '/../' . $phonePage);
+    assertTrue(
+        str_contains($phonePageSource, 'crmPhoneQrTrigger(')
+            && !str_contains($phonePageSource, 'id="phoneQrPopover"'),
+        "{$phonePage} must reuse the shared phone QR trigger and footer popover"
+    );
+}
+assertSameValue(1, substr_count($phoneFooter, 'id="phoneQrPopover"'), 'shared footer must render exactly one phone QR popover');
+
 assertTrue(
     strpos($functionsSource, 'currentUserCanCreateOrderForCustomer') !== false
         && strpos($functionsSource, '15 * 60') !== false,
@@ -1269,7 +1286,7 @@ $ordersPageAfterPrefill = (string)file_get_contents(__DIR__ . '/../orders.php');
 assertTrue(
     $customersPageSrc !== false
         && strpos($customersPageSrc, 'isTechnicianScoped()') !== false
-        && strpos($customersPageSrc, 'phone-qr-trigger') !== false
+        && strpos($customersPageSrc, 'crmPhoneQrTrigger(') !== false
         && strpos($customersPageSrc, "title=\"<?php echo e(__('phone_show_qr')); ?>\"") === false
         && strpos($customersPageSrc, 'assets/js/customers.js') !== false
         && strpos($customersPageSrc, 'id="customerCardModal"') !== false,
