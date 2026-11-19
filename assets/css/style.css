@@ -1817,16 +1817,6 @@ small,
     font-variant-numeric: tabular-nums;
 }
 
-.queue-income {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 1rem;
-    border-top: 1px solid var(--border-subtle);
-    color: var(--text-primary);
-}
-
 .dashboard-orders-table-wrap {
     max-height: 700px;
     overflow-y: auto;

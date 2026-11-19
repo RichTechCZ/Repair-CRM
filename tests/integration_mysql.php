@@ -237,6 +237,54 @@ check($last['counts']['ready'] === 17 && $last['page'] === 2 && count($last['row
     && count(array_unique(array_merge(array_column($first['rows'], 'id'), array_column($last['rows'], 'id')))) === 17,
     'every queued order is reachable once across bounded pages');
 
+// Dashboard ownership is independent of the admin_access capability elsewhere in CRM.
+$insertOrder->execute([430, 2, 1, 'Accepted', null, 900, 0, null]);
+$pdo->exec("UPDATE orders SET priority = 'High' WHERE id = 430");
+$insertOrder->execute([431, 1, 1, 'Issued', 800, null, 100, '2025-04-11 10:00:00']);
+$insertOrder->execute([432, 1, 2, 'Issued', 1250, null, 250, '2025-04-12 10:00:00']);
+$pdo->exec("INSERT INTO order_items (order_id, inventory_id, quantity, price, cost_price)
+            VALUES (431, NULL, 1, 300, 150), (432, NULL, 1, 400, 200)");
+
+$financeStart = '2025-04-01';
+$financeEnd = '2025-04-30';
+foreach ([1 => [430, 800, 150, 100, 275], 2 => [401, 1250, 200, 250, 320]] as $techId => $fixture) {
+    [$ownOrder, $revenue, $parts, $expenses, $earnings] = $fixture;
+    $_SESSION = [
+        'user_id' => 't' . $techId, 'role' => 'technician', 'tech_id' => $techId,
+        '_perms' => $techId === 2 ? ['admin_access'] : [], '_perms_at' => time(),
+    ];
+    $_GET['tech_id'] = 3 - $techId;
+    $work = crmWorkQueue($pdo, 'attention', 1);
+    $otherOrder = $techId === 1 ? 401 : 430;
+    $ids = array_map('intval', array_column($work['rows'], 'id'));
+    check($work['scope']['technician_id'] === $techId && !$work['scope']['is_admin']
+        && in_array($ownOrder, $ids, true) && !in_array($otherOrder, $ids, true)
+        && array_keys($work['byTechnician']) === [$techId],
+        "Dashboard queue stays personal for technician {$techId}, even with a foreign request ID");
+    $finance = crmWorkQueueFinance($pdo, $financeStart, $financeEnd);
+    check($finance === ['revenue' => (float)$revenue, 'parts_cost' => (float)$parts,
+        'expenses' => (float)$expenses, 'earnings' => (float)$earnings],
+        "Dashboard finance is private for technician {$techId}");
+}
+unset($_GET['tech_id']);
+
+$_SESSION = ['user_id' => 1, 'role' => 'admin'];
+$work = crmWorkQueue($pdo, 'attention', 1);
+$ids = array_map('intval', array_column($work['rows'], 'id'));
+check($work['scope']['is_admin'] && in_array(401, $ids, true) && in_array(430, $ids, true),
+    'System administrators see both technicians in the Dashboard queue');
+$finance = crmWorkQueueFinance($pdo, $financeStart, $financeEnd);
+check($finance === ['revenue' => 2050.0, 'parts_cost' => 350.0, 'expenses' => 350.0, 'earnings' => 595.0, 'sc_income' => 755.0],
+    'System administrators see combined finances, including SC income');
+
+$_SESSION = ['user_id' => 't2', 'role' => 'technician', '_perms' => ['admin_access'], '_perms_at' => time()];
+try {
+    crmWorkQueueFinance($pdo, $financeStart, $financeEnd);
+    check(false, 'Dashboard finance must reject a technician session without an owner');
+} catch (RuntimeException $error) {
+    check($error->getMessage() === 'Dashboard access denied.', 'Missing Dashboard owner fails closed');
+}
+
 if ($failures > 0) {
     fwrite(STDERR, "{$failures} integration check(s) failed\n");
     exit(1);

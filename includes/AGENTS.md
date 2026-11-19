@@ -31,7 +31,7 @@ Root AGENTS.md -> includes/AGENTS.md
 - `qr_code.php` — self-hosted QR encoder (byte mode, versions 1–10; verified bit-exact against a reference encoder). Use `crmQrDataUri()` in documents; `api/qr.php` serves the phone popover.
 - `upload_security.php` also owns `crmOrderAttachmentUrl()` (browser URL `api/media.php?id=`) and `crmResolveStoredUploadPath()`; never output raw `uploads/` paths.
 - `get_setting()` / `set_setting()` share a request cache loaded with one query (`crmSettingsCache()`); `set_setting()` updates it so a save is visible in the same request.
-- `work_queue.php` loads the paged Dashboard queue and per-technician counts from the same session-scoped set. Dashboard and Statistics share the stage clock and SLA rules. Issued devices leave the handover queue.
+- `work_queue.php` resolves Dashboard scope from the session role for the paged queue, search, counters and monthly finance. A `technician` session always uses its own positive `tech_id`. Only `admin` sessions use all rows or receive SC income. Dashboard and Statistics share the stage clock and SLA rules. Issued devices leave the handover queue.
 - `countOrdersByStatusGroups()` counts the Orders directory tiles with one `GROUP BY` query; `getActiveTechnicians()` is the request-cached technician list for selects.
 - `config.php` supports optional `DB_PORT`, and `CRM_STATELESS` (defined before inclusion) skips the session for machine endpoints (`health.php`, `tg_webhook.php`). Public links/QR/notification links use `crmPublicBaseUrl()` (`CRM_PUBLIC_BASE_URL`), never the Host header.
 - `footer.php` defines the preview/notice `window.LANG_*` globals in a nonce'd script and renders the global confirm dialog (default primary button; `showConfirm(..., 'danger')` for destructive actions).
@@ -42,7 +42,7 @@ Root AGENTS.md -> includes/AGENTS.md
 - `isTechnicianScoped()` / `currentTechnicianId()` — technician isolation helpers (admins and `admin_access` are not scoped).
 - `publicExceptionMessage(Throwable $e)` — safe client-facing errors; logs PDO/system details.
 - `crmBackupDirectory($create = false)` — absolute path to SQL dumps (`app/backup_db/` by default, optional `CRM_BACKUP_DIR`); when `$create` is true, ensures the directory and deny-web guards exist.
-- Order/customer access helpers: `currentUserCanViewOrder`, `currentUserCanEditOrder`, `currentUserCanViewCustomer`; first-order onboarding additionally uses a single-session 15-minute customer grant. List pages scope with `isTechnicianScoped()` and admin-only UI checks `hasPermission('admin_access')`, never raw `$_SESSION['role']`.
+- Order/customer access helpers: `currentUserCanViewOrder`, `currentUserCanEditOrder`, `currentUserCanViewCustomer`; first-order onboarding additionally uses a single-session 15-minute customer grant. List pages normally use `isTechnicianScoped()` and `hasPermission('admin_access')`. Dashboard scope is the role-based exception resolved by `crmWorkQueueScope()`.
 - `crmGetPublicOrderStatusByToken()` returns a minimal public payload (status, device, timestamps, public id/order number) without customer PII.
 
 ### Permission matrix (binding)
@@ -61,7 +61,7 @@ Root AGENTS.md -> includes/AGENTS.md
 ## Work Guidance
 - New shared auth/scope/error helpers go here, not duplicated in endpoints.
 - Runtime code must not execute DDL. Missing required tables/columns fail closed and are repaired only by CLI migrations. The login throttle may temporarily allow credential verification when the specific `login_attempts` table or column is unprovisioned, but it must log the schema gap; all other runtime/store failures remain fail-closed.
-- Global order search covers customer name/company/email, device brand/model, both serial-number fields, order IDs, normalized phone digits, and `orders.created_at` date ranges. Dashboard topbar search and Orders page search both call `searchOrdersList()` so scoring, technician scoping, and the optional-index fallback stay identical. FULLTEXT/prefix indexes accelerate when present; when production schema lacks them the helper retries the baseline LIKE/date path. S/N/IMEI fields support infix identifier matching for pasted fragments and bare numeric IMEI values; never search encrypted `pin_code`.
+- Global order search covers customer name/company/email, device brand/model, both serial-number fields, order IDs, normalized phone digits, and `orders.created_at` date ranges. Dashboard topbar search and Orders page search both call `searchOrdersList()` to share scoring and the optional-index fallback. Each page passes its server-resolved technician scope. FULLTEXT/prefix indexes accelerate when present; when production schema lacks them the helper retries the baseline LIKE/date path. S/N/IMEI fields support infix identifier matching for pasted fragments and bare numeric IMEI values; never search encrypted `pin_code`.
 - Authenticated sessions expire after 2 hours idle or 12 hours absolute; successful login resets both clocks.
 - New permission keys must be added to `getAvailablePermissions()`, enforced with `hasPermission()`, and documented in this matrix.
 - Keep shell-level accessibility in shared includes: page structure, skip-link targets, consistent navigation state, and global status/live regions belong here rather than in page files.

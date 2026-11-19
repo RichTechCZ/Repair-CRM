@@ -1,10 +1,44 @@
 <?php
 require_once __DIR__ . '/statistics_dashboard.php';
 
+/** @return array{is_admin:bool,technician_id:?int} */
+function crmWorkQueueScope(): array
+{
+    if (!empty($_SESSION['user_id'])) {
+        $role = $_SESSION['role'] ?? '';
+        if ($role === 'admin') {
+            return ['is_admin' => true, 'technician_id' => null];
+        }
+
+        if ($role === 'technician' && ($technicianId = currentTechnicianId()) > 0) {
+            return ['is_admin' => false, 'technician_id' => $technicianId];
+        }
+    }
+
+    throw new RuntimeException('Dashboard access denied.');
+}
+
+/** Financial metrics use the same owner as the order queue. */
+function crmWorkQueueFinance(PDO $pdo, string $start, string $end): array
+{
+    $scope = crmWorkQueueScope();
+    $stats = getDetailedStatsBatch($pdo, $start, $end, $scope['technician_id'])['all'];
+    $finance = [
+        'revenue' => $stats['revenue'],
+        'parts_cost' => $stats['parts_cost'],
+        'expenses' => $stats['expenses'],
+        'earnings' => $stats['earnings'],
+    ];
+    if ($scope['is_admin']) {
+        $finance['sc_income'] = $stats['sc_income'];
+    }
+    return $finance;
+}
+
 /** Current workshop queues. Counters, staff workload and pages use the same scoped order set. */
 function crmWorkQueue(PDO $pdo, string $queue, int $requestedPage, bool $loadRows = true): array
 {
-    $scope = crmStatisticsScope();
+    $scope = crmWorkQueueScope();
     $params = [$pdo->query('SELECT NOW()')->fetchColumn()];
     $scopeSql = crmStatisticsScopeCondition($scope['technician_id'], $params);
     $limitSql = crmStageTimeLimitSql((int)get_setting('sla_new_hours', 24), (int)get_setting('sla_progress_hours', 72));

@@ -67,7 +67,7 @@ try {
 </section>
 
 <div class="row g-3 align-items-start">
-    <div class="<?= $isAdmin ? 'col-12 col-xl-8' : 'col-12' ?>">
+    <div class="col-12 col-xl-8">
         <section class="statistics-panel" aria-labelledby="queue-list-title">
             <header class="statistics-panel__head align-items-center flex-wrap">
                 <h2 id="queue-list-title"><?= e($search === '' ? $queueLabels[$queue] : __('queue_search')) ?>
@@ -147,17 +147,24 @@ try {
         </section>
     </div>
 
-    <?php if ($isAdmin):
-        $month = crmStatisticsPeriodOptions()['month'];
-        $income = null;
-        try {
-            $income = getDetailedStats($pdo, $month['start'], $month['end'])['sc_income'];
-        } catch (PDOException $error) {
-            error_log('Dashboard monthly income: ' . $error->getMessage());
-        }
-        $reportUrl = 'reports.php?' . http_build_query(['tab' => 'staff_stats', 'start_date' => $month['start'], 'end_date' => $month['end']]);
+    <?php
+    $month = crmStatisticsPeriodOptions()['month'];
+    $finance = null;
+    try {
+        $finance = crmWorkQueueFinance($pdo, $month['start'], $month['end']);
+    } catch (PDOException $error) {
+        error_log('Dashboard monthly finances: ' . $error->getMessage());
+    }
+    $financeLabels = [
+        'revenue' => __('revenue'),
+        'parts_cost' => __('parts_costs'),
+        'expenses' => __('extra_expenses'),
+        'earnings' => __($isAdmin ? 'engineer_payouts' : 'queue_my_earnings'),
+        'sc_income' => __('sc_income'),
+    ];
     ?>
-        <aside class="col-12 col-xl-4">
+    <aside class="col-12 col-xl-4">
+        <?php if ($isAdmin): ?>
             <section class="statistics-panel" aria-labelledby="queue-workload">
                 <header class="statistics-panel__head"><h2 id="queue-workload"><?= e(__('queue_workload')) ?></h2></header>
                 <div class="table-responsive">
@@ -172,11 +179,30 @@ try {
                         </tbody>
                     </table>
                 </div>
-                <a class="queue-income" href="<?= e($reportUrl) ?>">
-                    <span><?= e(__('queue_month_income')) ?></span><strong class="financial-number"><?= $income === null ? '—' : e(formatMoney($income)) ?></strong>
-                </a>
             </section>
-        </aside>
-    <?php endif; ?>
+        <?php endif; ?>
+        <section class="statistics-panel<?= $isAdmin ? ' mt-3' : '' ?>" aria-labelledby="queue-finance">
+            <header class="statistics-panel__head align-items-center flex-wrap">
+                <h2 id="queue-finance"><?= e(__($isAdmin ? 'queue_finance_workshop' : 'queue_finance_personal')) ?></h2>
+                <?php if ($isAdmin):
+                    $reportUrl = 'reports.php?' . http_build_query(['tab' => 'staff_stats', 'start_date' => $month['start'], 'end_date' => $month['end']]);
+                ?>
+                    <a class="btn btn-outline-secondary btn-sm" href="<?= e($reportUrl) ?>"><?= e(__('reports')) ?></a>
+                <?php endif; ?>
+            </header>
+            <?php if ($finance === null): ?>
+                <p class="p-3 mb-0 text-white-75"><?= e(__('queue_finance_unavailable')) ?></p>
+            <?php else: ?>
+                <dl class="list-group list-group-flush mb-0">
+                    <?php foreach ($finance as $metric => $amount): ?>
+                        <div class="list-group-item d-flex align-items-baseline justify-content-between gap-2">
+                            <dt class="fw-normal"><?= e($financeLabels[$metric]) ?></dt>
+                            <dd class="mb-0 text-end financial-number fw-semibold text-nowrap"><?= e(formatMoney($amount)) ?></dd>
+                        </div>
+                    <?php endforeach; ?>
+                </dl>
+            <?php endif; ?>
+        </section>
+    </aside>
 </div>
 <?php require 'includes/footer.php';
