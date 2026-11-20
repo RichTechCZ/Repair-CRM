@@ -58,6 +58,12 @@ if ($page == 'reports.php') {
 // Resolve page title early so <title> is contextual (Trunk Test / browser tabs).
 $company_name = (string)get_setting('company_name', 'Repair CRM');
 $current_page = basename($_SERVER['SCRIPT_NAME']);
+$nav_current = match ($current_page) {
+    'view_order.php', 'edit_order.php' => 'orders.php',
+    'edit_customer.php' => 'customers.php',
+    'edit_inventory.php' => 'inventory.php',
+    default => $current_page,
+};
 $page_titles = [
     'index.php' => __('dashboard'),
     'orders.php' => __('orders'),
@@ -308,16 +314,17 @@ $user_initial = mb_strtoupper(mb_substr((string)($_SESSION['full_name'] ?? 'U'),
             <span></span>
             <span></span>
         </div>
-        <div class="brand-copy">
+        <div class="brand-copy flex-grow-1">
             <strong><?php echo e($company_name); ?></strong>
         </div>
+        <button class="btn-close sidebar-close d-lg-none" type="button" aria-label="<?php echo e(__('close_navigation')); ?>"></button>
     </div>
 
     <nav class="nav flex-column app-nav">
         <?php foreach ($nav_items as $item): ?>
             <?php if (!$item['visible']) continue; ?>
-            <?php $is_active = $current_page === basename($item['href']); ?>
-            <a class="nav-link <?php echo $is_active ? 'active' : ''; ?>" href="<?php echo e($item['href']); ?>"<?php echo $is_active ? ' aria-current="page"' : ''; ?>>
+            <?php $is_active = $nav_current === $item['href']; ?>
+            <a class="nav-link <?php echo $is_active ? 'active' : ''; ?>" href="<?php echo e($item['href']); ?>"<?php if ($is_active): ?> aria-current="<?php echo $current_page === $nav_current ? 'page' : 'location'; ?>"<?php endif; ?>>
                 <span class="nav-mark nav-mark--<?php echo e($item['icon']); ?>" aria-hidden="true"></span>
                 <span><?php echo e($item['label']); ?></span>
             </a>
@@ -353,8 +360,8 @@ $user_initial = mb_strtoupper(mb_substr((string)($_SESSION['full_name'] ?? 'U'),
                 <label for="globalSearch" class="visually-hidden"><?php echo e(__('search_placeholder')); ?></label>
                 <div class="search-shell">
                     <span class="search-shell__icon" aria-hidden="true"></span>
-                    <input id="globalSearch" type="text" name="search" class="form-control" placeholder="<?php echo e($search_placeholder); ?>" value="<?php echo e($_GET['search'] ?? ''); ?>">
-                    <button class="btn btn-primary btn-sm px-3" type="submit" aria-label="<?php echo e($search_placeholder); ?>"><i class="fas fa-arrow-right" aria-hidden="true"></i></button>
+                    <input id="globalSearch" type="search" name="search" class="form-control" placeholder="<?php echo e($search_placeholder); ?>" value="<?php echo e($_GET['search'] ?? ''); ?>">
+                    <button class="btn btn-primary btn-sm px-3" type="submit" aria-label="<?php echo e(__('search_btn')); ?>"><i class="fas fa-arrow-right" aria-hidden="true"></i></button>
                 </div>
             </form>
             <?php elseif (!$show_search): ?>

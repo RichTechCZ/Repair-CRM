@@ -121,20 +121,21 @@ if (!empty($nav_items) && isset($_SESSION['user_id'])):
             break;
         }
     }
-    $tab_current = basename($_SERVER['SCRIPT_NAME']);
+    $tab_current = $nav_current;
+    $tab_current_value = $tab_current === $current_page ? 'page' : 'location';
     $tab_last_file = $tab_last ? basename($tab_last['href']) : 'settings.php';
 ?>
 <nav class="ios-tabbar d-lg-none" aria-label="<?php echo e(__('menu')); ?>">
     <a class="ios-tabbar__item<?php echo $tab_current === 'index.php' ? ' is-active' : ''; ?>" href="index.php"<?php echo $tab_current === 'index.php' ? ' aria-current="page"' : ''; ?>>
         <i class="fas fa-house" aria-hidden="true"></i><span><?php echo e(__('dashboard')); ?></span>
     </a>
-    <a class="ios-tabbar__item<?php echo $tab_current === 'orders.php' ? ' is-active' : ''; ?>" href="orders.php"<?php echo $tab_current === 'orders.php' ? ' aria-current="page"' : ''; ?>>
+    <a class="ios-tabbar__item<?php echo $tab_current === 'orders.php' ? ' is-active' : ''; ?>" href="orders.php"<?php if ($tab_current === 'orders.php'): ?> aria-current="<?php echo $tab_current_value; ?>"<?php endif; ?>>
         <i class="fas fa-screwdriver-wrench" aria-hidden="true"></i><span><?php echo e(__('orders')); ?></span>
     </a>
     <a class="ios-tabbar__item ios-tabbar__item--primary" href="orders.php?new_order=1" data-tab-action="new-order" aria-label="<?php echo e(__('new_order')); ?>">
         <i class="fas fa-plus" aria-hidden="true"></i><span><?php echo e(__('new_order')); ?></span>
     </a>
-    <a class="ios-tabbar__item<?php echo $tab_current === $tab_last_file ? ' is-active' : ''; ?>" href="<?php echo e($tab_last ? $tab_last['href'] : 'settings.php'); ?>"<?php echo $tab_current === $tab_last_file ? ' aria-current="page"' : ''; ?>>
+    <a class="ios-tabbar__item<?php echo $tab_current === $tab_last_file ? ' is-active' : ''; ?>" href="<?php echo e($tab_last ? $tab_last['href'] : 'settings.php'); ?>"<?php if ($tab_current === $tab_last_file): ?> aria-current="<?php echo $tab_current_value; ?>"<?php endif; ?>>
         <i class="fas <?php echo e($tab_icons[$tab_last_file] ?? 'fa-gear'); ?>" aria-hidden="true"></i><span><?php echo e($tab_last ? $tab_last['label'] : __('settings')); ?></span>
     </a>
     <button type="button" class="ios-tabbar__item" data-tab-action="more" aria-controls="sidebar" aria-expanded="false">

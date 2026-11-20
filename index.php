@@ -51,7 +51,7 @@ try {
 <section class="workspace-overview workspace-overview--dashboard" aria-labelledby="queue-title">
     <div class="workspace-overview__head">
         <div class="workspace-overview__copy"><h1 id="queue-title"><?= e(__($isAdmin ? 'queue_workshop' : 'queue_personal')) ?></h1></div>
-        <div class="page-actions">
+        <div class="page-actions order-list-primary">
             <a class="btn btn-primary" href="orders.php?new_order=1"><span aria-hidden="true">+</span> <?= e(__('new_order')) ?></a>
         </div>
     </div>
@@ -68,7 +68,7 @@ try {
 
 <div class="row g-3 align-items-start">
     <div class="col-12 col-xl-8">
-        <section class="statistics-panel" aria-labelledby="queue-list-title">
+        <section class="statistics-panel work-queue-panel" aria-labelledby="queue-list-title">
             <header class="statistics-panel__head align-items-center flex-wrap">
                 <h2 id="queue-list-title"><?= e($search === '' ? $queueLabels[$queue] : __('queue_search')) ?>
                     <span class="statistics-panel__count financial-number"><?= $total ?></span>
@@ -99,8 +99,8 @@ try {
                             $device = trim(($row['device_brand'] ?? '') . ' ' . ($row['device_model'] ?? ''));
                             $overdue = (int)($row['overdue_seconds'] ?? 0);
                         ?>
-                            <tr>
-                                <td data-label="<?= e(__('order')) ?>"><div>
+                            <tr<?= $row['priority'] === 'High' ? ' class="work-queue-priority"' : '' ?>>
+                                <td class="order-list-id" data-label="<?= e(__('order')) ?>"><div>
                                     <a class="mobile-order-link fw-semibold" href="view_order.php?id=<?= (int)$row['id'] ?>">#<?= (int)$row['id'] ?></a>
                                     <small><?= e($device !== '' ? $device : __($row['device_type'])) ?></small>
                                 </div></td>
@@ -108,7 +108,7 @@ try {
                                     <?= e(crmCustomerDisplayName($row)) ?>
                                     <div><?= crmPhoneQrTrigger($row['phone'] ?? null, 'small text-white-75') ?></div>
                                 </div></td>
-                                <td data-label="<?= e(__('status')) ?>"><div>
+                                <td class="order-list-status" data-label="<?= e(__('status')) ?>"><div>
                                     <?= getStatusBadge($row['status']) ?>
                                     <?php if ($search === ''): ?>
                                         <?php if ($overdue > 0): ?>

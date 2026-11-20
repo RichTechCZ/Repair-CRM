@@ -225,7 +225,7 @@ if (isset($_SESSION['user_id'])) {
 <html lang="<?php echo e($_SESSION['lang'] ?? 'ru'); ?>" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="robots" content="noindex, nofollow">
     <title><?php echo e(__('login_title')); ?> - Repair CRM</title>
     <!-- Preconnect for performance -->

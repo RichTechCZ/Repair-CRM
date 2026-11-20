@@ -133,6 +133,13 @@ foreach ($status_log as $log_row) {
         <h1>#<?php echo (int)$order['id']; ?> · <?php echo e($order['device_model']); ?></h1>
         <p class="page-subtitle"><?php echo __('created'); ?>: <?php echo $created_label; ?></p>
     </div>
+    <div class="order-mobile-status d-lg-none">
+        <?php echo getStatusBadge($order['status']); ?>
+        <a href="#order-status-panel" class="btn btn-outline-primary">
+            <?php echo e(__($isClosedOrderLocked ? 'order_status' : 'update_status')); ?>
+            <i class="fas fa-arrow-down" aria-hidden="true"></i>
+        </a>
+    </div>
     <div class="page-actions page-actions--order">
         <a href="<?php echo e($back_url); ?>"
            class="btn btn-outline-secondary"
@@ -146,7 +153,7 @@ foreach ($status_log as $log_row) {
             <span><?php echo __('edit'); ?></span>
         </button>
         <?php if(hasPermission('admin_access')): ?>
-        <button class="btn btn-outline-danger" data-crm-action="delete-order" data-crm-id="<?php echo (int)$order['id']; ?>">
+        <button class="btn btn-outline-danger order-delete-button" data-crm-action="delete-order" data-crm-id="<?php echo (int)$order['id']; ?>" aria-label="<?php echo e(__('delete')); ?>">
             <i class="fas fa-trash" aria-hidden="true"></i>
             <span><?php echo __('delete'); ?></span>
         </button>
@@ -163,7 +170,7 @@ foreach ($status_log as $log_row) {
 <div class="row">
     <div class="col-md-8">
         <div class="card glass-card mb-4 ui-ready">
-            <div class="card-header bg-transparent border-bottom-0 d-flex justify-content-between align-items-center py-3">
+            <div class="card-header order-detail-overview-header bg-transparent border-bottom-0 d-flex justify-content-between align-items-center py-3">
                 <div>
                     <div class="card-eyebrow"><?php echo __('status'); ?></div>
                     <h5 class="mb-0 mt-1"><?php echo htmlspecialchars($order['device_brand'] . ' ' . $order['device_model']); ?></h5>
@@ -249,7 +256,7 @@ foreach ($status_log as $log_row) {
                 <h6><?php echo __('status_history'); ?></h6>
                 <?php if (!empty($status_log)): ?>
                 <div class="table-responsive mb-4">
-                    <table class="table table-sm table-hover align-middle">
+                    <table class="table table-sm table-hover align-middle table-mobile-cards">
                         <thead class="bg-transparent border-bottom">
                             <tr>
                                 <th class="text-white-75"><?php echo __('created'); ?></th>
@@ -262,13 +269,13 @@ foreach ($status_log as $log_row) {
                                 $who = $log['username'] ?? $log['tech_name'] ?? '---';
                             ?>
                             <tr>
-                                <td class="small text-white-75"><?php echo date('d.m.Y H:i', strtotime($log['changed_at'])); ?></td>
-                                <td>
+                                <td class="small text-white-75" data-label="<?php echo e(__('created')); ?>"><?php echo date('d.m.Y H:i', strtotime($log['changed_at'])); ?></td>
+                                <td data-label="<?php echo e(__('status')); ?>"><div class="order-history-transition">
                                     <?php echo getStatusBadge($log['old_status']); ?>
-                                    <i class="fas fa-arrow-right mx-1 text-white-75"></i>
+                                    <i class="fas fa-arrow-right mx-1 text-white-75" aria-hidden="true"></i>
                                     <?php echo getStatusBadge($log['new_status']); ?>
-                                </td>
-                                <td><?php echo htmlspecialchars($who); ?></td>
+                                </div></td>
+                                <td data-label="<?php echo e(__('user')); ?>"><?php echo htmlspecialchars($who); ?></td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -422,7 +429,7 @@ foreach ($status_log as $log_row) {
     <div class="col-md-4">
         <div class="card glass-card border-0 mb-4">
             <div class="card-header bg-transparent border-bottom-0">
-                <h5 class="mb-0"><?php echo __('order_status'); ?></h5>
+                <h5 class="mb-0" id="order-status-panel" tabindex="-1"><?php echo __('order_status'); ?></h5>
             </div>
             <div class="card-body">
                 <form id="statusForm" data-current-shipping="<?php echo e($order['shipping_method'] ?? ''); ?>" data-order-type="<?php echo e($order['order_type'] ?? ''); ?>">
@@ -451,8 +458,8 @@ foreach ($status_log as $log_row) {
                             <?php endif; ?>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label d-flex justify-content-between align-items-center">
-                                <span><?php echo __('status'); ?></span>
+                            <div class="d-flex flex-wrap justify-content-between align-items-center">
+                                <label class="form-label mb-0" for="orderStatus"><?php echo __('status'); ?></label>
                                 <span class="text-white-75 small">
                                     <span id="display_updated_at"><?php echo date('d.m.Y H:i', strtotime($status_date)); ?></span>
                                     <?php if (!$isClosedOrderLocked): ?>
@@ -461,8 +468,8 @@ foreach ($status_log as $log_row) {
                                     </button>
                                     <?php endif; ?>
                                 </span>
-                            </label>
-                            <select name="status" class="form-select mb-2" <?php echo $isClosedOrderLocked ? 'disabled' : ''; ?>>
+                            </div>
+                            <select id="orderStatus" name="status" class="form-select mb-2" <?php echo $isClosedOrderLocked ? 'disabled' : ''; ?>>
                                 <?php foreach (getAllStatuses() as $status_option): ?>
                                     <option value="<?php echo e($status_option); ?>" <?php echo $status === $status_option ? 'selected' : ''; ?>>
                                         <?php echo e(getStatusLabel($status_option)); ?>

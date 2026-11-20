@@ -197,15 +197,15 @@ if ($order_form_old === null && isset($pdo)) {
             <label for="ordersSearch" class="visually-hidden"><?php echo e(__('search_placeholder')); ?></label>
             <div class="search-shell">
                 <span class="search-shell__icon" aria-hidden="true"></span>
-                <input id="ordersSearch" type="text" name="search" class="form-control" placeholder="<?php echo e($search_placeholder); ?>" value="<?php echo e($_GET['search'] ?? ''); ?>">
+                <input id="ordersSearch" type="search" name="search" class="form-control" placeholder="<?php echo e($search_placeholder); ?>" value="<?php echo e($_GET['search'] ?? ''); ?>">
                 <button class="btn btn-primary btn-sm px-3" type="submit"><?php echo e(__('search_btn')); ?></button>
             </div>
         </form>
-        <div class="page-actions">
+        <div class="page-actions order-list-primary<?php echo empty($_GET['search']) ? '' : ' order-list-primary--searching'; ?>">
             <?php if(!empty($_GET['search'])): ?>
                 <a href="orders.php" class="btn btn-outline-secondary"><?php echo __('cancel'); ?></a>
             <?php endif; ?>
-            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newOrderModal">
+            <button class="btn btn-primary order-list-new" data-bs-toggle="modal" data-bs-target="#newOrderModal">
                 <i class="fas fa-plus" aria-hidden="true"></i>
                 <span><?php echo __('new_order'); ?></span>
             </button>
@@ -274,7 +274,7 @@ if ($order_form_old === null && isset($pdo)) {
 <div class="card glass-card shadow-sm ui-ready">
     <div class="card-body p-0">
         <div class="table-responsive table-scroll-touch orders-table-wrap">
-            <table class="table table-hover align-middle mb-0 table-mobile-cards">
+            <table class="table table-hover align-middle mb-0 table-mobile-cards order-list-table">
                 <thead class="bg-transparent sticky-top orders-table-head">
                     <tr>
                         <th class="ps-4">ID / <?php echo __('created'); ?></th>
@@ -302,7 +302,7 @@ if ($order_form_old === null && isset($pdo)) {
                             $device_icon = getDeviceIcon($order['device_type']);
                         ?>
                         <tr <?php echo (($order['priority'] ?? '') === 'High') ? 'class="priority-high-row"' : ''; ?>>
-                            <td class="ps-4" data-label="ID">
+                            <td class="ps-4 order-list-id" data-label="ID">
                                 <a href="view_order.php?id=<?php echo (int)$order['id']; ?>" class="fw-bold text-decoration-none mobile-order-link">#<?php echo (int)$order['id']; ?></a>
                                 <?php if($has_media): ?>
                                     <i class="fas fa-camera text-info ms-1" title="<?php echo __('media_files'); ?>"></i>
@@ -316,10 +316,12 @@ if ($order_form_old === null && isset($pdo)) {
                                 <?php endif; ?>
                             </td>
                             <td data-label="<?php echo e(__('client')); ?>">
-                                <div><?php echo e($order['first_name'] . ' ' . $order['last_name']); ?></div>
-                                <?= crmPhoneQrTrigger($order['phone'] ?? null, 'small text-white-75') ?>
+                                <div>
+                                    <div><?php echo e($order['first_name'] . ' ' . $order['last_name']); ?></div>
+                                    <?= crmPhoneQrTrigger($order['phone'] ?? null, 'small text-white-75') ?>
+                                </div>
                             </td>
-                            <td data-label="<?php echo e(__('device_model')); ?>">
+                            <td class="order-list-device" data-label="<?php echo e(__('device_model')); ?>">
                                 <div class="fw-medium text-primary"><?php echo $device_icon; ?> <?php echo htmlspecialchars($order['device_brand']); ?></div>
                                 <div class="small text-white-75"><?php echo htmlspecialchars($order['device_model']); ?></div>
                                 <?php if(!empty($order['serial_number'])): ?>
@@ -344,7 +346,7 @@ if ($order_form_old === null && isset($pdo)) {
                                     <?php echo htmlspecialchars($order['problem_description']); ?>
                                 </div>
                             </td>
-                            <td data-label="<?php echo e(__('status')); ?>">
+                            <td class="order-list-status" data-label="<?php echo e(__('status')); ?>">
                                 <?php echo getStatusBadge($order['status']); ?>
                                 <?php if(!empty($order['shipping_method'])): ?>
                                     <div class="mt-1 small text-info"><i class="fas fa-truck me-1"></i><?php echo htmlspecialchars($order['shipping_method']); ?></div>
@@ -363,6 +365,7 @@ if ($order_form_old === null && isset($pdo)) {
                                     $repair_total = $order['final_cost'] !== null ? (float)$order['final_cost'] : (float)($order['estimated_cost'] ?? 0);
                                     $show_amount_breakdown = hasPermission('admin_access');
                                 ?>
+                                <div>
                                 <div class="order-amount-cell__total financial-number fw-bold text-white" title="<?php echo e(__('amount')); ?>">
                                     <?php echo formatMoney($repair_total); ?>
                                 </div>
@@ -390,6 +393,7 @@ if ($order_form_old === null && isset($pdo)) {
                                     </div>
                                     <?php endif; ?>
                                 <?php endif; ?>
+                                </div>
                             </td>
                             <td class="text-end pe-4 mobile-row-actions" data-label="">
                                 <?php
@@ -407,8 +411,9 @@ if ($order_form_old === null && isset($pdo)) {
                                 ?>
                                 <?php // inline quick-status buttons removed; using dropdown only ?>
                                 <div class="btn-group btn-group-sm shadow-sm order-row-actions">
-                                    <a href="view_order.php?id=<?php echo (int)$order['id']; ?>" class="btn btn-outline-primary d-md-none" title="<?php echo e(__('open_btn')); ?>" aria-label="<?php echo e(__('open_btn')); ?>">
+                                    <a href="view_order.php?id=<?php echo (int)$order['id']; ?>" class="btn btn-outline-primary d-md-none order-row-open">
                                         <i class="fas fa-eye" aria-hidden="true"></i>
+                                        <?php echo e(__('open_btn')); ?>
                                     </a>
                                     <?php if ($show_quick): ?>
                                     <div class="dropdown">
@@ -584,7 +589,7 @@ if ($order_form_old === null && isset($pdo)) {
                         </div>
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <select name="customer_id" class="form-select select2-customer" style="width: 100%;" required>
+                                <select name="customer_id" class="form-select select2-customer" style="width: 100%;" aria-label="<?php echo e(__('client')); ?>" required>
                                     <option value=""><?php echo __('enter_name_or_phone'); ?></option>
                                 </select>
                             </div>
@@ -731,8 +736,8 @@ if ($order_form_old === null && isset($pdo)) {
                                 </select>
                             </div>
                             <div class="col-12 col-sm-6 col-md-3">
-                                <label class="form-label"><?php echo __('device_brand'); ?></label>
-                                <select name="device_brand" class="form-select select2-brand" style="width: 100%;" required>
+                                <label class="form-label" for="newOrderBrand"><?php echo __('device_brand'); ?></label>
+                                <select name="device_brand" id="newOrderBrand" class="form-select select2-brand" style="width: 100%;" required>
                                     <option value=""><?php echo __('brand_placeholder'); ?></option>
                                     <?php foreach(getDeviceBrands() as $brand): ?>
                                         <option value="<?php echo $brand; ?>" <?php echo ($brand === 'APPLE') ? 'selected' : ''; ?>><?php echo $brand; ?></option>
@@ -740,7 +745,7 @@ if ($order_form_old === null && isset($pdo)) {
                                 </select>
                             </div>
                             <div class="col-12 col-sm-6 col-md-3">
-                                <label class="form-label"><?php echo __('device_model'); ?></label>
+                                <label class="form-label" for="deviceModelSelect"><?php echo __('device_model'); ?></label>
                                 <select name="device_model" id="deviceModelSelect" class="form-select" style="width: 100%;" required>
                                     <option value=""><?php echo __('model_placeholder'); ?></option>
                                 </select>
@@ -803,8 +808,8 @@ if ($order_form_old === null && isset($pdo)) {
                             </div>
                             <?php endif; ?>
                             <div class="col-12">
-                                <label class="form-label"><?php echo __('problem'); ?></label>
-                                <textarea name="problem_description" class="form-control" rows="2" required></textarea>
+                                <label class="form-label" for="newOrderProblem"><?php echo __('problem'); ?></label>
+                                <textarea name="problem_description" id="newOrderProblem" class="form-control" rows="2" required></textarea>
                             </div>
                             <div class="col-12">
                                 <label class="form-label"><?php echo __('notes'); ?> <?php echo __('comment_suffix'); ?></label>

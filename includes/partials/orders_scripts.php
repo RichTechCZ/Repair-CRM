@@ -251,8 +251,9 @@ $(document).ready(function() {
         this.setSelectionRange(pos, pos);
     });
 
-    // ── Auto-focus customer search when modal opens (unless a customer is already chosen) ──
+    // Give phone users the choice to search, copy, or add a customer before opening the keyboard.
     $('#newOrderModal').on('shown.bs.modal', function() {
+        if (window.matchMedia('(max-width: 767.98px)').matches) return;
         setTimeout(function() {
             if (!$('#newOrderModal .select2-customer').val()) {
                 $('#newOrderModal .select2-customer').select2('open');

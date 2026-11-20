@@ -1,60 +1,49 @@
-/* Phone behaviour: tab bar state, quick "new order", keyboard-aware layout. */
+/* Compact navigation and on-screen keyboard layout. */
 (function () {
     'use strict';
 
-    var tabbar = document.querySelector('.ios-tabbar');
-    if (!tabbar) { return; }
+    const newOrderLink = document.querySelector('.ios-tabbar [data-tab-action="new-order"]');
+    newOrderLink?.addEventListener('click', function (event) {
+        const modal = document.getElementById('newOrderModal');
+        if (!modal || !window.bootstrap || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
-    var sidebarToggle = document.getElementById('sidebarCollapse');
-    var moreButton = tabbar.querySelector('[data-tab-action="more"]');
-    var newButton = tabbar.querySelector('[data-tab-action="new-order"]');
-
-    function openNewOrderModal() {
-        var modalEl = document.getElementById('newOrderModal');
-        if (!modalEl || !window.bootstrap) { return false; }
-        window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
-        return true;
-    }
-
-    if (moreButton && sidebarToggle) {
-        moreButton.addEventListener('click', function () {
-            sidebarToggle.click();
-        });
-    }
-
-    if (newButton) {
-        newButton.addEventListener('click', function (event) {
-            // Pages without the modal follow the link to orders.php?new_order=1.
-            if (openNewOrderModal()) {
-                event.preventDefault();
-            }
-        });
-    }
-
-    document.addEventListener('DOMContentLoaded', function () {
-        try {
-            var params = new URLSearchParams(window.location.search);
-            if (params.get('new_order') === '1' && openNewOrderModal()) {
-                params.delete('new_order');
-                var query = params.toString();
-                window.history.replaceState(null, '', window.location.pathname + (query ? '?' + query : ''));
-            }
-        } catch (e) { /* very old WebView: ignore */ }
+        event.preventDefault();
+        modal.addEventListener('hidden.bs.modal', function () {
+            window.requestAnimationFrame(function () {
+                newOrderLink.focus({ preventScroll: true });
+            });
+        }, { once: true });
+        window.bootstrap.Modal.getOrCreateInstance(modal).show(newOrderLink);
     });
 
-    // Hide the tab bar while the on-screen keyboard is open so it never floats over inputs.
-    var textFields = 'input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]), textarea, select';
-    document.addEventListener('focusin', function (event) {
-        if (event.target && event.target.matches && event.target.matches(textFields)) {
-            document.body.classList.add('keyboard-open');
+    const compact = window.matchMedia('(max-width: 991.98px)');
+    const viewport = window.visualViewport;
+    const textFields = 'input:is([type="text"], [type="search"], [type="number"], [type="tel"], [type="email"], [type="url"], [type="password"], :not([type])), textarea, [contenteditable="true"]';
+
+    function updateKeyboardLayout() {
+        const keyboardOpen = compact.matches && viewport.scale === 1
+            && window.innerHeight - viewport.height > 120
+            && document.activeElement?.matches(textFields);
+        document.body.classList.toggle('keyboard-open', Boolean(keyboardOpen));
+        if (keyboardOpen) {
+            document.body.style.setProperty('--keyboard-viewport-height', viewport.height + 'px');
+            document.body.style.setProperty('--keyboard-viewport-top', viewport.offsetTop + 'px');
         }
-    });
-    document.addEventListener('focusout', function () {
-        window.setTimeout(function () {
-            var active = document.activeElement;
-            if (!active || !active.matches || !active.matches(textFields)) {
-                document.body.classList.remove('keyboard-open');
-            }
-        }, 80);
-    });
+    }
+
+    if (viewport) {
+        viewport.addEventListener('resize', updateKeyboardLayout);
+        viewport.addEventListener('scroll', updateKeyboardLayout);
+        document.addEventListener('focusin', updateKeyboardLayout);
+        document.addEventListener('focusout', function () {
+            window.requestAnimationFrame(updateKeyboardLayout);
+        });
+    }
+
+    const settingsTabs = document.getElementById('settingsTabs');
+    const activeSettingsTab = settingsTabs?.querySelector('.nav-link.active');
+    if (activeSettingsTab) {
+        settingsTabs.scrollLeft += activeSettingsTab.getBoundingClientRect().left
+            - settingsTabs.getBoundingClientRect().left;
+    }
 })();

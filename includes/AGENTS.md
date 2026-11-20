@@ -65,8 +65,9 @@ Root AGENTS.md -> includes/AGENTS.md
 - Authenticated sessions expire after 2 hours idle or 12 hours absolute; successful login resets both clocks.
 - New permission keys must be added to `getAvailablePermissions()`, enforced with `hasPermission()`, and documented in this matrix.
 - Keep shell-level accessibility in shared includes: page structure, skip-link targets, consistent navigation state, and global status/live regions belong here rather than in page files.
-- Keep the shared top bar contextual but title-free when the page already provides an `h1`; it carries navigation, search, and account controls, while Orders and Dashboard visually join it to their shared `.workspace-overview`. On Orders, render the order search once inside the overview head, between page context and the primary action; keep the top bar search-free there (`settings.php` also keeps the top bar searchless). On Dashboard, the topbar order search uses the same placeholder/fields contract as Orders and the same `searchOrdersList()` engine. A searchless top bar is hidden on desktop, while its compact mobile controls remain available for sidebar navigation.
-- The compact sidebar must be removed from keyboard navigation while closed and expose its expanded state to assistive technology.
+- Keep the shared top bar title-free when the page provides an `h1`. Orders renders search once in its overview, using the same fields and `searchOrdersList()` engine as the Dashboard top bar. Phone navigation lives in the bottom tabs, while Dashboard, Customers and Inventory retain their top-bar search.
+- On compact screens the sidebar exposes its expanded state, provides its own close control and returns focus to the button that opened it. Detail and edit pages mark their parent section as the active navigation location.
+- On phones the New Order form opens with all entry options visible. The customer field opens its search when the operator selects it; wider layouts retain search autofocus.
 
 ## Verification
 - `php -l includes/header.php` after shared asset-link changes.

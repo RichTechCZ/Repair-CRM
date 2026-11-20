@@ -477,7 +477,7 @@ $active_tab = ($_GET['tab'] ?? 'list') === 'stats' ? 'stats' : 'list';
                     </div>
 
                     <div class="table-responsive accounting-items-table-wrap">
-                        <table class="table align-middle mb-0" id="itemsTable">
+                        <table class="table align-middle mb-0 table-mobile-cards" id="itemsTable">
                             <thead>
                                 <tr>
                                     <th><?php echo __('item_name'); ?></th>
@@ -778,7 +778,7 @@ function showNewInvoiceModal() {
 }
 
 function addInvItem(data = {}) {
-    const tbody = document.querySelector('#itemsTable tbody');
+    const table = document.getElementById('itemsTable');
     const tr = document.createElement('tr');
     const isVatPayer = invoiceIsVatPayer();
     const defaultVatRate = <?php echo json_encode((string)get_setting('acc_vat_rate', '21')); ?>;
@@ -789,8 +789,14 @@ function addInvItem(data = {}) {
         <td><input type="text" class="form-control form-control-sm item-unit"></td>
         <td><input type="number" step="0.01" min="0" class="form-control form-control-sm item-price" data-crm-change-action="calc-totals"></td>
         <td><input type="number" min="0" max="100" class="form-control form-control-sm item-vat" data-crm-change-action="calc-totals"></td>
-        <td><button type="button" class="btn btn-sm btn-link text-danger" data-crm-action="remove-invoice-item"><i class="fas fa-times"></i></button></td>
+        <td><button type="button" class="btn btn-sm btn-link text-danger" data-crm-action="remove-invoice-item"><i class="fas fa-times" aria-hidden="true"></i></button></td>
     `;
+    const labels = table.tHead.rows[0].cells;
+    Array.from(tr.cells).forEach((cell, index) => {
+        const label = labels[index].textContent.trim();
+        cell.dataset.label = label;
+        cell.firstElementChild.setAttribute('aria-label', label || '<?php echo crmJsText(__('delete')); ?>');
+    });
     tr.querySelector('.item-name').value = data.name || data.item_name || '';
     tr.querySelector('.item-qty').value = data.quantity || '1';
     tr.querySelector('.item-unit').value = data.unit || 'ks';
@@ -803,7 +809,7 @@ function addInvItem(data = {}) {
     }
     tr.querySelector('.item-vat').value = data.vat_rate ?? defaultVatRate;
     tr.querySelector('.item-vat').closest('td').style.display = isVatPayer ? '' : 'none';
-    tbody.appendChild(tr);
+    table.tBodies[0].appendChild(tr);
     calcTotals();
 }
 

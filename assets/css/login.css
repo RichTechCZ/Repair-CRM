@@ -54,3 +54,19 @@ body {
     color: var(--text-secondary);
     font-size: 0.82rem;
 }
+
+@media (max-width: 575.98px) {
+    body {
+        min-height: 100dvh;
+        padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+    }
+
+    .login-card .card-body {
+        padding: 1.25rem !important;
+    }
+
+    .login-card :is(.form-control, .btn) {
+        min-height: 2.75rem;
+        font-size: 16px;
+    }
+}

@@ -79,6 +79,7 @@ Default section order:
 - After completing changes, ask whether to push them to GitHub and deploy them to the production server. Publish to each destination only when the user has authorized it for that change.
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
+- Phone layouts prioritize the workshop queue, order search and order creation. Keep these actions within the shared mobile navigation and surface the current status and the status form shortcut near the top of an order.
 - Dashboard opens the scoped workshop queue with overdue orders first, followed by other high-priority open orders. Approval, waiting for parts, and ready for handover each have their own list. Dashboard search, queues, counters, and month-to-date finance use the signed-in role. Only system administrators see all technicians and workshop totals. Each technician sees their own orders and financial figures, including when granted `admin_access` elsewhere in the CRM.
 - Shared CRM UI should avoid generic AI styling (glassmorphism, neon gradients, stock-looking iconography, excessive motion) and instead use a restrained premium interface with deliberate typography, limited accents, and subtle microinteractions.
 - Order workflow states use localized, centralized tonal status pills (`getStatusBadge()` / `.status-pill`) rather than raw Bootstrap `badge bg-*` colours. Closed handover states (`Issued`, `Collected`) are calm neutral labels; they must remain clearly legible in dense tables.

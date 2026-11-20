@@ -8,18 +8,25 @@ let globalAlertModal = null;
 let globalConfirmModal = null;
 let globalPromptModal = null;
 let activePreviewUrl = null;
+let sidebarOpener = null;
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
     const sidebar = document.getElementById('sidebar');
     const sidebarCollapse = document.getElementById('sidebarCollapse');
     const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+    const sidebarClose = sidebar?.querySelector('.sidebar-close');
+    const mobileTabMore = document.querySelector('.ios-tabbar [data-tab-action="more"]');
 
-    if (sidebarCollapse) {
-        sidebarCollapse.addEventListener('click', function() {
-            setSidebarOpen(!document.body.classList.contains('sidebar-open'));
+    [sidebarCollapse, mobileTabMore].forEach(function(button) {
+        button?.addEventListener('click', function() {
+            sidebarOpener = button;
+            setSidebarOpen(true);
         });
-    }
+    });
+    sidebarClose?.addEventListener('click', function() {
+        closeSidebar(true);
+    });
 
     if (sidebarBackdrop) {
         sidebarBackdrop.addEventListener('click', function() {
@@ -38,17 +45,25 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape' && document.body.classList.contains('sidebar-open')) {
+        if (!document.body.classList.contains('sidebar-open')) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
             closeSidebar(true);
+        } else if (event.key === 'Tab') {
+            const first = sidebarClose;
+            const last = sidebar.querySelector('.sidebar-foot button[type="submit"]');
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last?.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first?.focus();
+            }
         }
     });
 
-    let sidebarResizeTimer = 0;
-    window.addEventListener('resize', function() {
-        window.clearTimeout(sidebarResizeTimer);
-        sidebarResizeTimer = window.setTimeout(function() {
-            setSidebarOpen(document.body.classList.contains('sidebar-open'));
-        }, 100);
+    window.matchMedia('(max-width: 991.98px)').addEventListener('change', function() {
+        setSidebarOpen(false);
     });
     setSidebarOpen(false);
 
@@ -370,30 +385,32 @@ function isCompactSidebar() {
 function setSidebarOpen(shouldOpen, restoreFocus = false) {
     const sidebar = document.getElementById('sidebar');
     const content = document.getElementById('content');
-    const mainContent = document.getElementById('main-content');
     const sidebarCollapse = document.getElementById('sidebarCollapse');
-    const sidebarBackdrop = document.getElementById('sidebarBackdrop');
-    const isOpen = isCompactSidebar() && Boolean(shouldOpen);
+    const tabbar = document.querySelector('.ios-tabbar');
+    const mobileTabMore = tabbar?.querySelector('[data-tab-action="more"]');
+    const compact = isCompactSidebar();
+    const isOpen = compact && shouldOpen;
 
     document.body.classList.toggle('sidebar-open', isOpen);
-    document.body.classList.toggle('sidebar-drawer-mode', isCompactSidebar());
+    document.body.classList.toggle('sidebar-drawer-mode', compact);
     if (sidebar) {
         sidebar.classList.toggle('active', isOpen);
-        if (isCompactSidebar()) {
-            sidebar.setAttribute('aria-hidden', String(!isOpen));
-            sidebar.toggleAttribute('inert', !isOpen);
+        sidebar.toggleAttribute('inert', compact && !isOpen);
+        if (compact && !isOpen) {
+            sidebar.setAttribute('aria-hidden', 'true');
         } else {
             sidebar.removeAttribute('aria-hidden');
-            sidebar.removeAttribute('inert');
+        }
+        if (isOpen) {
+            sidebar.setAttribute('role', 'dialog');
+            sidebar.setAttribute('aria-modal', 'true');
+        } else {
+            sidebar.removeAttribute('role');
+            sidebar.removeAttribute('aria-modal');
         }
     }
-    if (content) {
-        content.classList.toggle('active', isOpen);
-    }
-    // Inert only the page body — keep the topbar hamburger usable to close the drawer.
-    if (mainContent) {
-        mainContent.toggleAttribute('inert', isOpen);
-    }
+    content?.toggleAttribute('inert', isOpen);
+    tabbar?.toggleAttribute('inert', isOpen);
     if (sidebarCollapse) {
         sidebarCollapse.setAttribute('aria-expanded', String(isOpen));
         sidebarCollapse.setAttribute(
@@ -401,22 +418,16 @@ function setSidebarOpen(shouldOpen, restoreFocus = false) {
             isOpen ? (window.LANG_CLOSE_NAVIGATION || 'Close navigation') : (window.LANG_OPEN_NAVIGATION || 'Open navigation')
         );
     }
-    const mobileTabMore = document.querySelector('.ios-tabbar [data-tab-action="more"]');
-    if (mobileTabMore) {
-        mobileTabMore.setAttribute('aria-expanded', String(isOpen));
-    }
-    if (sidebarBackdrop) {
-        // Decorative backdrop is never part of the reading order; pointer interaction stays enabled in CSS.
-        sidebarBackdrop.setAttribute('aria-hidden', 'true');
-    }
+    mobileTabMore?.setAttribute('aria-expanded', String(isOpen));
 
     if (isOpen && sidebar) {
-        const firstNavigationLink = sidebar.querySelector('a[href]');
-        if (firstNavigationLink) {
-            firstNavigationLink.focus({ preventScroll: true });
+        sidebar.querySelector('.sidebar-close')?.focus({ preventScroll: true });
+    } else {
+        if (restoreFocus) {
+            const trigger = sidebarOpener?.getClientRects().length ? sidebarOpener : mobileTabMore;
+            trigger?.focus({ preventScroll: true });
         }
-    } else if (restoreFocus && sidebarCollapse) {
-        sidebarCollapse.focus({ preventScroll: true });
+        sidebarOpener = null;
     }
 }
 
